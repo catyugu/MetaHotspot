@@ -359,9 +359,7 @@ class Compiled(OwnedHandle):
                 if f.domain == domain and f.quantity == FieldQuantity.TEMPERATURE
             )
             maps.append(
-                np.arange(
-                    field.offset, field.offset + info.cell_count, dtype=np.uint32
-                )
+                np.arange(field.offset, field.offset + info.cell_count, dtype=np.uint32)
             )
         return np.concatenate(maps) if maps else np.empty(0, dtype=np.uint32)
 
