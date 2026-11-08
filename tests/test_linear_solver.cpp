@@ -137,7 +137,7 @@ TEST(Solver, DirectIgnoresInitialGuess)
 // direct backend calls and seeds each linear solve with the previous iterate.
 TEST(Solver, NonlinearSolveWarmStartsIterativeBackend)
 {
-    mhs::solver::Study study {mhs::model::StudyType::Steady, 0.0, 1.0};
+    mhs::model::Study study {mhs::model::StudyType::Steady, 300.0, 0.0, 1.0};
     mhs::solver::SolveOptions options;
     options.linear_solver = mhs::solver::SolveOptions::LinearSolverType::Amg;
 

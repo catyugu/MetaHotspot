@@ -771,14 +771,14 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study
     CHECK_NULL(c);
     MHS_TRY({
         auto so = to_solve_options(opts);
-        mhs::solver::Study run;
+        mhs::model::Study run;
         if (study) {
             switch (study->type) {
             case MHS_STUDY_STEADY:
-                run.type = mhs::solver::StudyType::Steady;
+                run.type = mhs::model::StudyType::Steady;
                 break;
             case MHS_STUDY_TRANSIENT:
-                run.type = mhs::solver::StudyType::Transient;
+                run.type = mhs::model::StudyType::Transient;
                 break;
             default:
                 throw std::invalid_argument("invalid study type");

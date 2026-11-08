@@ -4,6 +4,7 @@
 
 #include "postprocess.hpp"
 #include "pta/definition.hpp"
+#include "pta/io.hpp"
 namespace test_pta {
     inline mhs::model::SurfaceRegion face_region(
         mhs::model::Axis axis, double coordinate, mhs::model::RegionRect rectangle)
@@ -29,6 +30,7 @@ namespace test_pta {
         return m;
     }
     inline Model build_model(const mhs::app::pta::Definition& d) { return build_model(mhs::app::pta::normalize(d)); }
+    inline Model build_model(const mhs::app::pta::Input& input) { return build_model(input.model); }
     inline auto interpolate_cell_to_node(const Model& m, std::span<const double> t, double time)
     { return mhs::app::postprocess::interpolate_cell_to_node(m, m.sampling_grid, t, time); }
 }

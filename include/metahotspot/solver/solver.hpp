@@ -2,20 +2,10 @@
 
 #include "model/model.hpp"
 #include "solver/solution.hpp"
-#include <cstdint>
 #include <optional>
 #include <span>
 
 namespace mhs::solver {
-
-    enum class StudyType : std::uint8_t { Steady, Transient };
-
-    struct Study {
-        StudyType type = StudyType::Steady;
-        double initial_temperature = 300.0;
-        double duration = 0.0;
-        double output_interval = 1.0;
-    };
 
     // Reconstruct the local boundary temperature at a point on the specified
     // cell. Coincident patches use Dirichlet precedence. Interior points have
@@ -49,7 +39,7 @@ namespace mhs::solver {
     /// Validates initial_state size when provided.
     /// Internally assembles the thermal system, runs nonlinear iteration
     /// and time integration, and records probes.
-    mhs::solver::Solution solve(const mhs::model::Model& model, const Study& study = {},
+    mhs::solver::Solution solve(const mhs::model::Model& model, const mhs::model::Study& study = {},
         std::span<const double> initial_state = {}, const SolveOptions& options = {});
 
 } // namespace mhs::solver

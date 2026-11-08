@@ -3,7 +3,6 @@
 #include "core/vector.hpp"
 #include "model/model_definition.hpp"
 #include "solver/solution.hpp"
-#include "solver/solver.hpp"
 
 #include <array>
 #include <span>
@@ -11,8 +10,9 @@
 
 namespace mhs::app::pta {
 
-    struct Input : mhs::model::ModelDefinition {
-        mhs::solver::Study study;
+    struct Input {
+        mhs::model::Study study;
+        mhs::model::ModelDefinition model;
     };
 
     Input read_xml(const std::string& xml_path);

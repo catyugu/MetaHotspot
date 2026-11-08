@@ -70,7 +70,7 @@ namespace mhs::solver {
             return result;
         }
 
-        mhs::solver::Solution solve_transient(const Study& study, const SystemAssembler& assemble,
+        mhs::solver::Solution solve_transient(const mhs::model::Study& study, const SystemAssembler& assemble,
             mhs::core::Vector<double> state, mhs::linear::SolverPtr& solver, const SolveOptions& opts,
             const NonLinearConfig& nl_config, const StateObserver& observe)
         {
@@ -170,7 +170,7 @@ namespace mhs::solver {
 
     } // namespace
 
-    Solution solve_system(const Study& study, const SystemAssembler& assemble, core::Vector<double> state,
+    Solution solve_system(const mhs::model::Study& study, const SystemAssembler& assemble, core::Vector<double> state,
         const SolveOptions& opts, const StateObserver& observe)
     {
         if (!assemble)
@@ -179,12 +179,12 @@ namespace mhs::solver {
             throw std::invalid_argument("solve_system: initial_state is empty");
         auto solver = linear::create_solver(build_solver_spec(opts));
         const auto nl_config = build_nonlinear_config(opts);
-        if (study.type == StudyType::Steady)
+        if (study.type == mhs::model::StudyType::Steady)
             return solve_steady(assemble, std::move(state), solver, nl_config, observe);
         return solve_transient(study, assemble, std::move(state), solver, opts, nl_config, observe);
     }
 
-    mhs::solver::Solution solve(const mhs::model::Model& model, const Study& study,
+    mhs::solver::Solution solve(const mhs::model::Model& model, const mhs::model::Study& study,
         std::span<const double> initial_state, const SolveOptions& options)
     {
         const auto cell_count = model.discrete.cells.size();

@@ -21,7 +21,7 @@ namespace mhs::solver {
 
     /// Generalized callback-driven solver. Standard solve() calls this
     /// internally, transferring ownership of its state buffer.
-    mhs::solver::Solution solve_system(const Study& study, const SystemAssembler& assemble, core::Vector<double> state,
+    mhs::solver::Solution solve_system(const mhs::model::Study& study, const SystemAssembler& assemble, core::Vector<double> state,
         const SolveOptions& opts = {}, const StateObserver& observe = {});
 
 } // namespace mhs::solver

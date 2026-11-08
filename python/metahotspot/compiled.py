@@ -5,19 +5,22 @@ from __future__ import annotations
 import ctypes
 from dataclasses import dataclass, fields
 from functools import cached_property
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from metahotspot.model import Study
 
 from metahotspot._compiled_data import CompiledFields, Operators
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
-from metahotspot.enums import SolverType, StudyType
+from metahotspot.enums import SolverType
 from metahotspot.types import (
     MhsCellFields,
     MhsCompiled,
     MhsCompiledInfo,
     MhsMaterialValues,
-    MhsStudy,
     MhsOperators,
     MhsOperatorsInfo,
 )
@@ -78,22 +81,6 @@ class SolveOptions:
 
 
 # ---- compiled metadata / snapshot helpers --------------------------------
-
-
-@dataclass(frozen=True)
-class Study:
-    type: StudyType = StudyType.STEADY
-    initial_temperature: float = 300.0
-    duration: float = 0.0
-    output_interval: float = 1.0
-
-    def _native(self) -> MhsStudy:
-        return MhsStudy(
-            int(self.type),
-            self.initial_temperature,
-            self.duration,
-            self.output_interval,
-        )
 
 
 @dataclass(frozen=True)

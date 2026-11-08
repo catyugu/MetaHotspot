@@ -12,8 +12,8 @@ import numpy as np
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
-from metahotspot.enums import Axis, FluidBC, GeometryOp
-from metahotspot.types import MhsModel, MhsSurfaceRegion, Point2D, Rect2D
+from metahotspot.enums import Axis, FluidBC, GeometryOp, StudyType
+from metahotspot.types import MhsModel, MhsStudy, MhsSurfaceRegion, Point2D, Rect2D
 
 if TYPE_CHECKING:
     from metahotspot.compiled import Compiled
@@ -34,6 +34,22 @@ def _create_model(dll):
     handle = ctypes.POINTER(MhsModel)()
     check(dll.mhs_model_create(ctypes.byref(handle)), "create")
     return handle
+
+
+@dataclass(frozen=True)
+class Study:
+    type: StudyType = StudyType.STEADY
+    initial_temperature: float = 300.0
+    duration: float = 0.0
+    output_interval: float = 1.0
+
+    def _native(self) -> MhsStudy:
+        return MhsStudy(
+            int(self.type),
+            self.initial_temperature,
+            self.duration,
+            self.output_interval,
+        )
 
 
 @dataclass(frozen=True)
