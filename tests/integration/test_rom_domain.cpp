@@ -95,7 +95,7 @@ namespace {
             facet.center = {0.5, 0.5};
             facet.trace = {q, -q};
             port.patches.push_back(facet);
-            
+
             rom.observations.push_back({{"top", 2.5, 0.5, 0.5}, {q, q}, 0});
             model.components.push_back({rom, {port}, {}});
         }
@@ -208,7 +208,7 @@ TEST(RomDomain, RomToRomConnectionNeedsNoFakeFomMesh)
         patch.center = {0.5, 0.5};
         patch.trace = {1};
         port.patches.push_back(patch);
-        
+
         def.components.push_back({rom, {port}, {}});
     }
     def.connections.push_back({{0, 0}, {1, 0}});
@@ -257,11 +257,11 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
     patch.center = {0.05, 0.05};
     patch.trace = {1};
     port.patches.push_back(patch);
-    
+
     ThermalBoundarySpec boundary;
     boundary.regions.push_back({Axis::Z, 1, {0, 0.1, 0, 0.1}});
     boundary.condition = ConvectionBoundary {"100", "300"};
-    
+
     d.components.push_back({rom, {port}, {std::move(boundary)}});
     const mhs::core::Vector<double> initial {300};
 
@@ -289,7 +289,7 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
     auto invalid = d;
     RomDomainDefinition other = rom;
     auto other_port = port;
-    
+
     other_port.outward_sign = -1;
     invalid.components.push_back({other, {other_port}, {}});
     invalid.connections.push_back({{0, 0}, {1, 0}});
@@ -333,7 +333,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
     patch.tangential_gradient[0] = {20};
     patch.tangential_gradient[1] = {0};
     port.patches.push_back(patch);
-    
+
     d.components.push_back({rom, {port}, {}});
     d.connections = {{{0, 0}, {1, 0}}};
 

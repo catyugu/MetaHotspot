@@ -189,7 +189,7 @@ namespace mhs::model {
         std::string name;
         SurfaceRegion region;
         PortDefinition() = default;
-        PortDefinition(std::string n, SurfaceRegion r) : name(std::move(n)), region(r) {}
+        PortDefinition(std::string n, SurfaceRegion r) : name(std::move(n)), region(r) { }
         // FVM derives the normal from geometry; reduced ports provide
         // their normal and physical trace patches.
         std::int8_t outward_sign = 1;
@@ -235,10 +235,7 @@ namespace mhs::model {
         ComponentDefinition& component(DomainId id) { return components.at(id); }
         const ComponentDefinition& component(DomainId id) const { return components.at(id); }
         FomDomainDefinition& fom(DomainId id) { return std::get<FomDomainDefinition>(component(id).physics); }
-        const FomDomainDefinition& fom(DomainId id) const
-        {
-            return std::get<FomDomainDefinition>(component(id).physics);
-        }
+        const auto& fom(DomainId id) const { return std::get<FomDomainDefinition>(component(id).physics); }
         RomDomainDefinition& rom(DomainId id) { return std::get<RomDomainDefinition>(component(id).physics); }
 
         mhs::core::Vector<ConnectionDefinition> connections;

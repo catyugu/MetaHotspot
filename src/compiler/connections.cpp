@@ -77,8 +77,7 @@ namespace mhs::compiler {
                             throw std::invalid_argument("port overlaps a fluid boundary");
                 regions.push_back({r, port_offset + p});
             }
-            const auto projection = project_exterior_surface_regions(
-                fom.discrete, regions, port_offset - 1);
+            const auto projection = project_exterior_surface_regions(fom.discrete, regions, port_offset - 1);
             for (const auto& patch : projection) {
                 if (patch.tag < port_offset) {
                     fom.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
@@ -86,8 +85,7 @@ namespace mhs::compiler {
                     continue;
                 }
                 const auto p = patch.tag - port_offset;
-                if (!fom.fluid.global_to_fluid.empty()
-                    && fom.fluid.global_to_fluid[patch.cell] != core::invalid_id)
+                if (!fom.fluid.global_to_fluid.empty() && fom.fluid.global_to_fluid[patch.cell] != core::invalid_id)
                     throw std::invalid_argument("thermal connections currently require solid interface cells");
                 ports[d][p].push_back({patch.cell, patch.bounds, patch.sign});
             }
@@ -96,8 +94,8 @@ namespace mhs::compiler {
                 double covered = 0;
                 for (const auto& facet : facets)
                     covered += area(facet.bounds);
-                if (facets.empty() || std::abs(covered - area(bounds(component.ports[p].region)))
-                        > 1e-10 * area(bounds(component.ports[p].region)))
+                const double required = area(bounds(component.ports[p].region));
+                if (facets.empty() || std::abs(covered - required) > 1e-10 * required)
                     throw std::invalid_argument("port is not fully covered by exterior domain faces");
                 if (!std::all_of(facets.begin(), facets.end(),
                         [&](const auto& facet) { return facet.sign == facets.front().sign; }))
@@ -155,7 +153,7 @@ namespace mhs::compiler {
             }
         }
 
-        auto region = [&](PortReference x) -> SurfaceRegion { return definition.component(x.domain).ports.at(x.port).region; };
+        auto region = [&](PortReference x) { return definition.component(x.domain).ports.at(x.port).region; };
         for (const auto& spec : definition.connections) {
             if (spec.a.domain == spec.b.domain || spec.a.domain >= ndom || spec.b.domain >= ndom)
                 throw std::invalid_argument("connection must join two different domains");
