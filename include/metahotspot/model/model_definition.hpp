@@ -201,12 +201,24 @@ namespace mhs::model {
         double offset = 0.0;
     };
 
+    // Affine HTC-like parameter contribution: K(mu) = K0 + sum mu_i * K_i,
+    // f(mu) = f0 + sum mu_i * f_i. C is parameter-independent in this form.
+    // One compiled snapshot fixes parameter values; the same extracted matrices
+    // and port maps can be reused when constructing another snapshot.
+    struct RomAffineTerm {
+        std::string name;
+        double value = 0.0;
+        mhs::core::Vector<double> K;
+        mhs::core::Vector<double> f;
+    };
+
     // Dense row-major projected matrices and physical port/observation maps.
     struct RomDomainDefinition {
         std::size_t order = 0;
         mhs::core::Vector<double> K, C, f, initial_state;
         mhs::core::Vector<RomPort> ports;
         mhs::core::Vector<RomObservation> observations;
+        mhs::core::Vector<RomAffineTerm> affine_terms;
     };
 
     struct ModelDefinition {
