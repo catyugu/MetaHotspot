@@ -6,8 +6,8 @@
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
 #include "solver/connection_flux.hpp"
-#include "solver/solver.hpp"
 #include "solver/solve.hpp"
+#include "solver/solver.hpp"
 
 #include "core/vector.hpp"
 #include <algorithm>

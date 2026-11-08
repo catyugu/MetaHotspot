@@ -37,8 +37,8 @@ namespace mhs::solver {
                 const double area
                     = (boundary.bounds[1] - boundary.bounds[0]) * (boundary.bounds[3] - boundary.bounds[2]);
                 const double half = domain.discrete.cells[cell].size()[axis] / 2;
-                const auto trace = evaluate_boundary(domain.library->boundary_conditions[boundary.condition], point,
-                    area, half, t[cell], k[axis], time);
+                const auto trace = evaluate_boundary(
+                    domain.library->boundary_conditions[boundary.condition], point, area, half, t[cell], k[axis], time);
                 add(axis, point[axis] - center[axis], trace.temperature - t[cell], area);
             }
             for (std::size_t axis = 0; axis < 3; ++axis)

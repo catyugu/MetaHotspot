@@ -179,7 +179,8 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     };
     verify_reverse(reverse, 315);
 
-    std::get<PressureOutlet>(test_pta::library(d.model).fluid_boundaries[d.model.fom(0).fluid_boundaries.back().condition])
+    std::get<PressureOutlet>(
+        test_pta::library(d.model).fluid_boundaries[d.model.fom(0).fluid_boundaries.back().condition])
         .pressure = 0;
     const auto stagnant = test_pta::build_model(d);
     mhs::solver::ThermalAssembler stagnant_assembler(stagnant, stagnant.flow);

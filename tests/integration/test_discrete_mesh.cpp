@@ -74,15 +74,16 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             // Unit conductivity, unit area and half-cell distance give g = 2 W/K;
             // T-dependent laws are evaluated at the surface trace, not at the cell.
             const auto center = mhs::solver::boundary_center(model.discrete.cells[patch.cell], patch);
-            const auto trace = mhs::solver::evaluate_boundary(compiletest_model::library(d).boundary_conditions[patch.condition],
-                center, ((patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2])),
+            const auto trace = mhs::solver::evaluate_boundary(
+                compiletest_model::library(d).boundary_conditions[patch.condition], center,
+                ((patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2])),
                 (model.discrete.cells[patch.cell].size()[static_cast<std::size_t>(patch.axis)] / 2), state[0], 1.0, 0);
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], trace.temperature, 0};
             const double conductive_flux = 2 * (state[0] - trace.temperature);
             if (std::holds_alternative<mhs::model::Convection>(
                     compiletest_model::library(d).boundary_conditions[patch.condition])) {
-                const auto& law
-                    = std::get<mhs::model::Convection>(compiletest_model::library(d).boundary_conditions[patch.condition]);
+                const auto& law = std::get<mhs::model::Convection>(
+                    compiletest_model::library(d).boundary_conditions[patch.condition]);
                 const double h = law.coefficient.eval(ctx);
                 const double ambient = law.ambient_temperature.eval(ctx);
                 EXPECT_NEAR(conductive_flux, h * (trace.temperature - ambient), 1e-4);

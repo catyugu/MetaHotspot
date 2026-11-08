@@ -24,7 +24,8 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     // Dirichlet 300K on bottom face (Z=0)
     mhs::model::ThermalBoundarySpec boundary1;
-    boundary1.condition = test_model::append(test_model::library(io).thermal_boundaries, mhs::model::DirichletBoundary {"300"});
+    boundary1.condition
+        = test_model::append(test_model::library(io).thermal_boundaries, mhs::model::DirichletBoundary {"300"});
     boundary1.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
     io.component(0).thermal_boundaries.push_back(boundary1);
 
@@ -81,7 +82,8 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     io.component(0).observations.push_back({op2, {}, 0.0});
 
     mhs::model::ThermalBoundarySpec boundary;
-    boundary.condition = test_model::append(test_model::library(io).thermal_boundaries, mhs::model::DirichletBoundary {"500"});
+    boundary.condition
+        = test_model::append(test_model::library(io).thermal_boundaries, mhs::model::DirichletBoundary {"500"});
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
     io.component(0).thermal_boundaries.push_back(boundary);
 

@@ -39,7 +39,8 @@ int main(int argc, char* argv[])
         auto definition = mhs::app::pta::read_xml(input_path);
 
         MHS_LOG_INFO("Loaded {} volumes, {} materials, {} boundaries", definition.model.fom(0).volumes.size(),
-            definition.model.component(0).library->materials.size(), definition.model.component(0).thermal_boundaries.size());
+            definition.model.component(0).library->materials.size(),
+            definition.model.component(0).thermal_boundaries.size());
 
         auto model = mhs::compiler::build_model(definition.model);
 

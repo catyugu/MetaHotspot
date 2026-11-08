@@ -190,8 +190,8 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
 
     // 时间依赖的 Dirichlet 表达式：T_bc = 500 + 100*t
     mhs::model::ThermalBoundarySpec boundary;
-    boundary.condition
-        = test_pta::append(test_pta::library(io.model).thermal_boundaries, mhs::model::DirichletBoundary {"500 + 100*t"});
+    boundary.condition = test_pta::append(
+        test_pta::library(io.model).thermal_boundaries, mhs::model::DirichletBoundary {"500 + 100*t"});
     boundary.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
     io.model.component(0).thermal_boundaries.push_back(boundary);
 

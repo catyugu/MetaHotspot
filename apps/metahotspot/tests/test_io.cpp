@@ -144,8 +144,10 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
     std::filesystem::remove(path);
 
     ASSERT_EQ(definition.model.fom(0).volumes.size(), 2u);
-    EXPECT_EQ(test_pta::library(definition.model).materials[definition.model.fom(0).volumes[0].material].name, "background");
-    EXPECT_EQ(test_pta::library(definition.model).materials[definition.model.fom(0).volumes[1].material].name, "foreground");
+    EXPECT_EQ(
+        test_pta::library(definition.model).materials[definition.model.fom(0).volumes[0].material].name, "background");
+    EXPECT_EQ(
+        test_pta::library(definition.model).materials[definition.model.fom(0).volumes[1].material].name, "foreground");
     ASSERT_EQ(definition.model.fom(0).volumes[0].geometry.size(), 2u);
     EXPECT_EQ(definition.model.fom(0).volumes[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
     EXPECT_EQ(definition.model.fom(0).volumes[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);

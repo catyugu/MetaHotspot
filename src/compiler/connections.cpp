@@ -47,7 +47,8 @@ namespace mhs::compiler {
             ports[d].resize(component.ports.size());
             std::set<std::string> names;
             core::Vector<TaggedSurfaceRegion> regions;
-            const auto port_offset = static_cast<core::EntityIndex>(compiled.components[d].library->boundary_conditions.size());
+            const auto port_offset
+                = static_cast<core::EntityIndex>(compiled.components[d].library->boundary_conditions.size());
             if (fom)
                 for (const auto& boundary : component.thermal_boundaries)
                     for (const auto& region : boundary.regions)
@@ -137,8 +138,8 @@ namespace mhs::compiler {
             if (used.at(spec.a.domain).at(spec.a.port) || used.at(spec.b.domain).at(spec.b.port))
                 throw std::invalid_argument("port is connected more than once");
             const auto a = region(spec.a), b = region(spec.b);
-            if (a.axis != b.axis || a.coordinate != b.coordinate || surface_bounds(a.rectangle) != surface_bounds(b.rectangle)
-                || pa.front().sign == pb.front().sign)
+            if (a.axis != b.axis || a.coordinate != b.coordinate
+                || surface_bounds(a.rectangle) != surface_bounds(b.rectangle) || pa.front().sign == pb.front().sign)
                 throw std::invalid_argument("connection ports must coincide and have opposing outward normals");
             ThermalConnection conn {spec.a, spec.b, a.axis, false, {}};
             for (const auto& left : pa)

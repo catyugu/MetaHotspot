@@ -265,7 +265,8 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
 
     // mhs::model::ThermalBoundarySpec: Dirichlet 500K on Z bottom face
     mhs::model::ThermalBoundarySpec boundary;
-    boundary.condition = test_pta::append(test_pta::library(io.model).thermal_boundaries, mhs::model::DirichletBoundary {"500"});
+    boundary.condition
+        = test_pta::append(test_pta::library(io.model).thermal_boundaries, mhs::model::DirichletBoundary {"500"});
     for (const auto& rectangle : {mhs::model::RegionRect {0.0, 50.0, 50.0, 100.0},
              mhs::model::RegionRect {50.0, 100.0, 0.0, 50.0}, mhs::model::RegionRect {50.0, 100.0, 50.0, 100.0}})
         boundary.regions.push_back({mhs::model::Axis::Z, 0.0, rectangle});
@@ -468,14 +469,14 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
 
     mhs::model::ThermalBoundarySpec earlier;
     earlier.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
-    earlier.condition
-        = test_pta::append(test_pta::library(definition.model).thermal_boundaries, mhs::model::DirichletBoundary {"310"});
+    earlier.condition = test_pta::append(
+        test_pta::library(definition.model).thermal_boundaries, mhs::model::DirichletBoundary {"310"});
     definition.model.component(0).thermal_boundaries.push_back(earlier);
 
     mhs::model::ThermalBoundarySpec later;
     later.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
-    later.condition
-        = test_pta::append(test_pta::library(definition.model).thermal_boundaries, mhs::model::ConvectionBoundary {"42", "280"});
+    later.condition = test_pta::append(
+        test_pta::library(definition.model).thermal_boundaries, mhs::model::ConvectionBoundary {"42", "280"});
     definition.model.component(0).thermal_boundaries.push_back(later);
 
     const auto model = test_pta::build_model(definition);
@@ -524,8 +525,8 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
 
     // Convection on the upper half of the y=10mm Y+ face
     mhs::model::ThermalBoundarySpec boundary;
-    boundary.condition
-        = test_pta::append(test_pta::library(io.model).thermal_boundaries, mhs::model::ConvectionBoundary {"10", "200"});
+    boundary.condition = test_pta::append(
+        test_pta::library(io.model).thermal_boundaries, mhs::model::ConvectionBoundary {"10", "200"});
     boundary.regions.push_back(
         test_pta::face_region(mhs::model::Axis::Y, 10.0, {0.0, 10.0, 0.0, 5.0})); // cx: 0-10, cz: 0-5
     io.model.component(0).thermal_boundaries.push_back(boundary);
@@ -593,8 +594,8 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneThermalBoundarySpec)
 
     // One boundary, three regions targeting three different exposed faces
     mhs::model::ThermalBoundarySpec boundary;
-    boundary.condition
-        = test_pta::append(test_pta::library(io.model).thermal_boundaries, mhs::model::ConvectionBoundary {"10", "200"});
+    boundary.condition = test_pta::append(
+        test_pta::library(io.model).thermal_boundaries, mhs::model::ConvectionBoundary {"10", "200"});
     boundary.regions.push_back(
         test_pta::face_region(mhs::model::Axis::X, 10.0, {0.0, 10.0, 0.0, 10.0})); // XP face, all cz
     boundary.regions.push_back(
