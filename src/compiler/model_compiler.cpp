@@ -74,14 +74,15 @@ namespace mhs::compiler {
             compiled.layout.fields.push_back({domain, quantity, offset, count});
             compiled.layout.state_count += count;
         };
-        if (definition.domains.empty())
+        if (definition.components.empty())
             throw std::invalid_argument("model must contain a FOM or ROM domain");
 
         auto symbols = build_symbol_table(definition);
         compiled.point_probes = definition.point_probes;
 
-        for (std::size_t domain_id = 0; domain_id < definition.domains.size(); ++domain_id) {
-            if (const auto* value = std::get_if<model::RomDomainDefinition>(&definition.domains[domain_id])) {
+        for (std::size_t domain_id = 0; domain_id < definition.components.size(); ++domain_id) {
+            const auto& component = definition.components[domain_id];
+            if (const auto* value = std::get_if<model::RomDomainDefinition>(&component.physics)) {
                 auto rom = *value;
                 const auto n = rom.order;
                 if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n || rom.K.size() != n * n
@@ -111,12 +112,12 @@ namespace mhs::compiler {
                         throw std::invalid_argument("ROM observation has invalid dimension or values");
                 }
                 append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::ReducedCoordinate, n);
-                compiled.domains.emplace_back(std::move(rom));
+                compiled.components.push_back({std::move(rom), component.ports});
                 continue;
             }
 
-            const auto& domain = std::get<model::FomDomainDefinition>(definition.domains[domain_id]);
-            compiled.domains.emplace_back(model::FomDomain {});
+            const auto& domain = std::get<model::FomDomainDefinition>(component.physics);
+            compiled.components.push_back({model::FomDomain {}, component.ports});
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
             model.flow_mode = domain.flow_mode;
             // Compile material properties in ModelDefinition::materials order.
@@ -156,9 +157,12 @@ namespace mhs::compiler {
             // Compile boundary patches.
             auto& boundary_conditions = model.boundary_conditions;
             auto compiled_boundaries
-                = compile_thermal_boundaries(domain.thermal_boundaries, boundary_conditions, symbols);
+                = compile_thermal_boundaries(component.thermal_boundaries, boundary_conditions, symbols);
 
-            auto default_thermal_boundary
+            // Port regions mask the default exterior law; one projection only.
+            for (const auto& port : component.ports)
+                compiled_boundaries.push_back({port.region, core::invalid_id});
+            const auto default_thermal_boundary
                 = compile_thermal_boundary(domain.default_thermal_boundary, boundary_conditions, symbols);
 
             compile_cartesian_mesh(model, domain.mesh, domain.volumes);
@@ -168,8 +172,9 @@ namespace mhs::compiler {
                     throw std::out_of_range("cell has no valid material assignment");
             for (const auto& patch :
                 project_exterior_surface_regions(model.discrete, compiled_boundaries, default_thermal_boundary))
-                model.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
-                    static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
+                if (patch.tag != core::invalid_id)
+                    model.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
+                        static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
 
             // Fluid membership and boundary projection are immutable; no pressure solve here.
             auto& fluid = model.fluid;
@@ -278,20 +283,21 @@ namespace mhs::compiler {
         // Boundary laws on exposed ROM ports are assembled through their
         // physical trace maps, not through HTC-specific affine ROM operators.
         // Subdivide each port patch by the ordinary surface-condition regions.
-        for (std::size_t d = 0; d < definition.domains.size(); ++d) {
-            const auto* value = std::get_if<model::RomDomainDefinition>(&definition.domains[d]);
+        for (std::size_t d = 0; d < definition.components.size(); ++d) {
+            const auto* value = std::get_if<model::RomDomainDefinition>(&definition.components[d].physics);
             if (!value)
                 continue;
-            const auto& rom = *value;
+            const auto& ports = definition.components[d].ports;
+            const auto& boundaries = definition.components[d].thermal_boundaries;
             const auto domain_id = static_cast<model::DomainId>(d);
             using Bounds = std::array<double, 4>;
             using RegionLaw = std::pair<Bounds, model::BoundaryConditionId>;
-            core::Vector<core::Vector<RegionLaw>> per_port(rom.ports.size());
+            core::Vector<core::Vector<RegionLaw>> per_port(ports.size());
             const auto bounds_of = [](const auto& r) -> Bounds { return {r.a_min, r.a_max, r.b_min, r.b_max}; };
             const auto overlaps = [](const Bounds& a, const Bounds& b) {
                 return a[1] > b[0] && b[1] > a[0] && a[3] > b[2] && b[3] > a[2];
             };
-            for (const auto& boundary : rom.thermal_boundaries) {
+            for (const auto& boundary : boundaries) {
                 const auto condition
                     = compile_thermal_boundary(boundary.condition, compiled.rom_boundary_conditions, symbols);
                 for (const auto& region : boundary.regions) {
@@ -303,8 +309,8 @@ namespace mhs::compiler {
                     // One declared boundary rectangle may cover multiple
                     // adjacent ROM ports on the same physical plane.
                     double covered = 0.0;
-                    for (std::size_t p = 0; p < rom.ports.size(); ++p) {
-                        const auto& port = rom.ports[p];
+                    for (std::size_t p = 0; p < ports.size(); ++p) {
+                        const auto& port = ports[p];
                         if (region.axis != port.region.axis || region.coordinate != port.region.coordinate)
                             continue;
                         const auto outer = bounds_of(port.region.rectangle);
@@ -328,9 +334,9 @@ namespace mhs::compiler {
                 }
             }
 
-            for (std::size_t p = 0; p < rom.ports.size(); ++p)
-                for (std::size_t j = 0; j < rom.ports[p].patches.size(); ++j) {
-                    const auto original = bounds_of(rom.ports[p].patches[j].rectangle);
+            for (std::size_t p = 0; p < ports.size(); ++p)
+                for (std::size_t j = 0; j < ports[p].patches.size(); ++j) {
+                    const auto original = bounds_of(ports[p].patches[j].rectangle);
                     core::Vector<double> a {original[0], original[1]}, b {original[2], original[3]};
                     for (const auto& tagged : per_port[p]) {
                         const auto& region = tagged.first;

@@ -38,7 +38,7 @@ namespace mhs::compiler {
     void compile_connections(const model::ModelDefinition& definition, model::CompiledModel& compiled)
     {
         using namespace model;
-        const auto ndom = definition.domains.size();
+        const auto ndom = definition.components.size();
         core::Vector<core::Vector<Facets>> ports(ndom);
         core::Vector<core::Vector<bool>> used(ndom);
 
@@ -47,21 +47,21 @@ namespace mhs::compiler {
             if (field.quantity != FieldQuantity::Temperature)
                 continue;
             const auto d = field.domain;
-            const auto& domain = definition.fom(d);
+            const auto& component = definition.component(d);
             auto& fom = compiled.fom(d);
-            used[d].resize(domain.ports.size(), false);
-            ports[d].resize(domain.ports.size());
+            used[d].resize(component.ports.size(), false);
+            ports[d].resize(component.ports.size());
             std::set<std::string> names;
-            for (std::size_t p = 0; p < domain.ports.size(); ++p) {
-                const auto& port = domain.ports[p];
+            for (std::size_t p = 0; p < component.ports.size(); ++p) {
+                const auto& port = component.ports[p];
                 const auto& r = port.region;
                 validate_region(r);
                 if (port.name.empty() || !names.insert(port.name).second)
                     throw std::invalid_argument("port names must be nonempty and unique within a domain");
                 for (std::size_t previous = 0; previous < p; ++previous)
-                    if (intersects(r, domain.ports[previous].region))
+                    if (intersects(r, component.ports[previous].region))
                         throw std::invalid_argument("domain ports overlap");
-                for (const auto& bc : domain.thermal_boundaries)
+                for (const auto& bc : component.thermal_boundaries)
                     for (const auto& region : bc.regions)
                         if (intersects(r, region))
                             throw std::invalid_argument("port overlaps an explicit thermal boundary");
@@ -84,20 +84,7 @@ namespace mhs::compiler {
                         [&](const auto& x) { return x.sign == projection.front().sign; }))
                     throw std::invalid_argument("port must have a single outward normal");
             }
-            if (!domain.ports.empty()) {
-                core::Vector<TaggedSurfaceRegion> regions;
-                for (std::size_t bc = 0; bc < domain.thermal_boundaries.size(); ++bc)
-                    for (const auto& region : domain.thermal_boundaries[bc].regions)
-                        regions.push_back({region, bc});
-                for (const auto& port : domain.ports)
-                    regions.push_back({port.region, core::invalid_id});
-                fom.boundary_faces.clear();
-                for (const auto& patch :
-                    project_exterior_surface_regions(fom.discrete, regions, fom.boundary_conditions.size() - 1))
-                    if (patch.tag != core::invalid_id)
-                        fom.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
-                            static_cast<BoundaryConditionId>(patch.tag), patch.bounds});
-            }
+
         }
 
         // ROM ports describe only their physical boundary; their interior is
@@ -107,18 +94,19 @@ namespace mhs::compiler {
                 continue;
             const auto d = field.domain;
             const auto& rom = compiled.rom(d);
-            used[d].resize(rom.ports.size(), false);
-            ports[d].resize(rom.ports.size());
+            const auto& component_ports = compiled.components[d].ports;
+            used[d].resize(component_ports.size(), false);
+            ports[d].resize(component_ports.size());
             std::set<std::string> names;
-            for (std::size_t p = 0; p < rom.ports.size(); ++p) {
-                const auto& port = rom.ports[p];
+            for (std::size_t p = 0; p < component_ports.size(); ++p) {
+                const auto& port = component_ports[p];
                 validate_region(port.region);
                 if (port.name.empty() || !names.insert(port.name).second)
                     throw std::invalid_argument("ROM port names must be nonempty and unique");
                 if (port.outward_sign != 1 && port.outward_sign != -1)
                     throw std::invalid_argument("ROM outward port sign must be +1 or -1");
                 for (std::size_t prev = 0; prev < p; ++prev)
-                    if (intersects(port.region, rom.ports[prev].region))
+                    if (intersects(port.region, component_ports[prev].region))
                         throw std::invalid_argument("ROM ports overlap");
                 double total = 0;
                 for (std::size_t j = 0; j < port.patches.size(); ++j) {
@@ -150,8 +138,7 @@ namespace mhs::compiler {
         }
 
         auto region = [&](PortReference x) -> SurfaceRegion {
-            return std::visit(
-                [&](const auto& domain) { return domain.ports.at(x.port).region; }, definition.domains.at(x.domain));
+            return definition.component(x.domain).ports.at(x.port).region;
         };
         for (const auto& spec : definition.connections) {
             if (spec.a.domain == spec.b.domain || spec.a.domain >= ndom || spec.b.domain >= ndom)
@@ -193,10 +180,10 @@ namespace mhs::compiler {
                 continue;
             for (std::size_t side = 0; side < 2; ++side) {
                 const auto ref = side == 0 ? conn.a : conn.b;
-                const auto* rom = std::get_if<RomDomain>(&compiled.domains.at(ref.domain));
+                const auto* rom = std::get_if<RomDomain>(&compiled.components.at(ref.domain).physics);
                 if (!rom)
                     continue;
-                const auto& port = rom->ports.at(ref.port);
+                const auto& port = compiled.components[ref.domain].ports.at(ref.port);
                 for (const auto& facet : conn.patches) {
                     const auto index = side == 0 ? facet.a : facet.b;
                     for (const auto& row : port.patches.at(index).tangential_gradient)
