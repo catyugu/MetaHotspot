@@ -38,14 +38,17 @@ namespace mhs::compiler {
     void compile_connections(const model::ModelDefinition& definition, model::CompiledModel& compiled)
     {
         using namespace model;
-        const auto nfom = definition.domains.size();
-        const auto ndom = nfom + definition.rom_domains.size();
+        const auto ndom = definition.domains.size();
         core::Vector<core::Vector<Facets>> ports(ndom);
         core::Vector<core::Vector<bool>> used(ndom);
 
         // Full-order port projection and exterior-boundary exclusion.
-        for (std::size_t d = 0; d < nfom; ++d) {
-            const auto& domain = definition.domains[d];
+        for (std::size_t d = 0; d < ndom; ++d) {
+            const auto* value = std::get_if<FomDomainDefinition>(&definition.domains[d]);
+            if (!value)
+                continue;
+            const auto& domain = *value;
+            auto& fom = compiled.fom(static_cast<DomainId>(d));
             used[d].resize(domain.ports.size(), false);
             ports[d].resize(domain.ports.size());
             std::set<std::string> names;
@@ -66,11 +69,11 @@ namespace mhs::compiler {
                     for (const auto& region : bc.regions)
                         if (intersects(r, region))
                             throw std::invalid_argument("port overlaps a fluid boundary");
-                const auto projection = project_exterior_surface_regions(compiled.domains[d].discrete, {{r, 0}});
+                const auto projection = project_exterior_surface_regions(fom.discrete, {{r, 0}});
                 double covered = 0;
                 for (const auto& patch : projection) {
                     covered += area(patch.bounds);
-                    const auto& fluid = compiled.domains[d].fluid;
+                    const auto& fluid = fom.fluid;
                     if (!fluid.global_to_fluid.empty() && fluid.global_to_fluid[patch.cell] != core::invalid_id)
                         throw std::invalid_argument("thermal connections currently require solid interface cells");
                     ports[d].at(p).push_back({patch.cell, patch.bounds, patch.sign});
@@ -88,7 +91,6 @@ namespace mhs::compiler {
                         regions.push_back({region, bc});
                 for (const auto& port : domain.ports)
                     regions.push_back({port.region, core::invalid_id});
-                auto& fom = compiled.domains[d];
                 fom.boundary_faces.clear();
                 for (const auto& patch :
                     project_exterior_surface_regions(fom.discrete, regions, fom.boundary_conditions.size() - 1))
@@ -100,9 +102,11 @@ namespace mhs::compiler {
 
         // ROM ports describe only their physical boundary; their interior is
         // represented exclusively by the reduced operators.
-        for (std::size_t r = 0; r < definition.rom_domains.size(); ++r) {
-            const auto d = nfom + r;
-            const auto& rom = compiled.rom_domains[r];
+        for (std::size_t d = 0; d < ndom; ++d) {
+            const auto* value = std::get_if<RomDomain>(&compiled.domains[d]);
+            if (!value)
+                continue;
+            const auto& rom = *value;
             used[d].resize(rom.ports.size(), false);
             ports[d].resize(rom.ports.size());
             std::set<std::string> names;
@@ -146,9 +150,8 @@ namespace mhs::compiler {
         }
 
         auto region = [&](PortReference x) -> SurfaceRegion {
-            if (x.domain < nfom)
-                return definition.domains.at(x.domain).ports.at(x.port).region;
-            return definition.rom_domains.at(x.domain - nfom).ports.at(x.port).region;
+            return std::visit([&](const auto& domain) { return domain.ports.at(x.port).region; },
+                definition.domains.at(x.domain));
         };
         for (const auto& spec : definition.connections) {
             if (spec.a.domain == spec.b.domain || spec.a.domain >= ndom || spec.b.domain >= ndom)
@@ -178,8 +181,9 @@ namespace mhs::compiler {
         }
         // Only FOM ports require Connection. A ROM port can instead carry an
         // exterior boundary law; an otherwise unused ROM port is adiabatic.
-        for (std::size_t d = 0; d < nfom; ++d)
-            if (std::find(used[d].begin(), used[d].end(), false) != used[d].end())
+        for (std::size_t d = 0; d < ndom; ++d)
+            if (std::holds_alternative<FomDomainDefinition>(definition.domains[d])
+                && std::find(used[d].begin(), used[d].end(), false) != used[d].end())
                 throw std::invalid_argument("every declared FOM port must be connected");
 
         // A nonmatching ROM connection needs a projected tangential gradient
@@ -189,13 +193,14 @@ namespace mhs::compiler {
                 continue;
             for (std::size_t side = 0; side < 2; ++side) {
                 const auto ref = side == 0 ? conn.a : conn.b;
-                if (ref.domain < nfom)
+                const auto* rom = std::get_if<RomDomain>(&compiled.domains.at(ref.domain));
+                if (!rom)
                     continue;
-                const auto& port = compiled.rom_domains.at(ref.domain - nfom).ports.at(ref.port);
+                const auto& port = rom->ports.at(ref.port);
                 for (const auto& facet : conn.patches) {
                     const auto index = side == 0 ? facet.a : facet.b;
                     for (const auto& row : port.patches.at(index).tangential_gradient)
-                        if (row.size() != compiled.rom_domains[ref.domain - nfom].order)
+                        if (row.size() != rom->order)
                             throw std::invalid_argument("nonmatching ROM port requires NCC gradient maps");
                 }
             }

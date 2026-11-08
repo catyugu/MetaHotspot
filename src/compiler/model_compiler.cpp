@@ -74,16 +74,51 @@ namespace mhs::compiler {
             compiled.layout.fields.push_back({domain, quantity, offset, count});
             compiled.layout.state_count += count;
         };
-        if (definition.domains.empty() && definition.rom_domains.empty())
+        if (definition.domains.empty())
             throw std::invalid_argument("model must contain a FOM or ROM domain");
 
         auto symbols = build_symbol_table(definition);
         compiled.point_probes = definition.point_probes;
 
         for (std::size_t domain_id = 0; domain_id < definition.domains.size(); ++domain_id) {
-            const auto& domain = definition.domains[domain_id];
-            compiled.domains.emplace_back();
-            auto& model = compiled.domains.back();
+            const auto& value = definition.domains[domain_id];
+            if (std::holds_alternative<model::RomDomainDefinition>(value)) {
+                auto rom = std::get<model::RomDomainDefinition>(value);
+            const auto n = rom.order;
+            if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n || rom.K.size() != n * n
+                || rom.C.size() != n * n || rom.f.size() != n
+                || (!rom.initial_state.empty() && rom.initial_state.size() != n))
+                throw std::invalid_argument("ROM operators or initial state have invalid dimensions");
+            auto finite = [](double value) { return std::isfinite(value); };
+            if (!std::all_of(rom.K.begin(), rom.K.end(), finite) || !std::all_of(rom.C.begin(), rom.C.end(), finite)
+                || !std::all_of(rom.f.begin(), rom.f.end(), finite)
+                || !std::all_of(rom.initial_state.begin(), rom.initial_state.end(), finite))
+                throw std::invalid_argument("ROM operators and initial state must be finite");
+            if (rom.initial_state.empty())
+                rom.initial_state.assign(n, 0.0);
+            for (std::size_t j = 0; j < rom.affine_terms.size(); ++j) {
+                const auto& term = rom.affine_terms[j];
+                if (term.name.empty() || !finite(term.value) || term.K.size() != n * n || term.f.size() != n
+                    || !std::all_of(term.K.begin(), term.K.end(), finite)
+                    || !std::all_of(term.f.begin(), term.f.end(), finite))
+                    throw std::invalid_argument("ROM affine term has invalid dimension or values");
+                for (std::size_t previous = 0; previous < j; ++previous)
+                    if (rom.affine_terms[previous].name == term.name)
+                        throw std::invalid_argument("ROM parameter names must be unique within a domain");
+            }
+            for (const auto& obs : rom.observations) {
+                if (obs.weights.size() != n || !std::all_of(obs.weights.begin(), obs.weights.end(), finite)
+                    || !finite(obs.offset) || !finite(obs.point.x) || !finite(obs.point.y) || !finite(obs.point.z))
+                    throw std::invalid_argument("ROM observation has invalid dimension or values");
+            }
+            append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::ReducedCoordinate, n);
+            compiled.domains.emplace_back(std::move(rom));
+                continue;
+            }
+
+            const auto& domain = std::get<model::FomDomainDefinition>(value);
+            compiled.domains.emplace_back(model::FomDomain {});
+            auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
             model.flow_mode = domain.flow_mode;
             // Compile material properties in ModelDefinition::materials order.
             model.material_table.resize(definition.materials.size());
@@ -239,49 +274,17 @@ namespace mhs::compiler {
                     fluid.velocity_faces.size());
             }
         }
-        // A ROM has algebraic coordinates and physical boundary maps but no
-        // Cartesian cell mesh or fabricated material table.
-        for (std::size_t r = 0; r < definition.rom_domains.size(); ++r) {
-            auto rom = definition.rom_domains[r];
-            const auto n = rom.order;
-            if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n || rom.K.size() != n * n
-                || rom.C.size() != n * n || rom.f.size() != n
-                || (!rom.initial_state.empty() && rom.initial_state.size() != n))
-                throw std::invalid_argument("ROM operators or initial state have invalid dimensions");
-            auto finite = [](double value) { return std::isfinite(value); };
-            if (!std::all_of(rom.K.begin(), rom.K.end(), finite) || !std::all_of(rom.C.begin(), rom.C.end(), finite)
-                || !std::all_of(rom.f.begin(), rom.f.end(), finite)
-                || !std::all_of(rom.initial_state.begin(), rom.initial_state.end(), finite))
-                throw std::invalid_argument("ROM operators and initial state must be finite");
-            if (rom.initial_state.empty())
-                rom.initial_state.assign(n, 0.0);
-            for (std::size_t j = 0; j < rom.affine_terms.size(); ++j) {
-                const auto& term = rom.affine_terms[j];
-                if (term.name.empty() || !finite(term.value) || term.K.size() != n * n || term.f.size() != n
-                    || !std::all_of(term.K.begin(), term.K.end(), finite)
-                    || !std::all_of(term.f.begin(), term.f.end(), finite))
-                    throw std::invalid_argument("ROM affine term has invalid dimension or values");
-                for (std::size_t previous = 0; previous < j; ++previous)
-                    if (rom.affine_terms[previous].name == term.name)
-                        throw std::invalid_argument("ROM parameter names must be unique within a domain");
-            }
-            for (const auto& obs : rom.observations) {
-                if (obs.weights.size() != n || !std::all_of(obs.weights.begin(), obs.weights.end(), finite)
-                    || !finite(obs.offset) || !finite(obs.point.x) || !finite(obs.point.y) || !finite(obs.point.z))
-                    throw std::invalid_argument("ROM observation has invalid dimension or values");
-            }
-            const auto global_id = static_cast<model::DomainId>(compiled.domains.size() + r);
-            append_field(global_id, model::FieldQuantity::ReducedCoordinate, n);
-            compiled.rom_domains.push_back(std::move(rom));
-        }
         compile_connections(definition, compiled);
 
         // Boundary laws on exposed ROM ports are assembled through their
         // physical trace maps, not through HTC-specific affine ROM operators.
         // Subdivide each port patch by the ordinary surface-condition regions.
-        for (std::size_t r = 0; r < definition.rom_domains.size(); ++r) {
-            const auto& rom = definition.rom_domains[r];
-            const auto domain_id = static_cast<model::DomainId>(definition.domains.size() + r);
+        for (std::size_t d = 0; d < definition.domains.size(); ++d) {
+            const auto* value = std::get_if<model::RomDomainDefinition>(&definition.domains[d]);
+            if (!value)
+                continue;
+            const auto& rom = *value;
+            const auto domain_id = static_cast<model::DomainId>(d);
             using Bounds = std::array<double, 4>;
             using RegionLaw = std::pair<Bounds, model::BoundaryConditionId>;
             core::Vector<core::Vector<RegionLaw>> per_port(rom.ports.size());

@@ -70,12 +70,12 @@ namespace mhs::solver {
     {
         if (state.size() != compiled.layout.state_count)
             throw std::invalid_argument("connection flux requires a complete state");
-        const auto nfom = compiled.domains.size();
         const auto axis = static_cast<std::size_t>(connection.axis);
         auto side = [&](model::PortReference ref, model::CellId index) -> Side {
             Side result;
-            if (ref.domain < nfom) {
-                const auto& domain = compiled.domains.at(ref.domain);
+            const auto& value = compiled.domains.at(ref.domain);
+            if (const auto* fom = std::get_if<model::FomDomain>(&value)) {
+                const auto& domain = *fom;
                 const auto cell = index;
                 const auto& box = domain.discrete.cells.at(cell);
                 const auto center = box.center();
@@ -101,7 +101,7 @@ namespace mhs::solver {
                     }
             }
             else {
-                const auto& rom = compiled.rom_domains.at(ref.domain - nfom);
+                const auto& rom = std::get<model::RomDomain>(value);
                 const auto& facet = rom.ports.at(ref.port).patches.at(index);
                 const auto& field
                     = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::ReducedCoordinate));

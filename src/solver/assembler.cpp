@@ -170,26 +170,29 @@ namespace mhs::solver {
     ModelAssembler::ModelAssembler(const model::CompiledModel& model, std::span<const double> initial, double time)
         : model_(model)
     {
-        if (initial.size() != model.layout.state_count || (model.domains.empty() && model.rom_domains.empty()))
+        if (initial.size() != model.layout.state_count || model.domains.empty())
             throw std::invalid_argument("thermal assembly requires a complete state and a physical domain");
+        domains_.resize(model.domains.size());
+        stokes_.resize(model.domains.size());
         for (std::size_t d = 0; d < model.domains.size(); ++d) {
-            const auto& domain = model.domains[d];
+            const auto* value = std::get_if<model::FomDomain>(&model.domains[d]);
+            if (!value)
+                continue;
+            const auto& domain = *value;
             const auto& field = model.layout.field(
                 model.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
             const auto temperature = initial.subspan(field.offset, field.count);
             if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
-                stokes_.push_back(
-                    std::make_unique<StokesAssembler>(domain, model.layout, static_cast<model::DomainId>(d)));
-                domains_.push_back(std::make_unique<ThermalAssembler>(domain, FrozenFlow {}));
+                stokes_[d]
+                    = std::make_unique<StokesAssembler>(domain, model.layout, static_cast<model::DomainId>(d));
+                domains_[d] = std::make_unique<ThermalAssembler>(domain, FrozenFlow {});
             }
             else {
-                stokes_.push_back(nullptr);
-                domains_.push_back(
-                    std::make_unique<ThermalAssembler>(domain, initialize_frozen_flow(domain, temperature, time)));
+                domains_[d]
+                    = std::make_unique<ThermalAssembler>(domain, initialize_frozen_flow(domain, temperature, time));
             }
         }
-        identity_
-            = model.domains.size() == 1 && model.rom_domains.empty() && model.connections.empty() && !stokes_.front();
+        identity_ = model.domains.size() == 1 && domains_.front() && model.connections.empty() && !stokes_.front();
     }
 
     const Operators& ModelAssembler::assemble(std::span<const double> state, double time)
@@ -209,6 +212,8 @@ namespace mhs::solver {
         core::Vector<core::Triplet<double>> stiffness, capacity;
         core::Vector<double> load(state.size(), 0.0);
         for (std::size_t d = 0; d < domains_.size(); ++d) {
+            if (!domains_[d])
+                continue;
             const auto& field = temperature_field(d);
             const auto temperature = state.subspan(field.offset, field.count);
             if (stokes_[d])
@@ -226,9 +231,12 @@ namespace mhs::solver {
                 load[field.dof(c)] += ops.f[c];
         }
 
-        for (std::size_t r = 0; r < model_.rom_domains.size(); ++r) {
-            const auto& rom = model_.rom_domains[r];
-            const auto domain = static_cast<model::DomainId>(model_.domains.size() + r);
+        for (std::size_t d = 0; d < model_.domains.size(); ++d) {
+            const auto* value = std::get_if<model::RomDomain>(&model_.domains[d]);
+            if (!value)
+                continue;
+            const auto& rom = *value;
+            const auto domain = static_cast<model::DomainId>(d);
             const auto& field
                 = model_.layout.field(model_.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
             for (std::size_t i = 0; i < rom.order; ++i) {
@@ -254,7 +262,7 @@ namespace mhs::solver {
         // FOM boundary law's local trace elimination, then distribute its
         // physical conductance and heat load by the Galerkin transpose map.
         for (const auto& term : model_.rom_boundary_terms) {
-            const auto& rom = model_.rom_domains.at(term.domain - model_.domains.size());
+            const auto& rom = model_.rom(term.domain);
             const auto& port = rom.ports.at(term.port);
             const auto& facet = port.patches.at(term.patch);
             const auto& field

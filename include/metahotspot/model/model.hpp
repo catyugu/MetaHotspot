@@ -94,10 +94,17 @@ namespace mhs::model {
         std::array<double, 4> bounds {};
     };
 
+    using Domain = std::variant<FomDomain, RomDomain>;
+
     // Published as a const snapshot by the API; solve workspaces own all flow state.
     struct CompiledModel {
-        mhs::core::Vector<FomDomain> domains;
-        mhs::core::Vector<RomDomain> rom_domains;
+        mhs::core::Vector<Domain> domains;
+
+        FomDomain& fom(DomainId id) { return std::get<FomDomain>(domains.at(id)); }
+        const FomDomain& fom(DomainId id) const { return std::get<FomDomain>(domains.at(id)); }
+        RomDomain& rom(DomainId id) { return std::get<RomDomain>(domains.at(id)); }
+        const RomDomain& rom(DomainId id) const { return std::get<RomDomain>(domains.at(id)); }
+
         StateLayout layout;
         core::Vector<ThermalConnection> connections;
         core::Vector<BoundaryCondition> rom_boundary_conditions;

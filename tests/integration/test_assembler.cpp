@@ -13,12 +13,12 @@ static mhs::model::ModelDefinition make_simple_cube_io()
 {
     mhs::model::ModelDefinition io;
 
-    io.domains[0].mesh.x_vertices = {0.0, 0.005, 0.01};
-    io.domains[0].mesh.y_vertices = {0.0, 0.005, 0.01};
-    io.domains[0].mesh.z_vertices = {0.0, 0.005, 0.01};
+    io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
+    io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
+    io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
     io.sources = {"0"};
-    io.domains[0].volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
@@ -26,7 +26,7 @@ static mhs::model::ModelDefinition make_simple_cube_io()
     mat.specific_heat = "385";
     io.materials.push_back({"copper", mat});
 
-    io.domains[0].default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     return io;
 }
@@ -34,7 +34,7 @@ static mhs::model::ModelDefinition make_simple_cube_io()
 TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
 {
     auto io = make_simple_cube_io();
-    auto model = mhs::compiler::build_model(io).domains.front();
+    auto model = mhs::compiler::build_model(io).fom(0);
 
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
@@ -58,20 +58,20 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     // produce different K.
     mhs::model::ModelDefinition io;
 
-    io.domains[0].mesh.x_vertices = {0.0, 0.005, 0.01};
-    io.domains[0].mesh.y_vertices = {0.0, 0.005, 0.01};
-    io.domains[0].mesh.z_vertices = {0.0, 0.005, 0.01};
+    io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
+    io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
+    io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
     io.sources = {"0"};
-    io.domains[0].volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "100 + T";
     io.materials.push_back({"mat", mat});
 
-    io.domains[0].default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = mhs::compiler::build_model(io).domains.front();
+    auto model = mhs::compiler::build_model(io).fom(0);
 
     int N = static_cast<int>(model.cell_material.size());
 
@@ -88,7 +88,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
 {
     auto io = make_simple_cube_io();
-    auto model = mhs::compiler::build_model(io).domains.front();
+    auto model = mhs::compiler::build_model(io).fom(0);
 
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);

@@ -22,14 +22,14 @@ namespace test_pta {
     inline Model build_model(const mhs::model::ModelDefinition& d)
     {
         Model m;
-        static_cast<mhs::model::FomDomain&>(m) = mhs::compiler::build_model(d).domains.front();
+        static_cast<mhs::model::FomDomain&>(m) = mhs::compiler::build_model(d).fom(0);
         m.flow = mhs::solver::initialize_frozen_flow(m, mhs::core::Vector<double>(m.discrete.cells.size(), 300));
-        m.sampling_grid = d.domains[0].mesh;
-        m.output.cartesian_shape = {d.domains[0].mesh.x_vertices.size(), d.domains[0].mesh.y_vertices.size(),
-            d.domains[0].mesh.z_vertices.size()};
-        for (double x : d.domains[0].mesh.x_vertices)
-            for (double y : d.domains[0].mesh.y_vertices)
-                for (double z : d.domains[0].mesh.z_vertices)
+        m.sampling_grid = d.fom(0).mesh;
+        m.output.cartesian_shape = {d.fom(0).mesh.x_vertices.size(), d.fom(0).mesh.y_vertices.size(),
+            d.fom(0).mesh.z_vertices.size()};
+        for (double x : d.fom(0).mesh.x_vertices)
+            for (double y : d.fom(0).mesh.y_vertices)
+                for (double z : d.fom(0).mesh.z_vertices)
                     m.output.points.push_back({x, y, z});
         return m;
     }

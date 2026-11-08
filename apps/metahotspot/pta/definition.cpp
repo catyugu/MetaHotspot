@@ -82,8 +82,8 @@ namespace mhs::app::pta {
                 },
                 boundary);
         };
-        normalize_boundary(def.model.domains[0].default_thermal_boundary);
-        for (auto& boundary : def.model.domains[0].thermal_boundaries)
+        normalize_boundary(def.model.fom(0).default_thermal_boundary);
+        for (auto& boundary : def.model.fom(0).thermal_boundaries)
             normalize_boundary(boundary.condition);
 
         for (auto& layer : def.layers)
@@ -146,9 +146,9 @@ namespace mhs::app::pta {
         }
         for (auto it = layers.rbegin(); it != layers.rend(); ++it)
             for (auto& v : *it)
-                out.domains[0].volumes.push_back(std::move(v));
+                out.fom(0).volumes.push_back(std::move(v));
         for (auto* axis :
-            {&out.domains[0].mesh.x_vertices, &out.domains[0].mesh.y_vertices, &out.domains[0].mesh.z_vertices})
+            {&out.fom(0).mesh.x_vertices, &out.fom(0).mesh.y_vertices, &out.fom(0).mesh.z_vertices})
             for (auto& v : *axis)
                 v *= scale;
         auto scale_regions = [&](auto& regions) {
@@ -160,9 +160,9 @@ namespace mhs::app::pta {
                 r.rectangle.b_max *= scale;
             }
         };
-        for (auto& b : out.domains[0].thermal_boundaries)
+        for (auto& b : out.fom(0).thermal_boundaries)
             scale_regions(b.regions);
-        for (auto& b : out.domains[0].fluid_boundaries)
+        for (auto& b : out.fom(0).fluid_boundaries)
             scale_regions(b.regions);
         for (const auto& p : pta.point_probes)
             out.point_probes.push_back({p.name, eval(p.x), eval(p.y), eval(p.z)});

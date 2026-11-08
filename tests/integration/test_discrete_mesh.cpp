@@ -14,20 +14,20 @@ using namespace mhs::model;
 static mhs::model::ModelDefinition cube_definition()
 {
     mhs::model::ModelDefinition d;
-    d.domains[0].mesh.x_vertices = d.domains[0].mesh.y_vertices = d.domains[0].mesh.z_vertices = {0, 0.5, 1};
+    d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 0.5, 1};
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
     mat.density = mat.specific_heat = "1";
     d.materials.push_back({"solid", mat});
     d.sources = {"0"};
-    d.domains[0].volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
+    d.fom(0).volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
     return d;
 }
 
 TEST(DiscreteMesh, CartesianTopologyHasUniqueFacesAndClosedCellIncidence)
 {
     auto definition = cube_definition();
-    const auto model = mhs::compiler::build_model(definition).domains.front();
+    const auto model = mhs::compiler::build_model(definition).fom(0);
     const auto& mesh = model.discrete;
     ASSERT_EQ(mesh.cells.size(), 8u);
     ASSERT_EQ(mesh.faces.size(), 36u);
@@ -60,9 +60,9 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
     for (const auto& condition : {mhs::model::ThermalBoundary {mhs::model::ConvectionBoundary {"10+0.01*T", "300"}},
              mhs::model::ThermalBoundary {mhs::model::NeumannBoundary {"1+0.001*T"}}}) {
         auto d = cube_definition();
-        d.domains[0].mesh.x_vertices = d.domains[0].mesh.y_vertices = d.domains[0].mesh.z_vertices = {0, 1};
-        d.domains[0].default_thermal_boundary = condition;
-        const auto model = mhs::compiler::build_model(d).domains.front();
+        d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 1};
+        d.fom(0).default_thermal_boundary = condition;
+        const auto model = mhs::compiler::build_model(d).fom(0);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         // Boundary sampling looks up terms by cell.
         EXPECT_TRUE(std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.cell; }));
@@ -102,7 +102,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
 TEST(DiscreteMesh, TemperatureDependentDirichletTemperatureIsRejected)
 {
     auto d = cube_definition();
-    d.domains[0].thermal_boundaries
+    d.fom(0).thermal_boundaries
         = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, mhs::model::DirichletBoundary {"300 + 0.1*T"}}};
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
 }
@@ -113,9 +113,9 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     mhs::model::ThermalBoundarySpec bc;
     bc.condition = mhs::model::NeumannBoundary {"10"};
     bc.regions.push_back({mhs::model::Axis::X, 1.0, {0.1, 0.2, 0.1, 0.2}});
-    d.domains[0].thermal_boundaries.push_back(bc);
-    const auto base = mhs::compiler::build_model(cube_definition()).domains.front().discrete;
-    const auto model = mhs::compiler::build_model(d).domains.front();
+    d.fom(0).thermal_boundaries.push_back(bc);
+    const auto base = mhs::compiler::build_model(cube_definition()).fom(0).discrete;
+    const auto model = mhs::compiler::build_model(d).fom(0);
     ASSERT_EQ(model.discrete.faces.size(), base.faces.size());
     EXPECT_EQ(model.discrete.cell_face_offsets, base.cell_face_offsets);
     EXPECT_EQ(model.discrete.cell_face_ids, base.cell_face_ids);
@@ -131,16 +131,16 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
 TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
 {
     auto d = cube_definition();
-    d.domains[0].mesh.x_vertices = d.domains[0].mesh.y_vertices = d.domains[0].mesh.z_vertices = {0, 1};
-    auto& first = d.domains[0].volumes[0];
+    d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 1};
+    auto& first = d.fom(0).volumes[0];
     first.geometry = {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.25, 1, 1}}};
     d.sources[0] = "4*z";
     auto second = first;
     second.geometry = {{mhs::model::GeometryOperation::Add, {0.25, 0, 0}, {1, 1, 1}}};
     d.sources.push_back("8*z");
     second.source = 1;
-    d.domains[0].volumes.push_back(second);
-    const auto model = mhs::compiler::build_model(d).domains.front();
+    d.fom(0).volumes.push_back(second);
+    const auto model = mhs::compiler::build_model(d).fom(0);
     const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
     ASSERT_EQ(model.source_terms.size(), 2u);
@@ -151,12 +151,12 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
 TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
 {
     auto d = cube_definition();
-    d.domains[0].mesh.x_vertices = d.domains[0].mesh.y_vertices = d.domains[0].mesh.z_vertices = {0, 1};
+    d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 1};
     mhs::model::ThermalBoundarySpec bc;
     bc.condition = mhs::model::DirichletBoundary {"400"};
     bc.regions.push_back({mhs::model::Axis::X, 1, {0.1, 0.2, 0.1, 0.2}});
-    d.domains[0].thermal_boundaries.push_back(bc);
-    const auto model = mhs::compiler::build_model(d).domains.front();
+    d.fom(0).thermal_boundaries.push_back(bc);
+    const auto model = mhs::compiler::build_model(d).fom(0);
     const mhs::core::Vector<double> state {300};
     const auto ops = mhs::solver::assemble_thermal(model, state, 0);
     EXPECT_NEAR(ops.K.coeff(0, 0), 0.02, 1e-14);

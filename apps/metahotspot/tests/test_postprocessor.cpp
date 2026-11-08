@@ -11,9 +11,9 @@ static mhs::app::pta::Definition make_simple_uniform_grid_io()
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.domains[0].mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.model.domains[0].mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.model.domains[0].mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.model.fom(0).mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.model.fom(0).mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.model.fom(0).mesh.z_vertices = {0.0, 5.0, 10.0};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
@@ -37,7 +37,7 @@ static mhs::app::pta::Definition make_simple_uniform_grid_io()
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
     io.model.materials.push_back({"copper", mat});
 
-    io.model.domains[0].default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.model.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     return io;
 }
@@ -91,9 +91,9 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.domains[0].mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.model.domains[0].mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.model.domains[0].mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.model.fom(0).mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.model.fom(0).mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.model.fom(0).mesh.z_vertices = {0.0, 5.0, 10.0};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
@@ -121,10 +121,10 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     mhs::model::ThermalBoundarySpec boundary_dirichlet;
     boundary_dirichlet.condition = mhs::model::DirichletBoundary {"500"};
     boundary_dirichlet.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
-    io.model.domains[0].thermal_boundaries.push_back(boundary_dirichlet);
+    io.model.fom(0).thermal_boundaries.push_back(boundary_dirichlet);
 
     // Neumann(0) for all other faces (adiabatic)
-    io.model.domains[0].default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.model.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 
@@ -159,9 +159,9 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.domains[0].mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.model.domains[0].mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.model.domains[0].mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.model.fom(0).mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.model.fom(0).mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.model.fom(0).mesh.z_vertices = {0.0, 5.0, 10.0};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
@@ -189,9 +189,9 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
     boundary.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
-    io.model.domains[0].thermal_boundaries.push_back(boundary);
+    io.model.fom(0).thermal_boundaries.push_back(boundary);
 
-    io.model.domains[0].default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.model.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = test_pta::build_model(io);
 
