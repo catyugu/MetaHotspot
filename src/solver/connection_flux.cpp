@@ -26,7 +26,7 @@ namespace mhs::solver {
                 const auto axis = static_cast<std::size_t>(face.axis);
                 add(axis, domain.discrete.cells[other].center()[axis] - center[axis], t[other] - t[cell], face.area());
             }
-            const auto& props = compiled.library().material_table[domain.cell_material[cell]];
+            const auto& props = domain.library->material_table[domain.cell_material[cell]];
             const expression::FieldContext ctx {center[0], center[1], center[2], t[cell], time};
             const model::Vec3 k {props.kx.eval(ctx), props.ky.eval(ctx), props.kz.eval(ctx)};
             for (const auto& boundary : boundary_faces_on_cell(domain, cell)) {
@@ -37,7 +37,7 @@ namespace mhs::solver {
                 const double area
                     = (boundary.bounds[1] - boundary.bounds[0]) * (boundary.bounds[3] - boundary.bounds[2]);
                 const double half = domain.discrete.cells[cell].size()[axis] / 2;
-                const auto trace = evaluate_boundary(compiled.library().boundary_conditions[boundary.condition], point,
+                const auto trace = evaluate_boundary(domain.library->boundary_conditions[boundary.condition], point,
                     area, half, t[cell], k[axis], time);
                 add(axis, point[axis] - center[axis], trace.temperature - t[cell], area);
             }
@@ -79,7 +79,7 @@ namespace mhs::solver {
                 const auto cell = index;
                 const auto& box = domain.discrete.cells.at(cell);
                 const auto center = box.center();
-                const auto& mat = compiled.library().material_table.at(domain.cell_material.at(cell));
+                const auto& mat = domain.library->material_table.at(domain.cell_material.at(cell));
                 const auto& law = axis == 0 ? mat.kx : axis == 1 ? mat.ky : mat.kz;
                 const auto& field
                     = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::Temperature));
