@@ -170,6 +170,30 @@ GL-03 的理论参考必须明确入口发展段的处理与壁面条件，不�
 4. **阶段 IV — 通用耦合与交错流体：** 启用 GL-03 和 GL-08；将流场状态与编译后常量分离，验证真正的双向传热反馈；落实参考温度的模型级移除与 C ABI/Python 同步瘦身。
 5. **每次结构改动后的原有回归：** 现有 CTest、Python 测试和非 archived 的 playground 示例保持可运行；HotSpot 复现与 PTA app 验证不能因核心 API 改造而静默失效。
 
+### 7.1 `tests/` 必须区分单元测试与集成测试
+
+本轮重构应将目前 `tests/*.cpp` 与单个 `mhs_tests` 目标的混合组织方式迁移为**目录独立、CMake 目标独立、CTest 可筛选**的两类测试，避免通过文件名或测试名约定代替真实的构建隔离。
+
+预期布局：
+
+```text
+tests/
+  CMakeLists.txt
+  unit/
+    CMakeLists.txt
+    ...              # 单元测试：小范围算法/数据结构契约
+  integration/
+    CMakeLists.txt
+    ...              # 集成测试：跨模块、模型到求解的完整链路
+```
+
+- **单元测试（`tests/unit/`）：** 针对单个可隔离的算法或数据结构，如网格面关联、TPFA 子片通量、Field/StateLayout 索引、投影权重、ROM 矩阵变换、NCC 校正算子等；允许依赖必要的内部头文件或测试辅助构造，但不应为了单测而暴露不必要的 SDK 接口。
+- **集成测试（`tests/integration/`）：** 验证多组件真实协作：模型定义→编译→装配→稳态/瞬态求解→Probe/输出，涵盖 GL-01 A/B/C/D、GL-02 至 GL-09 中的端到端部分。优先经公开 C++ SDK / C ABI 路径驱动；GL-09 还需 Python 独立入口的对应测试。内部算法的孤立性质不作为集成测试的替代。
+- **CMake 配置：** 保留现有 `MHS_BUILD_TESTS` 总开关，在其下提供独立的 `MHS_BUILD_UNIT_TESTS` 与 `MHS_BUILD_INTEGRATION_TESTS` 选项；`tests/CMakeLists.txt` 根据选项分别 `add_subdirectory(unit)`、`add_subdirectory(integration)`。两个子目录各自建立测试可执行目标（例如 `mhs_unit_tests` / `mhs_integration_tests`），并独立注册 GoogleTest 发现逻辑；关闭其中一类时不应编译或注册该类测试。默认顶层开发配置启用两类测试，仍允许分别关闭。
+- **CTest 分类：** 为两类测试分别赋予 `unit` / `integration` 标签（例如在 `gtest_discover_tests(... PROPERTIES LABELS ...)` 中设置），确保 `ctest -L unit`、`ctest -L integration` 可以分别运行；名称前缀建议 `mhs.unit.` 和 `mhs.integration.`，但前缀不能代替标签或构建开关。
+- **范围边界：** `apps/metahotspot/tests/` 的前端/CLI 测试和 `python/tests/` 的绑定测试暂保留各自构建及测试入口，按其实际职责参与系统级回归；本条要求明确针对顶层 `tests/`。如后续统一测试组织，应保留上述独立构建和分类能力，不能重新混入一个目标。
+- **分阶段落实：** 第一阶段的 Model/Layout PR 内完成 `tests/` 结构迁移与构建选项分离，保持现有测试覆盖；第二至第四阶段将各 GL 端到端算例放入 `tests/integration/`，相应离散算子/布局测试放入 `tests/unit/`。CI 对每个阶段性 PR 分别执行两类小规模确定性测试；大型性能验证继续使用独立工作流。
+
 CI 采用小规模、固定种子的确定性端到端验收；性能/规模验证在单独的手动或专用工作流中运行 30–50 万 DOF 案例，记录建模/编译、峰值内存、装配、线性求解与 ROM 接口耦合开销。大型生成的 `.json`、`.csv`、网格场及矩阵结果应存放在忽略目录或 CI artifacts，**不提交到仓库**；如需数值金标准，仅保留有来源、少量关键标量、容差及复现命令。
 
 ## 8. 关闭清单（全部完成后关闭本临时文档）
@@ -183,14 +207,15 @@ CI 采用小规模、固定种子的确定性端到端验收；性能/规模验�
 - [ ] ROM Domain 可以完整连接；GL-07 满秩等价和截断误差验收通过。
 - [ ] 交错流体与双向热流耦合支持落地，GL-03 / GL-08 验收通过。
 - [ ] C ABI / Python 的 GL-09 端到端与生命周期验收通过；无 ABI 兼容冗余或新的不必要 handle。
+- [ ] `tests/` 已迁移为 `unit/` 和 `integration/` 两个目录、独立 CMake 测试目标及 `MHS_BUILD_UNIT_TESTS` / `MHS_BUILD_INTEGRATION_TESTS` 开关；CTest 标签和按类运行可用，关闭任一类不会编译/注册该类测试。
 - [ ] 当前已有的测试、非 archived playground 与相关 app 回归通过；不同平台构建/安装验证达到项目既定标准。
 - [ ] 关键设计约束和必要的长期文档已迁入正式架构文档；剩余风险/不支持功能有明确记录。
 - [ ] **在最终收尾提交中将本文件状态改为 `CLOSED`，并归档或删除它。**
 
 ## 9. 可复用的现有基线位置
 
-- `tests/test_discrete_mesh.cpp`：网格拓扑、边界局部投影及真实重叠面积。
-- `tests/test_assembler.cpp`、`tests/test_solve_pipeline.cpp`、`tests/test_solution_history.cpp`：热装配、求解和瞬态历史。
+- `tests/test_discrete_mesh.cpp`：当前位于平铺目录，包含网格拓扑与边界投影等验证；迁移时按实际测试行为拆分到 `tests/unit/` 或 `tests/integration/`。
+- `tests/test_assembler.cpp`、`tests/test_solve_pipeline.cpp`、`tests/test_solution_history.cpp`：当前热装配、求解和瞬态历史测试；将局部算法性质归入单元测试，将编译到求解/观测的完整链路归入集成测试。
 - `apps/metahotspot/tests/test_fluid.cpp`：冻结流量的质量守恒、部分入口累加和压力反向后的入口温度。
 - `python/tests/test_mesh_contract.py`、`python/tests/test_model_binding.py`：当前 C ABI/Python 网格与求解契约。
 - `playground/interface_nc_correction/`：跨 Domain 非匹配界面的 NCC 延迟校正/非正交 corrector 原型及独立收敛参考；它不作为同一 FOM 内部粗细网格的必选算法。
