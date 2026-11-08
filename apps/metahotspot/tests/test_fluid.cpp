@@ -173,7 +173,8 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
                   [](const auto& term) { return std::holds_alternative<mhs::solver::FluidInflow>(term.condition); }),
         1);
     auto verify_reverse = [&](const test_pta::Model& model, double temperature) {
-        const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
+        mhs::solver::ThermalAssembler assembler(model, model.flow);
+        const auto& inc = assembler.assemble(mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
         ASSERT_GT(diagonal, 0);
         EXPECT_NEAR(inc.f[0], diagonal * temperature, 1e-10);
