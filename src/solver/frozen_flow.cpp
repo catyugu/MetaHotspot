@@ -83,7 +83,7 @@ namespace mhs::solver {
             mobility[i] *= rho[i];
         }
         const auto& projected = model.fluid_boundaries;
-        const auto& boundaries = model.fluid_conditions;
+        const auto& boundaries = conditions;
         mhs::core::Vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
             total_area[term.condition] += ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]));
