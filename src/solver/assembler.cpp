@@ -1,6 +1,7 @@
 #include "solver/assembler.hpp"
 #include "core/csr_ops.hpp"
 #include "core/vector.hpp"
+#include "solver/connection_flux.hpp"
 #include "solver/frozen_flow.hpp"
 #include "thermal_reconstruction.hpp"
 #include <numeric>
@@ -165,50 +166,96 @@ namespace mhs::solver {
         return operators_;
     }
 
-    Operators map_thermal_operators(const Operators& local, const model::FieldLayout& field, std::size_t state_count)
+    ModelAssembler::ModelAssembler(const model::CompiledModel& model, std::span<const double> initial, double time)
+        : model_(model)
     {
-        core::Vector<model::DofId> map(local.f.size(), core::invalid_id);
-        core::Vector<bool> seen(state_count, false);
-        if (field.entities.size() != field.dofs.size())
-            throw std::invalid_argument("invalid temperature field mapping");
-        for (std::size_t i = 0; i < field.dofs.size(); ++i) {
-            if (field.entities[i] >= map.size() || field.dofs[i] >= state_count
-                || map[field.entities[i]] != core::invalid_id || seen[field.dofs[i]])
-                throw std::invalid_argument("invalid temperature field mapping");
-            map[field.entities[i]] = field.dofs[i];
-            seen[field.dofs[i]] = true;
+        if (initial.size() != model.layout.state_count || model.domains.empty())
+            throw std::invalid_argument("thermal assembly requires complete state and FOM domains");
+        core::Vector<bool> seen(initial.size(), false);
+        for (std::size_t d = 0; d < model.domains.size(); ++d) {
+            const auto& domain = model.domains[d];
+            const auto& field = model.layout.field(
+                model.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
+            const auto n = domain.discrete.cells.size();
+            auto& map = dofs_.emplace_back(n, core::invalid_id);
+            if (field.entities.size() != n || field.dofs.size() != n)
+                throw std::invalid_argument("invalid thermal state layout");
+            for (std::size_t i = 0; i < n; ++i) {
+                const auto c = field.entities[i], dof = field.dofs[i];
+                if (c >= n || dof >= seen.size() || seen[dof] || map[c] != core::invalid_id)
+                    throw std::invalid_argument("invalid thermal state mapping");
+                seen[dof] = true;
+                map[c] = dof;
+            }
+            temperatures_.emplace_back(n);
         }
-        if (std::find(map.begin(), map.end(), core::invalid_id) != map.end())
-            throw std::invalid_argument("temperature field does not cover domain cells");
-        auto transform = [&](const core::CSRMatrix<double>& matrix) {
-            core::Vector<core::Triplet<double>> entries;
-            entries.reserve(matrix.nnz());
-            for (std::size_t i = 0; i < matrix.rows(); ++i)
-                for (auto j = matrix.row_ptr()[i]; j < matrix.row_ptr()[i + 1]; ++j)
-                    entries.emplace_back(static_cast<core::SparseIndex>(map[i]),
-                        static_cast<core::SparseIndex>(map[matrix.col_idx()[j]]), matrix.values()[j]);
-            return core::build_csr(state_count, state_count, std::move(entries));
-        };
-        Operators result {transform(local.K), transform(local.C), core::Vector<double>(state_count, 0.0)};
-        for (std::size_t i = 0; i < local.f.size(); ++i)
-            result.f[map[i]] = local.f[i];
-        return result;
+        if (std::find(seen.begin(), seen.end(), false) != seen.end())
+            throw std::invalid_argument("thermal fields do not cover state");
+        gather(initial);
+        for (std::size_t d = 0; d < model.domains.size(); ++d)
+            domains_.push_back(std::make_unique<ThermalAssembler>(
+                model.domains[d], initialize_frozen_flow(model.domains[d], temperatures_[d], time)));
+        identity_ = model.domains.size() == 1 && model.connections.empty();
+        for (std::size_t c = 0; identity_ && c < dofs_[0].size(); ++c)
+            identity_ = dofs_[0][c] == c;
+    }
+
+    void ModelAssembler::gather(std::span<const double> state)
+    {
+        if (state.size() != model_.layout.state_count)
+            throw std::invalid_argument("thermal assembly state size mismatch");
+        for (std::size_t d = 0; d < temperatures_.size(); ++d)
+            for (std::size_t c = 0; c < temperatures_[d].size(); ++c)
+                temperatures_[d][c] = state[dofs_[d][c]];
+    }
+
+    const Operators& ModelAssembler::assemble(std::span<const double> state, double time)
+    {
+        gather(state);
+        if (identity_)
+            return domains_[0]->assemble(temperatures_[0], time);
+        core::Vector<core::Triplet<double>> stiffness, capacity;
+        core::Vector<double> load(state.size(), 0.0);
+        for (std::size_t d = 0; d < domains_.size(); ++d) {
+            const auto& ops = domains_[d]->assemble(temperatures_[d], time);
+            const auto& map = dofs_[d];
+            auto append = [&](const core::CSRMatrix<double>& matrix, auto& entries) {
+                for (std::size_t row = 0; row < matrix.rows(); ++row)
+                    for (auto j = matrix.row_ptr()[row]; j < matrix.row_ptr()[row + 1]; ++j)
+                        entries.emplace_back(static_cast<core::SparseIndex>(map[row]),
+                            static_cast<core::SparseIndex>(map[matrix.col_idx()[j]]), matrix.values()[j]);
+            };
+            append(ops.K, stiffness);
+            append(ops.C, capacity);
+            for (std::size_t c = 0; c < ops.f.size(); ++c)
+                load[map[c]] += ops.f[c];
+        }
+        for (const auto& connection : model_.connections) {
+            const auto flux = evaluate_connection_flux(model_, connection, temperatures_, time);
+            for (std::size_t p = 0; p < connection.patches.size(); ++p) {
+                const auto& patch = connection.patches[p];
+                const auto a = static_cast<core::SparseIndex>(dofs_[connection.a.domain][patch.a]);
+                const auto b = static_cast<core::SparseIndex>(dofs_[connection.b.domain][patch.b]);
+                const auto g = flux[p].conductance;
+                stiffness.emplace_back(a, a, g);
+                stiffness.emplace_back(a, b, -g);
+                stiffness.emplace_back(b, a, -g);
+                stiffness.emplace_back(b, b, g);
+                // Deferred NCC correction is recomputed at every Picard iterate,
+                // including every transient stage. One flux, opposite residuals.
+                load[a] -= flux[p].correction;
+                load[b] += flux[p].correction;
+            }
+        }
+        operators_ = {core::build_csr(state.size(), state.size(), std::move(stiffness)),
+            core::build_csr(state.size(), state.size(), std::move(capacity)), std::move(load)};
+        return operators_;
     }
 
     Operators assemble_thermal(const model::CompiledModel& compiled, std::span<const double> state, double time)
     {
-        if (compiled.domains.size() != 1 || state.size() != compiled.layout.state_count)
-            throw std::invalid_argument("thermal assembly requires one FOM and a complete state");
-        const auto& field = compiled.layout.field(compiled.layout.find(0, model::FieldQuantity::Temperature));
-        core::Vector<double> local(compiled.domains.front().discrete.cells.size());
-        if (field.entities.size() != field.dofs.size())
-            throw std::invalid_argument("invalid temperature field mapping");
-        for (std::size_t i = 0; i < field.dofs.size(); ++i) {
-            if (field.dofs[i] >= state.size())
-                throw std::invalid_argument("temperature DOF outside state");
-            local.at(field.entities[i]) = state[field.dofs[i]];
-        }
-        return map_thermal_operators(assemble_thermal(compiled.domains.front(), local, time), field, state.size());
+        ModelAssembler workspace(compiled, state, time);
+        return workspace.assemble(state, time);
     }
 
     Operators assemble_thermal(const model::FomDomain& model, std::span<const double> temperature, double time)

@@ -2,6 +2,7 @@
 
 #include "model/model.hpp"
 #include "solver/solution.hpp"
+#include "solver/thermal_reconstruction.hpp"
 
 #include "core/vector.hpp"
 #include <span>
@@ -15,7 +16,7 @@ namespace mhs::solver {
         ProbeRecorder(const mhs::model::FomDomain& model, std::span<const mhs::model::PointProbe> probes);
 
         // 记录一个时间点。稳态/瞬态通用：稳态求解场景下调用一次即可。
-        void record(double time, std::span<const double> cell_T);
+        void record(double time, std::span<const double> cell_T, std::span<const SurfaceTrace> interfaces = {});
 
         mhs::core::Vector<mhs::solver::ProbeTrace> take_traces() && { return std::move(traces_); }
 

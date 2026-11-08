@@ -69,11 +69,24 @@ namespace mhs::model {
         mhs::core::Vector<FluidBoundaryPatch> fluid_boundaries;
     };
 
+    struct ConnectionPatch {
+        CellId a = core::invalid_id, b = core::invalid_id;
+        std::array<double, 4> bounds {};
+    };
+
+    struct ThermalConnection {
+        PortReference a, b;
+        Axis axis = Axis::X;
+        bool nonmatching = false;
+        core::Vector<ConnectionPatch> patches;
+    };
+
     // Published as a const snapshot by the API; solve workspaces own all flow state.
     struct CompiledModel {
         Study study;
         mhs::core::Vector<FomDomain> domains;
         StateLayout layout;
+        core::Vector<ThermalConnection> connections;
         mhs::core::Vector<PointProbe> point_probes;
     };
 

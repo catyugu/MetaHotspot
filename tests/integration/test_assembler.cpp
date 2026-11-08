@@ -13,12 +13,12 @@ static mhs::model::ModelDefinition make_simple_cube_io()
 {
     mhs::model::ModelDefinition io;
 
-    io.domain.mesh.x_vertices = {0.0, 0.005, 0.01};
-    io.domain.mesh.y_vertices = {0.0, 0.005, 0.01};
-    io.domain.mesh.z_vertices = {0.0, 0.005, 0.01};
+    io.domains[0].mesh.x_vertices = {0.0, 0.005, 0.01};
+    io.domains[0].mesh.y_vertices = {0.0, 0.005, 0.01};
+    io.domains[0].mesh.z_vertices = {0.0, 0.005, 0.01};
 
     io.sources = {"0"};
-    io.domain.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    io.domains[0].volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
@@ -26,7 +26,7 @@ static mhs::model::ModelDefinition make_simple_cube_io()
     mat.specific_heat = "385";
     io.materials.push_back({"copper", mat});
 
-    io.domain.default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.domains[0].default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     return io;
 }
@@ -58,18 +58,18 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     // produce different K.
     mhs::model::ModelDefinition io;
 
-    io.domain.mesh.x_vertices = {0.0, 0.005, 0.01};
-    io.domain.mesh.y_vertices = {0.0, 0.005, 0.01};
-    io.domain.mesh.z_vertices = {0.0, 0.005, 0.01};
+    io.domains[0].mesh.x_vertices = {0.0, 0.005, 0.01};
+    io.domains[0].mesh.y_vertices = {0.0, 0.005, 0.01};
+    io.domains[0].mesh.z_vertices = {0.0, 0.005, 0.01};
 
     io.sources = {"0"};
-    io.domain.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    io.domains[0].volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "100 + T";
     io.materials.push_back({"mat", mat});
 
-    io.domain.default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.domains[0].default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = mhs::compiler::build_model(io).domains.front();
 

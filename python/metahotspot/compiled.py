@@ -344,6 +344,46 @@ class Compiled(OwnedHandle):
     def fields(self) -> CompiledFields:
         return _compiled_fields(self._dll, self._handle, self.info)
 
+    def _cell_dofs(self) -> np.ndarray:
+        maps = []
+        for domain, info in enumerate(self.domains):
+            field = next(
+                f
+                for f in self.field_layouts
+                if f.domain == domain and f.quantity == FieldQuantity.TEMPERATURE
+            )
+            mapping = np.empty(info.cell_count, dtype=np.uint32)
+            mapping[field.entities] = field.dofs
+            maps.append(mapping)
+        return np.concatenate(maps)
+
+    def connection_flux(
+        self, connection: int, state=None, time: float = 0.0
+    ) -> np.ndarray:
+        """Heat rate per common patch, outward from A (W); B has its opposite."""
+        if state is None:
+            state = self.default_state()
+        state = np.ascontiguousarray(state, dtype=np.float64)
+        count = ctypes.c_size_t()
+        self._call(
+            "mhs_compiled_connection_patch_count",
+            connection,
+            ctypes.byref(count),
+            ctx="connection_patch_count",
+        )
+        result = np.empty(count.value, dtype=np.float64)
+        self._call(
+            "mhs_compiled_eval_connection_flux",
+            connection,
+            _double_ptr(state),
+            state.size,
+            time,
+            _double_ptr(result),
+            result.size,
+            ctx="connection_flux",
+        )
+        return result
+
     def source_operator(self, state=None, time=0.0):
         """Per-source integrated powers in algebraic state order (sparse CSC).
 
@@ -371,7 +411,7 @@ class Compiled(OwnedHandle):
             (
                 values,
                 (
-                    self.field_layouts[0].dofs[fields.projection_cell],
+                    self._cell_dofs()[fields.projection_cell],
                     fields.projection_source,
                 ),
             ),

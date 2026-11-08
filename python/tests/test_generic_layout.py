@@ -4,15 +4,28 @@ import numpy as np
 import pytest
 
 import metahotspot
-from metahotspot import Study, SurfaceRegion
+from metahotspot import SolveOptions, Study, SurfaceRegion
 from metahotspot.enums import Axis, EntitySupport, FieldQuantity, FluidBC, StudyType
 
 
-def package(*, fluid=True, anisotropic=False):
+def package(*, fluid=True, anisotropic=False, split=False, coarse=False, refinement=1):
     m = metahotspot.Model()
     m.set_cartesian_mesh(
-        np.arange(13) * 0.001, np.arange(9) * 0.001, np.arange(11) * 0.0005
+        np.arange(12 * refinement + 1) * 0.001 / refinement,
+        np.arange(8 * refinement + 1) * 0.001 / refinement,
+        np.arange(10 * refinement + 1) * 0.0005 / refinement,
     )
+    if split:
+        m.set_cartesian_mesh(
+            np.arange(13) * 0.001, np.arange(9) * 0.001, np.arange(9) * 0.0005
+        )
+        upper = m.add_fom_domain()
+        m.set_cartesian_mesh(
+            np.arange(7 if coarse else 13) * (0.002 if coarse else 0.001),
+            np.arange(5 if coarse else 9) * (0.002 if coarse else 0.001),
+            [0.004, 0.0045, 0.005],
+            domain=upper,
+        )
     materials = [
         m.add_material(
             "silicon",
@@ -41,7 +54,19 @@ def package(*, fluid=True, anisotropic=False):
     for material, power, lo, hi in volumes:
         v = m.add_volume(materials[material], 0xFFFFFFFF if power is None else power)
         m.add_box(v, lo, hi)
-    m.add_convection([SurfaceRegion(Axis.Z, 0.005, 0, 0.012, 0, 0.008)], "400", "300")
+    if split:
+        volume = m.add_volume(materials[2], domain=upper)
+        m.add_box(volume, [0, 0, 0.004], [0.012, 0.008, 0.005], domain=upper)
+        region = SurfaceRegion(Axis.Z, 0.004, 0, 0.012, 0, 0.008)
+        a = m.add_port(0, "top", region)
+        b = m.add_port(upper, "bottom", region)
+        m.connect(0, a, upper, b)
+    m.add_convection(
+        [SurfaceRegion(Axis.Z, 0.005, 0, 0.012, 0, 0.008)],
+        "400",
+        "300",
+        domain=upper if split else 0,
+    )
     if fluid:
         m.add_fluid_boundary(
             [SurfaceRegion(Axis.X, 0, 0.003, 0.005, 0.0025, 0.0035)],
@@ -134,3 +159,108 @@ def test_gl02_anisotropic_solid_and_fluid_share_one_temperature_field():
     assert solution.converged
     assert len(solution.probes) == 4
     c.close()
+
+
+def test_gl04_matched_foms_equal_monolith_operators_states_and_probes():
+    with package() as m, package(split=True) as split:
+        for definition in (m, split):
+            definition.add_point_probe(
+                "near_lower_interface", [0.00625, 0.00425, 0.0039]
+            )
+            definition.add_point_probe(
+                "near_upper_interface", [0.00625, 0.00425, 0.0041]
+            )
+        a, b = m.compile(), split.compile()
+    assert [d.cell_count for d in b.domains] == [768, 192]
+    xa = (a.fields.cell_min + a.fields.cell_max) / 2
+    xb = (b.fields.cell_min + b.fields.cell_max) / 2
+    permutation = np.array(
+        [
+            np.flatnonzero(np.all(np.isclose(xa, x, rtol=0, atol=1e-14), axis=1))[0]
+            for x in xb
+        ]
+    )
+    rng = np.random.default_rng(42)
+    state = 300 + rng.random(960)
+    ao, bo = a.assemble(state), b.assemble(state[permutation])
+    np.testing.assert_allclose(
+        bo.K.toarray(), ao.K[permutation][:, permutation].toarray(), atol=1e-14
+    )
+    np.testing.assert_allclose(
+        bo.C.toarray(), ao.C[permutation][:, permutation].toarray(), atol=1e-14
+    )
+    np.testing.assert_allclose(bo.f, ao.f[permutation], atol=1e-14)
+    assert b.source_operator().sum() == pytest.approx(2)
+    np.testing.assert_array_equal(
+        b.eval_materials().density, a.eval_materials().density[permutation]
+    )
+    for study in [Study(), Study(StudyType.TRANSIENT, 300, 2, 0.1)]:
+        sa, sb = a.solve(study), b.solve(study)
+        assert sa.converged and sb.converged
+        np.testing.assert_allclose(
+            sb.state_history, sa.state_history[:, permutation], atol=2e-5, rtol=1e-8
+        )
+        for pa, pb in zip(sa.probes, sb.probes, strict=True):
+            np.testing.assert_allclose(pa.values, pb.values, atol=2e-5, rtol=1e-8)
+    flux = b.connection_flux(0, sb.state)
+    assert flux.size == 96 and np.isfinite(flux).all()
+    repeated = b.solve()
+    assert repeated.converged
+    a.close()
+    b.close()
+
+
+def test_gl05_coarse_upper_fom_ncc_reaches_conservative_steady_and_transient():
+    with package(split=True, coarse=True) as m:
+        compiled = m.compile()
+    assert [d.cell_count for d in compiled.domains] == [768, 48]
+    for study in [Study(), Study(StudyType.TRANSIENT, 300, 2, 0.1)]:
+        solution = compiled.solve(
+            study,
+            opts=SolveOptions(
+                linear_tolerance=1e-12, nonlinear_relative_tolerance=1e-11
+            ),
+        )
+        assert solution.converged
+        ops = compiled.assemble(solution.state, solution.time)
+        if study.type == StudyType.STEADY:
+            assert np.max(np.abs(ops.K @ solution.state - ops.f)) < 2e-6
+            # Independent upper-domain energy balance against its Robin loss.
+            flux = compiled.connection_flux(0, solution.state)
+            centers = (compiled.fields.cell_min + compiled.fields.cell_max) / 2
+            upper = np.arange(768, 816)
+            surface = upper[np.isclose(centers[upper, 2], 0.00475)]
+            conductance = 0.002**2 / (0.00025 / 390 + 1 / 400)
+            robin = conductance * (solution.state[surface] - 300)
+            assert flux.sum() == pytest.approx(robin.sum(), abs=2e-6)
+            corrected = solution.state.copy()
+            # Constant properties: at uniform 300 K every NCC gradient is zero.
+            # This standalone linear solve is the zero-corrector TPFA control.
+            from scipy.sparse.linalg import spsolve
+
+            zero = compiled.assemble(compiled.default_state())
+            baseline = spsolve(zero.K, zero.f)
+            with package(refinement=2) as definition:
+                reference = definition.compile()
+            fine = reference.solve(
+                opts=SolveOptions(
+                    linear_tolerance=1e-12, nonlinear_relative_tolerance=1e-11
+                )
+            )
+            assert fine.converged
+            fine_centers = (reference.fields.cell_min + reference.fields.cell_max) / 2
+            average = []
+            for lo, hi in zip(
+                compiled.fields.cell_min, compiled.fields.cell_max, strict=True
+            ):
+                inside = np.all((fine_centers > lo) & (fine_centers < hi), axis=1)
+                average.append(fine.state[inside].mean())
+            average = np.array(average)
+            corrected_rms = np.sqrt(np.mean((corrected - average) ** 2))
+            baseline_rms = np.sqrt(np.mean((baseline - average) ** 2))
+            assert corrected_rms < baseline_rms
+            # 0.5 K accommodates the independent spatial discretization error;
+            # conservation and nonlinear convergence have separate tight checks.
+            assert np.max(np.abs(corrected - average)) < 0.5
+            reference.close()
+    compiled.close()

@@ -5,9 +5,9 @@
 | 对象 | 职责 | 生命周期 |
 | --- | --- | --- |
 | `ModelDefinition` | 几何、材料、热源、边界、探针和 study 设置 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
-| `mhs::model::CompiledModel` | FOM 域表、Field/StateLayout、Probe；域内保存网格、材料、投影及物性表达式 | `build_model` 的独立结果；供重复装配和求解使用 |
-| `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；重复装配只刷新数值，单次导出独立拥有 |
-| `Solution` | 最终单元状态、状态历史和探针记录 | 独立拥有求解结果 |
+| `mhs::model::CompiledModel` | FOM 域表、Connection、Field/StateLayout、Probe；域内保存网格、材料、投影及物性表达式 | `build_model` 的独立结果；供重复装配和求解使用 |
+| `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；域内重复装配刷新数值，多域路径汇总 CSR，单次导出独立拥有 |
+| `Solution` | 最终全局状态、状态历史和探针记录 | 独立拥有求解结果 |
 
 `compile` 不修改输入；`assemble` 和 `solve` 不修改编译模型。C opaque handle 和 Python wrapper 负责所有权与转换。Python 返回的 NumPy/SciPy 数据在 native handle 销毁后仍有效。
 
@@ -36,14 +36,14 @@
 
 公开 C++ 入口 `mhs::solver::solve(model, study, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 仅暴露 `time_tolerance` 与可选 `max_time_step`。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
 
-探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。重建使用域内 CellId，历史快照保存全局状态。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
+探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。重建使用域内 CellId 并补入连接界面温度迹，历史快照保存全局状态。跨域共享点需明确选择一个域内位置。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
 
 ## 输入与数组约定
 
-- C++ 的 `ModelDefinition::domain.mesh`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Model.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
+- C++ 的 `ModelDefinition::domains[id].mesh`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Model.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
 - C/Python 网格导出使用 `face_minus`、`face_plus`、`face_axis` 和 `face_bounds`。前三者为 `(face_count,)`，bounds 为 `(face_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量沿 axis 从 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
 - 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 minus 的 max 或 plus 的 min 得到。外法向由缺失的一侧确定。一个 cell side 可有多个积分 patch，支持轴对齐的非匹配界面。cell→faces 仅保留一套 CSR 索引，编译器直接构建。
-- 几何与材料按域内 CellId 排列；`K/C/f`、`state` 和 `state_history` 按全局 DofId 排列，通过 FieldLayout 映射。Python `Solution.state` 和 `state_history` 返回对应数组。
+- 几何与材料按 DomainId 拼接，各域内部按 CellId 排列，导出的几何 Cell 引用包含域偏移；FieldLayout 的实体 ID 保持域内索引。`K/C/f`、`state` 和 `state_history` 按全局 DofId 排列，通过 FieldLayout 映射。Python `Solution.state` 和 `state_history` 返回对应数组。
 - `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
 - `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FaceId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
 
@@ -61,7 +61,7 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 ## C API 契约
 
 - 删除外部离散网格输入及 `build_model(definition, mesh)` 重载，模型编译统一通过 `ModelDefinition`。
-- PTA XML 的网格读取保留在 CLI 应用侧，适配为 `ModelDefinition::domain.mesh`；PTA 文件格式与导入逻辑不进入内核或公开 API。
+- PTA XML 的网格读取保留在 CLI 应用侧，适配为 `ModelDefinition::domains[id].mesh`；PTA 文件格式与导入逻辑不进入内核或公开 API。
 - `mhs_operators_copy_k/c` 直接复制 CSR，布局为 `row_ptr[state_count+1]`、`col_idx[nnz]`、`values[nnz]`；Python `assemble()` 返回 SciPy CSR，需要 CSC 的算法自行转换。
 - `mhs_solution_info_t.converged` 和 Python `Solution.converged` 暴露求解收敛结果。API 成功表示调用完成，收敛状态由该字段判断。
 - 流体边界与热边界使用相同的区域数组；入口／回流温度用可空指针表示，实际入流时 NULL 报错。Python 使用区域数组和显式温度值。删除无操作的流体边界类型；空区域条件报错。

@@ -152,7 +152,9 @@ typedef struct {
     size_t state_count, domain_count, field_count;
 } mhs_compiled_info_t;
 
-/** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
+/** Caller-owned geometry arrays, concatenated in DomainId order. XYZ bounds
+ * are flattened (count,3). Cell IDs in this export include the domain cell offset;
+ * FieldLayout entity IDs remain local to their domain and DOFs remain global.
  * Face bounds are (face_count,4) in ascending
  * tangential axes: YZ for X, XZ for Y, XY for Z, each [a_min,a_max,b_min,b_max].
  * Positive flux runs face_minus -> face_plus along face_axis. Exterior patches
@@ -227,6 +229,17 @@ MHS_API const char* mhs_last_error(void);
 
 MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
+/** Domain 0 exists on creation. All domain-local IDs are scoped by domain. */
+MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_add_port(
+    mhs_model_t* m, mhs_index_t domain, const char* name, const mhs_surface_region_t* region, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t domain_a, mhs_index_t port_a, mhs_index_t domain_b,
+    mhs_index_t port_b, mhs_index_t* out_id);
+/** Number of common integration patches; positive flux is outward from side A. */
+MHS_API mhs_status_t mhs_compiled_connection_patch_count(const mhs_compiled_t* c, mhs_index_t connection, size_t* out);
+MHS_API mhs_status_t mhs_compiled_eval_connection_flux(const mhs_compiled_t* c, mhs_index_t connection,
+    const double* state, size_t state_count, double time, double* outward_a, size_t patch_count);
+
 /** Set the default study copied into subsequent compiled snapshots. */
 MHS_API mhs_status_t mhs_model_set_study(mhs_model_t* m, const mhs_study_t* study);
 
@@ -236,8 +249,8 @@ MHS_API mhs_status_t mhs_model_set_study(mhs_model_t* m, const mhs_study_t* stud
 
 /** Cartesian vertex arrays in SI metres; each axis must be finite, strictly
  * increasing and contain at least two entries. All axes are replaced atomically. */
-MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
-    mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
+MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t domain, size_t nx, const double* x,
+    size_t ny, const double* y, size_t nz, const double* z);
 
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
 
@@ -253,9 +266,9 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
  * Later volumes override earlier volumes. MHS_INVALID_INDEX omits the heat source. */
 MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_add_volume(
-    mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id);
-MHS_API mhs_status_t mhs_model_volume_add_box(
-    mhs_model_t* m, mhs_index_t volume, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3]);
+    mhs_model_t* m, mhs_index_t domain, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_volume_add_box(mhs_model_t* m, mhs_index_t domain, mhs_index_t volume,
+    mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3]);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  atomic boundary conditions                 */
@@ -264,18 +277,18 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
 /** Surface conditions require a nonempty array of SI rectangles. Later regions
  * override earlier ones; uncovered exterior faces use the default thermal BC. */
 MHS_API mhs_status_t mhs_model_add_dirichlet(
-    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature);
+    mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature);
 
 MHS_API mhs_status_t mhs_model_add_neumann(
-    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux);
+    mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux);
 
-MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    const char* coefficient, const char* ambient_temperature);
+MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions,
+    size_t n_regions, const char* coefficient, const char* ambient_temperature);
 
-MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char* temperature);
-MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* heat_flux);
+MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, mhs_index_t domain, const char* temperature);
+MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, mhs_index_t domain, const char* heat_flux);
 MHS_API mhs_status_t mhs_model_set_default_convection(
-    mhs_model_t* m, const char* coefficient, const char* ambient_temperature);
+    mhs_model_t* m, mhs_index_t domain, const char* coefficient, const char* ambient_temperature);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  function library                            */
@@ -302,8 +315,9 @@ MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name,
 /* Same region layout as thermal boundaries. inlet_temperature also supplies
  * pressure-outlet backflow temperature. NULL is allowed only when the boundary
  * does not admit fluid during the solve. value is Pa or kg/s. */
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    mhs_fluid_bc_t kind, double value, const double* inlet_temperature);
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t domain,
+    const mhs_surface_region_t* regions, size_t n_regions, mhs_fluid_bc_t kind, double value,
+    const double* inlet_temperature);
 
 /* ------------------------------------------------------------------ */
 /*  Compilation                                                        */

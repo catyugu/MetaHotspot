@@ -1,7 +1,9 @@
 #include "compiler/model_compiler.hpp"
 #include "solver/assembler.hpp"
+#include "solver/connection_flux.hpp"
 #include "solver/frozen_flow.hpp"
 #include "solver/solver.hpp"
+#include <cmath>
 #include <gtest/gtest.h>
 #include <type_traits>
 
@@ -10,15 +12,15 @@ namespace {
     {
         using namespace mhs::model;
         ModelDefinition d;
-        d.domain.mesh.x_vertices = {0, 1, 2};
-        d.domain.mesh.y_vertices = d.domain.mesh.z_vertices = {0, 1};
+        d.domains[0].mesh.x_vertices = {0, 1, 2};
+        d.domains[0].mesh.y_vertices = d.domains[0].mesh.z_vertices = {0, 1};
         MaterialSpec liquid;
         liquid.conductivity_x = liquid.conductivity_y = liquid.conductivity_z = "1";
         liquid.density = liquid.specific_heat = "1";
         liquid.dynamic_viscosity = "T/300";
         d.materials.push_back({"liquid", liquid});
-        d.domain.volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {2, 1, 1}}}}};
-        d.domain.fluid_boundaries = {
+        d.domains[0].volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {2, 1, 1}}}}};
+        d.domains[0].fluid_boundaries = {
             {{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {1, 280}}, {{{Axis::X, 2, {0, 1, 0, 1}}}, PressureOutlet {0}}};
         return d;
     }
@@ -50,11 +52,11 @@ TEST(GenericLayout, RuntimeViscosityUsesInitialFieldAndCompiledSnapshotIsReusabl
 TEST(GenericLayout, MissingActualInflowTemperatureFailsAtRuntime)
 {
     auto d = channel();
-    std::get<mhs::model::PressureInlet>(d.domain.fluid_boundaries.front().condition).temperature.reset();
+    std::get<mhs::model::PressureInlet>(d.domains[0].fluid_boundaries.front().condition).temperature.reset();
     const auto compiled = mhs::compiler::build_model(d);
     EXPECT_THROW(mhs::solver::solve(compiled), std::invalid_argument);
-    std::get<mhs::model::PressureInlet>(d.domain.fluid_boundaries.front().condition).temperature = 280;
-    std::get<mhs::model::PressureOutlet>(d.domain.fluid_boundaries.back().condition).pressure = 2;
+    std::get<mhs::model::PressureInlet>(d.domains[0].fluid_boundaries.front().condition).temperature = 280;
+    std::get<mhs::model::PressureOutlet>(d.domains[0].fluid_boundaries.back().condition).pressure = 2;
     const auto reversed = mhs::compiler::build_model(d);
     EXPECT_THROW(mhs::solver::solve(reversed), std::invalid_argument);
 }
@@ -105,4 +107,176 @@ TEST(GenericLayout, NonuniformInitialDensityPreservesFrozenMassBalance)
             term.condition);
     for (const auto residual : balance)
         EXPECT_NEAR(residual, 0, 1e-12);
+}
+
+namespace {
+    mhs::model::ModelDefinition joined_blocks(std::size_t n, bool nonmatching)
+    {
+        using namespace mhs::model;
+        ModelDefinition d;
+        d.domains.resize(2);
+        MaterialSpec solid;
+        solid.conductivity_x = solid.conductivity_y = solid.conductivity_z = "1";
+        solid.density = solid.specific_heat = "1";
+        d.materials.push_back({"solid", solid});
+        for (std::size_t side = 0; side < 2; ++side) {
+            auto& domain = d.domains[side];
+            const auto nx = side == 1 && nonmatching ? n / 2 : n;
+            for (std::size_t i = 0; i <= nx; ++i) {
+                domain.mesh.x_vertices.push_back(static_cast<double>(i) / static_cast<double>(nx));
+                domain.mesh.y_vertices.push_back(static_cast<double>(i) / static_cast<double>(nx));
+            }
+            for (std::size_t i = 0; i <= n / 2; ++i)
+                domain.mesh.z_vertices.push_back(
+                    static_cast<double>(side) / 2 + static_cast<double>(i) / static_cast<double>(n));
+            domain.volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}}};
+            domain.default_thermal_boundary = DirichletBoundary {"300+x+2*y+3*z"};
+            domain.ports = {{"join", {Axis::Z, 0.5, {0, 1, 0, 1}}}};
+        }
+        d.connections = {{{0, 0}, {1, 0}}};
+        return d;
+    }
+}
+
+TEST(GenericLayout, NonmatchingConnectionCorrectsLinearTangentialOffsetAndConservesFlux)
+{
+    const auto compiled = mhs::compiler::build_model(joined_blocks(4, true));
+    ASSERT_EQ(compiled.connections.size(), 1u);
+    const auto& connection = compiled.connections[0];
+    EXPECT_TRUE(connection.nonmatching);
+    EXPECT_EQ(connection.patches.size(), 16u);
+    mhs::core::Vector<double> exact(compiled.layout.state_count);
+    for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
+        const auto& f = compiled.layout.fields[d];
+        for (std::size_t i = 0; i < f.dofs.size(); ++i) {
+            const auto p = compiled.domains[d].discrete.cells[f.entities[i]].center();
+            exact[f.dofs[i]] = 300 + p[0] + 2 * p[1] + 3 * p[2];
+        }
+    }
+    const auto corrected = mhs::solver::assemble_thermal(compiled, exact, 0);
+    auto baseline = compiled;
+    baseline.connections[0].nonmatching = false;
+    const auto tpfa = mhs::solver::assemble_thermal(baseline, exact, 0);
+    double max_corrected = 0, max_tpfa = 0, total_correction = 0;
+    for (std::size_t row = 0; row < exact.size(); ++row) {
+        double rc = -corrected.f[row], rb = -tpfa.f[row];
+        for (std::size_t col = 0; col < exact.size(); ++col) {
+            rc += corrected.K.coeff(row, col) * exact[col];
+            rb += tpfa.K.coeff(row, col) * exact[col];
+        }
+        max_corrected = std::max(max_corrected, std::abs(rc));
+        max_tpfa = std::max(max_tpfa, std::abs(rb));
+        total_correction += corrected.f[row] - tpfa.f[row];
+    }
+    EXPECT_LT(max_corrected, 1e-11);
+    EXPECT_GT(max_tpfa, 0.01);
+    EXPECT_NEAR(total_correction, 0, 1e-12);
+    // Reversing the declared orientation reverses each physical heat rate.
+    const auto original_flux = mhs::solver::evaluate_connection_flux(compiled, connection, exact, 0);
+    auto reversed = connection;
+    std::swap(reversed.a, reversed.b);
+    for (auto& patch : reversed.patches)
+        std::swap(patch.a, patch.b);
+    const auto reversed_flux = mhs::solver::evaluate_connection_flux(compiled, reversed, exact, 0);
+    for (std::size_t i = 0; i < original_flux.size(); ++i) {
+        EXPECT_NEAR(original_flux[i].outward_a, -reversed_flux[i].outward_a, 1e-12);
+        EXPECT_NEAR(original_flux[i].interface_temperature, reversed_flux[i].interface_temperature, 1e-12);
+    }
+    // Permute DOFs across both domain blocks, independently of local CellIds.
+    auto permuted = compiled;
+    for (auto& field : permuted.layout.fields)
+        for (auto& dof : field.dofs)
+            dof = static_cast<mhs::model::DofId>(exact.size() - 1 - dof);
+    auto reverse_state = exact;
+    std::reverse(reverse_state.begin(), reverse_state.end());
+    const auto mapped = mhs::solver::assemble_thermal(permuted, reverse_state, 0);
+    for (std::size_t i = 0; i < exact.size(); ++i) {
+        EXPECT_NEAR(corrected.f[i], mapped.f[exact.size() - 1 - i], 1e-12);
+        for (std::size_t j = 0; j < exact.size(); ++j) {
+            EXPECT_DOUBLE_EQ(corrected.K.coeff(i, j), mapped.K.coeff(exact.size() - 1 - i, exact.size() - 1 - j));
+            EXPECT_DOUBLE_EQ(corrected.C.coeff(i, j), mapped.C.coeff(exact.size() - 1 - i, exact.size() - 1 - j));
+        }
+    }
+    const auto solution = mhs::solver::solve(compiled);
+    EXPECT_TRUE(solution.converged);
+    for (std::size_t i = 0; i < exact.size(); ++i)
+        EXPECT_NEAR(solution.state[i], exact[i], 2e-4);
+}
+
+TEST(GenericLayout, ConnectionRejectsMissingDuplicateOverlappingAndInvalidPorts)
+{
+    using namespace mhs::model;
+    auto d = joined_blocks(4, false);
+    d.connections.clear();
+    EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
+    d.connections = {{{0, 0}, {1, 0}}, {{0, 0}, {1, 0}}};
+    EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
+    d.connections.resize(1);
+    d.domains[0].ports.push_back(d.domains[0].ports.front());
+    EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
+    d.domains[0].ports.pop_back();
+    d.domains[1].ports[0].region.coordinate = 0.6;
+    EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
+    d = joined_blocks(4, false);
+    d.domains[0].thermal_boundaries = {{{d.domains[0].ports[0].region}, NeumannBoundary {"0"}}};
+    EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
+}
+
+TEST(GenericLayout, NccManufacturedQuadraticConvergesAgainstIndependentSolution)
+{
+    double previous = 1.0;
+    for (const std::size_t n : {4u, 8u, 16u}) {
+        auto definition = joined_blocks(n, true);
+        definition.sources = {"-6"};
+        for (auto& d : definition.domains) {
+            d.default_thermal_boundary = mhs::model::DirichletBoundary {"300+x*x+y*y+z*z"};
+            d.volumes.front().source = 0;
+        }
+        auto compiled = mhs::compiler::build_model(definition);
+        mhs::solver::SolveOptions options;
+        options.linear_tolerance = 1e-12;
+        options.nonlinear_relative_tolerance = 1e-12;
+        const auto corrected = mhs::solver::solve(compiled, compiled.study, {}, options);
+        ASSERT_TRUE(corrected.converged);
+        compiled.connections[0].nonmatching = false; // explicit zero-corrector control, tests only
+        const auto uncorrected = mhs::solver::solve(compiled, compiled.study, {}, options);
+        ASSERT_TRUE(uncorrected.converged);
+        auto error = [&](const auto& solution) {
+            double sum = 0;
+            for (std::size_t d = 0; d < compiled.domains.size(); ++d)
+                for (std::size_t c = 0; c < compiled.domains[d].discrete.cells.size(); ++c) {
+                    const auto& cell = compiled.domains[d].discrete.cells[c];
+                    const auto x = cell.center();
+                    const double exact = 300 + x[0] * x[0] + x[1] * x[1] + x[2] * x[2];
+                    const double difference = solution.state[compiled.layout.fields[d].dofs[c]] - exact;
+                    sum += cell.volume() * difference * difference;
+                }
+            return std::sqrt(sum);
+        };
+        const double ncc = error(corrected), tpfa = error(uncorrected);
+        RecordProperty("ncc_error_" + std::to_string(n), ncc);
+        RecordProperty("tpfa_error_" + std::to_string(n), tpfa);
+        EXPECT_LT(ncc, previous * 0.4); // at least 1.32 order, independent of a fitted reference
+        EXPECT_LT(ncc, tpfa);
+        previous = ncc;
+    }
+}
+
+TEST(GenericLayout, PartialPortsPreserveExternalBoundarySubdivisions)
+{
+    auto definition = joined_blocks(4, true);
+    for (auto& domain : definition.domains)
+        domain.ports[0].region.rectangle = {0, 0.4, 0, 0.7};
+    const auto compiled = mhs::compiler::build_model(definition);
+    double interface_area = 0;
+    for (const auto& patch : compiled.connections[0].patches)
+        interface_area += (patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2]);
+    EXPECT_NEAR(interface_area, 0.28, 1e-14);
+    for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
+        double remaining = 0;
+        for (const auto& boundary : compiled.domains[d].boundary_faces)
+            if (boundary.axis == mhs::model::Axis::Z && boundary.sign == (d == 0 ? 1 : -1))
+                remaining += (boundary.bounds[1] - boundary.bounds[0]) * (boundary.bounds[3] - boundary.bounds[2]);
+        EXPECT_NEAR(remaining, 0.72, 1e-14);
+    }
 }

@@ -9,13 +9,13 @@ using namespace mhs::model;
 static mhs::model::ModelDefinition cube_definition()
 {
     mhs::model::ModelDefinition d;
-    d.domain.mesh.x_vertices = d.domain.mesh.y_vertices = d.domain.mesh.z_vertices = {0, 0.5, 1};
+    d.domains[0].mesh.x_vertices = d.domains[0].mesh.y_vertices = d.domains[0].mesh.z_vertices = {0, 0.5, 1};
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
     mat.density = mat.specific_heat = "1";
     d.materials.push_back({"solid", mat});
     d.sources = {"0"};
-    d.domain.volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
+    d.domains[0].volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
     return d;
 }
 
@@ -80,12 +80,12 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
 TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
 {
     auto d = cube_definition();
-    d.domain.mesh.x_vertices = d.domain.mesh.y_vertices = d.domain.mesh.z_vertices = {0, 1};
+    d.domains[0].mesh.x_vertices = d.domains[0].mesh.y_vertices = d.domains[0].mesh.z_vertices = {0, 1};
     const std::array<mhs::model::ThermalBoundary, 3> conditions {mhs::model::DirichletBoundary {"280+10*t+y"},
         mhs::model::NeumannBoundary {"T/100+t+y"}, mhs::model::ConvectionBoundary {"T/100+t+y", "280+t+z"}};
     for (size_t kind = 0; kind < conditions.size(); ++kind) {
         SCOPED_TRACE(kind);
-        d.domain.thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, conditions[kind]}};
+        d.domains[0].thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, conditions[kind]}};
         const auto model = test_pta::build_model(d);
         // All other faces share the compiled zero-flux default condition.
         ASSERT_EQ(model.boundary_conditions.size(), 2u);

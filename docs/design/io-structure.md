@@ -2,21 +2,21 @@
 
 `model/model_definition.hpp` 是库的建模契约。所有几何、网格坐标和探针坐标使用 SI 米；材料及边界表达式使用规范变量 `x/y/z/T/t`，编译器原样解析。材料中的 `T` 表示单元温度，热边界中的 `T` 表示表面迹温度。
 
-`ModelDefinition` 保存 settings、mesh、variables、functions、materials、sources、volumes、thermal_boundaries、default_thermal_boundary、point_probes 和 fluid_boundaries。材料和热源采用有序表，`VolumeSpec` 使用表内 ID 引用；`core::invalid_id` 表示无热源。
+`ModelDefinition` 保存 Study、domains、connections、variables、functions、materials、sources 和 point_probes。各 FomDomainDefinition 保存 mesh、volumes、thermal_boundaries、default_thermal_boundary、fluid_boundaries 和命名 ports。材料和热源采用有序表，`VolumeSpec` 使用表内 ID 引用；`core::invalid_id` 表示无热源。
 
 ## 体几何
 
 `VolumeSpec { material, source, geometry }` 的 geometry 为三维轴对齐 `BoxOperation { operation, min, max }` 序列。每个 box 的 min/max 是绝对 SI 坐标，必须有限且严格递增。操作按顺序执行：最后命中的 Add/Subtract 决定点是否属于体；后添加的体覆盖前面的体。当前网格离散保持笛卡尔六面体，不引入 CAD 对象树。
 
-编译器消费 `ModelDefinition::domain.mesh` 中显式给定、严格递增的 Cartesian 网格轴，构造内部 `DiscreteMesh`。热源按实际几何交叠体积积分，不要求源区域边界与单元边界重合。
+编译器消费 `ModelDefinition::domains[0].mesh` 中显式给定、严格递增的 Cartesian 网格轴，构造内部 `DiscreteMesh`。热源按实际几何交叠体积积分，不要求源区域边界与单元边界重合。
 
-`SurfaceRegion { axis, coordinate, rectangle }` 描述 SI 平面区域。ThermalBoundarySpec 按添加顺序覆盖，default_thermal_boundary 覆盖未命中的外表面。流体边界共用 SurfaceRegion，并采用 PressureInlet、MassFlowInlet、PressureOutlet variant；入口缺省温度采用模型初温。
+`SurfaceRegion { axis, coordinate, rectangle }` 描述 SI 平面区域。ThermalBoundarySpec 按添加顺序覆盖，default_thermal_boundary 覆盖未命中的外表面。流体边界共用 SurfaceRegion，并采用 PressureInlet、MassFlowInlet、PressureOutlet variant；实际入口或逆流必须显式提供温度，缺少温度时报告错误。
 
 ## 应用层
 
 PTA 的 XML、LengthUnit、Layer、Block、Rect、FaceKey 和表达式形式参数规则全部位于 `apps/metahotspot`。`pta::normalize` 将层厚度/偏移/矩形展开成绝对三维 SI box，解析材料名，换算边界、网格和探针坐标，并完成 PTA 的 `x→T/t` 重写。随后才调用 `compiler::build_model`。
 
-CLI 兼容 PTA 时保留从 XML 的 `Results/Mesh` 或 `GeneratedMesh` 读取网格坐标轴的行为。读取与单位换算属于应用层，转换后通过通用的 `ModelDefinition::domain.mesh` 传入编译器；内核与公开 API 不包含 PTA 网格导入逻辑或外部 `DiscreteMesh` 输入入口。
+CLI 兼容 PTA 时保留从 XML 的 `Results/Mesh` 或 `GeneratedMesh` 读取网格坐标轴的行为。读取与单位换算属于应用层，转换后通过通用的 `ModelDefinition::domains[0].mesh` 传入编译器；内核与公开 API 不包含 PTA 网格导入逻辑或外部 `DiscreteMesh` 输入入口。
 
 PTA `VolumetricHeatSource` 使用 W/m³；引用裸函数名时，适配器转换为 `function(t)`。PTA 的周期分段常数函数 Interval 为每段时长，周期为 Interval × Values.Count。
 
@@ -35,11 +35,11 @@ Python 的 `set_cartesian_mesh`、`set_study` 和 `add_point_probe(name, positio
 以下示例创建一个可编译、可求解的模型：
 
 ```python
-from metahotspot import Model, SurfaceRegion
+from metahotspot import Model, Study, SurfaceRegion
 from metahotspot.enums import Axis
 
 with Model() as model:
-    model.set_study()
+    model.set_study(Study())
     model.set_cartesian_mesh([0, 0.001], [0, 0.001], [0, 0.001])
     material = model.add_material("solid", "1", "1", "1", "1000", "500")
     volume = model.add_volume(material)

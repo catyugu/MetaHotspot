@@ -24,12 +24,12 @@ namespace test_pta {
         Model m;
         static_cast<mhs::model::FomDomain&>(m) = mhs::compiler::build_model(d).domains.front();
         m.flow = mhs::solver::initialize_frozen_flow(m, mhs::core::Vector<double>(m.discrete.cells.size(), 300));
-        m.sampling_grid = d.domain.mesh;
-        m.output.cartesian_shape
-            = {d.domain.mesh.x_vertices.size(), d.domain.mesh.y_vertices.size(), d.domain.mesh.z_vertices.size()};
-        for (double x : d.domain.mesh.x_vertices)
-            for (double y : d.domain.mesh.y_vertices)
-                for (double z : d.domain.mesh.z_vertices)
+        m.sampling_grid = d.domains[0].mesh;
+        m.output.cartesian_shape = {d.domains[0].mesh.x_vertices.size(), d.domains[0].mesh.y_vertices.size(),
+            d.domains[0].mesh.z_vertices.size()};
+        for (double x : d.domains[0].mesh.x_vertices)
+            for (double y : d.domains[0].mesh.y_vertices)
+                for (double z : d.domains[0].mesh.z_vertices)
                     m.output.points.push_back({x, y, z});
         return m;
     }

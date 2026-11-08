@@ -1,4 +1,5 @@
 #include "compiler/model_compiler.hpp"
+#include "compiler/connections.hpp"
 #include "compiler/geometry_compiler.hpp"
 #include "compiler/model_functions.hpp"
 #include "core/csr_matrix.hpp"
@@ -66,102 +67,108 @@ namespace mhs::compiler {
     {
         mhs::model::CompiledModel compiled;
         compiled.study = definition.study;
-        compiled.domains.emplace_back();
-        auto& model = compiled.domains.front();
+        if (definition.domains.empty())
+            throw std::invalid_argument("model must contain a FOM domain");
 
         auto symbols = build_symbol_table(definition);
         compiled.point_probes = definition.point_probes;
 
-        // Compile material properties in ModelDefinition::materials order.
-        model.material_table.resize(definition.materials.size());
+        for (std::size_t domain_id = 0; domain_id < definition.domains.size(); ++domain_id) {
+            const auto& domain = definition.domains[domain_id];
+            compiled.domains.emplace_back();
+            auto& model = compiled.domains.back();
+            // Compile material properties in ModelDefinition::materials order.
+            model.material_table.resize(definition.materials.size());
 
-        for (size_t m = 0; m < definition.materials.size(); m++) {
-            const auto& mat = definition.materials[m].value;
-            auto compile_mat = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
-            auto& props = model.material_table[m];
-            props.kx = compile_mat(mat.conductivity_x);
-            props.ky = compile_mat(mat.conductivity_y);
-            props.kz = compile_mat(mat.conductivity_z);
-            props.rho = compile_mat(mat.density);
-            props.c = compile_mat(mat.specific_heat);
-            if (mat.dynamic_viscosity.has_value()) {
-                if (mat.dynamic_viscosity->empty()) {
-                    throw std::runtime_error(
-                        "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
+            for (size_t m = 0; m < definition.materials.size(); m++) {
+                const auto& mat = definition.materials[m].value;
+                auto compile_mat = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
+                auto& props = model.material_table[m];
+                props.kx = compile_mat(mat.conductivity_x);
+                props.ky = compile_mat(mat.conductivity_y);
+                props.kz = compile_mat(mat.conductivity_z);
+                props.rho = compile_mat(mat.density);
+                props.c = compile_mat(mat.specific_heat);
+                if (mat.dynamic_viscosity.has_value()) {
+                    if (mat.dynamic_viscosity->empty()) {
+                        throw std::runtime_error(
+                            "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
+                    }
+                    props.dynamic_viscosity = compile_mat(*mat.dynamic_viscosity);
                 }
-                props.dynamic_viscosity = compile_mat(*mat.dynamic_viscosity);
             }
-        }
 
-        for (const auto& source : definition.sources)
-            model.heat_source_table.push_back(mhs::expression::parse(source, symbols));
-        for (const auto& volume : definition.domain.volumes) {
-            if (volume.material >= definition.materials.size())
-                throw std::out_of_range("volume material ID out of range");
-            if (volume.source != mhs::core::invalid_id && volume.source >= definition.sources.size())
-                throw std::out_of_range("volume source ID out of range");
-            for (const auto& box : volume.geometry)
-                for (int a = 0; a < 3; ++a)
-                    if (!std::isfinite(box.min[a]) || !std::isfinite(box.max[a]) || box.min[a] >= box.max[a])
-                        throw std::invalid_argument("box bounds must be finite and increasing");
-        }
-
-        // Compile boundary patches.
-        auto& boundary_conditions = model.boundary_conditions;
-        auto compiled_boundaries
-            = compile_thermal_boundaries(definition.domain.thermal_boundaries, boundary_conditions, symbols);
-
-        auto default_thermal_boundary
-            = compile_thermal_boundary(definition.domain.default_thermal_boundary, boundary_conditions, symbols);
-
-        compile_cartesian_mesh(model, definition.domain.mesh, definition.domain.volumes);
-        project_cell_regions(model, definition.domain.volumes);
-        for (const auto material : model.cell_material)
-            if (material >= model.material_table.size())
-                throw std::out_of_range("cell has no valid material assignment");
-        for (const auto& patch :
-            project_exterior_surface_regions(model.discrete, compiled_boundaries, default_thermal_boundary))
-            model.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
-                static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
-
-        // Fluid membership and boundary projection are immutable; no pressure solve here.
-        auto& fluid = model.fluid;
-        fluid.global_to_fluid.assign(model.discrete.cells.size(), mhs::core::invalid_id);
-        for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
-            if (!model.material_table[model.cell_material[c]].dynamic_viscosity)
-                continue;
-            fluid.global_to_fluid[c] = static_cast<mhs::model::FluidCellId>(fluid.fluid_to_global.size());
-            fluid.fluid_to_global.push_back(static_cast<mhs::model::CellId>(c));
-        }
-        if (fluid.fluid_to_global.empty())
-            fluid.global_to_fluid.clear();
-        else {
-            mhs::core::Vector<TaggedSurfaceRegion> regions;
-            for (const auto& boundary : definition.domain.fluid_boundaries) {
-                const auto id = model.fluid_conditions.size();
-                model.fluid_conditions.push_back(boundary.condition);
-                for (const auto& region : boundary.regions)
-                    regions.push_back({region, id});
+            for (const auto& source : definition.sources)
+                model.heat_source_table.push_back(mhs::expression::parse(source, symbols));
+            for (const auto& volume : domain.volumes) {
+                if (volume.material >= definition.materials.size())
+                    throw std::out_of_range("volume material ID out of range");
+                if (volume.source != mhs::core::invalid_id && volume.source >= definition.sources.size())
+                    throw std::out_of_range("volume source ID out of range");
+                for (const auto& box : volume.geometry)
+                    for (int a = 0; a < 3; ++a)
+                        if (!std::isfinite(box.min[a]) || !std::isfinite(box.max[a]) || box.min[a] >= box.max[a])
+                            throw std::invalid_argument("box bounds must be finite and increasing");
             }
-            for (const auto& patch : project_exterior_surface_regions(model.discrete, regions))
-                if (fluid.global_to_fluid[patch.cell] != mhs::core::invalid_id)
-                    model.fluid_boundaries.push_back({patch.cell, patch.axis, patch.bounds, patch.tag});
-        }
 
-        // Only temperature is an unknown in frozen-flow mode. Hydraulic diagnostics
-        // are solve workspace data, not fictitious pressure/velocity state blocks.
-        mhs::model::FieldLayout temperature;
-        temperature.domain = 0;
-        const auto n = model.discrete.cells.size();
-        mhs::core::detail::checked_sparse_size(n);
-        temperature.entities.resize(n);
-        temperature.dofs.resize(n);
-        for (std::size_t c = 0; c < n; ++c) {
-            temperature.entities[c] = static_cast<mhs::model::CellId>(c);
-            temperature.dofs[c] = static_cast<mhs::model::DofId>(c);
+            // Compile boundary patches.
+            auto& boundary_conditions = model.boundary_conditions;
+            auto compiled_boundaries
+                = compile_thermal_boundaries(domain.thermal_boundaries, boundary_conditions, symbols);
+
+            auto default_thermal_boundary
+                = compile_thermal_boundary(domain.default_thermal_boundary, boundary_conditions, symbols);
+
+            compile_cartesian_mesh(model, domain.mesh, domain.volumes);
+            project_cell_regions(model, domain.volumes);
+            for (const auto material : model.cell_material)
+                if (material >= model.material_table.size())
+                    throw std::out_of_range("cell has no valid material assignment");
+            for (const auto& patch :
+                project_exterior_surface_regions(model.discrete, compiled_boundaries, default_thermal_boundary))
+                model.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
+                    static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
+
+            // Fluid membership and boundary projection are immutable; no pressure solve here.
+            auto& fluid = model.fluid;
+            fluid.global_to_fluid.assign(model.discrete.cells.size(), mhs::core::invalid_id);
+            for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
+                if (!model.material_table[model.cell_material[c]].dynamic_viscosity)
+                    continue;
+                fluid.global_to_fluid[c] = static_cast<mhs::model::FluidCellId>(fluid.fluid_to_global.size());
+                fluid.fluid_to_global.push_back(static_cast<mhs::model::CellId>(c));
+            }
+            if (fluid.fluid_to_global.empty())
+                fluid.global_to_fluid.clear();
+            else {
+                mhs::core::Vector<TaggedSurfaceRegion> regions;
+                for (const auto& boundary : domain.fluid_boundaries) {
+                    const auto id = model.fluid_conditions.size();
+                    model.fluid_conditions.push_back(boundary.condition);
+                    for (const auto& region : boundary.regions)
+                        regions.push_back({region, id});
+                }
+                for (const auto& patch : project_exterior_surface_regions(model.discrete, regions))
+                    if (fluid.global_to_fluid[patch.cell] != mhs::core::invalid_id)
+                        model.fluid_boundaries.push_back({patch.cell, patch.axis, patch.bounds, patch.tag});
+            }
+
+            // Only temperature is an unknown in frozen-flow mode. Hydraulic diagnostics
+            // are solve workspace data, not fictitious pressure/velocity state blocks.
+            mhs::model::FieldLayout temperature;
+            temperature.domain = static_cast<mhs::model::DomainId>(domain_id);
+            const auto n = model.discrete.cells.size();
+            mhs::core::detail::checked_sparse_size(compiled.layout.state_count + n);
+            temperature.entities.resize(n);
+            temperature.dofs.resize(n);
+            for (std::size_t c = 0; c < n; ++c) {
+                temperature.entities[c] = static_cast<mhs::model::CellId>(c);
+                temperature.dofs[c] = static_cast<mhs::model::DofId>(compiled.layout.state_count + c);
+            }
+            compiled.layout.state_count += n;
+            compiled.layout.fields.push_back(std::move(temperature));
         }
-        compiled.layout.state_count = n;
-        compiled.layout.fields.push_back(std::move(temperature));
+        compile_connections(definition, compiled);
         return compiled;
     }
 

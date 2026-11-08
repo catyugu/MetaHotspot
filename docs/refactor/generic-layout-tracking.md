@@ -201,8 +201,8 @@ CI 采用小规模、固定种子的确定性端到端验收；性能/规模验�
 - [ ] C++ ModelDefinition / CompiledModel 所有权、域表示和 FOM 内部流体语义已固定；不要求用户建 Fluid Domain。
 - [ ] `StateLayout` 明确区分 Cell/Face/DOF，并支持 FOM 多物理场与 ROM 状态。
 - [ ] 已删除 ModelDefinition/编译后 Model 的 `reference_temperature` 及 C ABI/Python 关联接口；冻结流场与完全耦合流场按运行温度评价物性，入口/逆流温度边界具有明确来源，没有隐藏的模型级默认温度。
-- [ ] 单 FOM GL-01 A 与 GL-02 的现有稳态、瞬态和流体回归通过。
-- [ ] Connection 支持匹配 FOM–FOM，GL-04 的代数等价与守恒通过。
+- [x] 单 FOM GL-01 A 与 GL-02 的现有稳态、瞬态和流体回归通过。
+- [x] Connection 支持匹配 FOM–FOM，GL-04 的代数等价与守恒通过。
 - [ ] 跨 Domain 非匹配连接 GL-05 已实现 NCC 热流校正并通过修正收敛、守恒及参考误差验收；单 FOM 内非匹配 GL-06 使用 TPFA 且无需 NCC，具备验证结果或明确、已接受的范围结论。
 - [ ] ROM Domain 可以完整连接；GL-07 满秩等价和截断误差验收通过。
 - [ ] 交错流体与双向热流耦合支持落地，GL-03 / GL-08 验收通过。
@@ -252,3 +252,70 @@ PR1 分支：`refactor/generic-model-layout`，目标 `refactor/generic_layout`�
 独立消费工程，以及关闭任一测试类别后的目标／注册隔离。跨平台验收由 PR CI
 执行。Connection、NCC、ROM 域和交错／双向流动求解仍按后续阶段实施；本跟踪
 文档保持 OPEN。长期契约见 `docs/design/state-layout.md`。
+
+## 11. PR2 实施记录
+
+PR2 分支：`refactor/fom-connections`，目标 `refactor/generic_layout`。
+
+- 声明式模型采用 `domains` 表，默认域为 0。命名矩形 Port 与 Connection
+  使用整数 ID；C ABI 域内构造显式接收 DomainId，Python 使用 `domain=0`
+  默认参数。材料、源、Study 和 Probe 仍归属于模型。
+- 编译器验证端口外表面覆盖、相反法向、唯一连接、端口及显式边界重叠。
+  连接区域从默认外部边界积分中精确扣除，保留剩余边界的切分。
+- 装配、冻结流场、稳态与瞬态求解均支持多个 FOM；全局 DOF 与各域
+  CellId 独立。几何／物性／源积分导出按 DomainId 拼接，源算子根据
+  FieldLayout 散布。单域恒等布局保留原有直接装配路径。
+- 匹配连接采用法向串联热阻。非匹配连接使用公共积分矩形和切向重建
+  的 NCC 延迟校正，参与每次非线性迭代及瞬态阶段；同一子片热流反号
+  散布到两侧。公开热流查询复用装配内核，无额外流场初始化。
+- Probe 重建补入消元后的连接界面温度迹；处于多个域上的歧义 Probe
+  清楚报错。编译结果不保存运行态 corrector 或冻结流场。
+
+### 验证与数值证据
+
+本地 GCC Release 验证命令：
+
+```bash
+cmake --build build --parallel 4
+ctest --test-dir build --output-on-failure
+PYTHONPATH=python OMP_NUM_THREADS=2 python -m pytest python/tests -q
+OMP_NUM_THREADS=2 python run_cases.py
+```
+
+- GL-04：GL-01 A / B 的 960 状态在显式坐标置换后比较 K、C、f；
+  比较稳态、2 s 瞬态的 21 个输出、四个 Probe、源与物性导出。
+  两域分别为 768 / 192 Cell，界面为 96 个匹配子片。
+- GL-05：768 / 48 Cell 两域，96 个公共子片；严格求解设置为线性相对
+  容差 `1e-12`、非线性相对容差 `1e-11`。稳态最大方程残差约
+  `8.3e-11 W`；界面总热流与上部 Robin 散热相等，并通过 2 s 瞬态。
+  独立空间参考为 7,680 Cell 单体 FOM，把细网格温度按体积平均到验收
+  网格。当前例中 NCC 整体 RMS 误差 `0.31149 K`，零次 NCC 的 TPFA
+  对照为 `0.31363 K`；最大误差分别约 `0.34389 / 0.34665 K`。
+  对照在统一 300 K 场下装配无切向修正的常物性系统，并独立求解。
+  这些误差同时包含域内部空间离散差异，不能全归因于界面。
+- 独立制造解 `T=300+x²+y²+z²`、`q'''=-6`、`k=1`，两域在
+  `z=0.5` 连接，右域切向分辨率减半。体积加权 L2 温度误差如下，
+  不使用细网格解充当解析真值：
+
+| 左域每轴基准分辨率 | NCC 误差 (K) | 零次校正 TPFA 误差 (K) |
+| --- | ---: | ---: |
+| 4 | 0.0273884 | 0.0288960 |
+| 8 | 0.00750346 | 0.00827010 |
+| 16 | 0.00200360 | 0.00272884 |
+
+NCC 观测阶约为 1.87 / 1.90。另以非零切向梯度线性解验证 NCC 方程
+残差接近舍入误差，而零次校正残差明显非零；两侧修正总和为零。
+
+GL-09：纯 C 客户端覆盖多域构造、缺失连接的失败回滚、编译快照独立
+生命周期、温度场与有向热流读取；Python 使用真实 GL-04 / GL-05 模型
+完成对应流程。原有 PTA 稳态／瞬态场及 Probe 对照保持通过。
+
+范围：本 PR 支持独立 FOM 的固体热端口；域内部仍可包含完整液冷流道。
+跨域流动、ROM、局部加细输入及 GL-06、交错流体与双向反馈按后续阶段
+推进。GL-05 已实现，含 GL-06 的联合关闭项继续保持未勾选；文档保持 OPEN。
+
+本地最终回归：94 项 CTest、32 项 Python 测试及 PTA 案例对照全部通过；
+clang-format / ruff 检查通过。安装后的 SDK 已通过独立双域 C++ 消费工程；
+活动 playground 的 BCI、EROM attachment 和 HotSpot 示例通过原始网格下的
+模型编译、算子／源映射 smoke 检查（未重跑完整研究提取扫描）。跨平台构建
+和 wheel 验收仍由目标分支既有 PR CI 执行。

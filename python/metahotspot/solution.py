@@ -184,7 +184,7 @@ class Solution(OwnedHandle):
 
     @property
     def state(self) -> np.ndarray:
-        """Final full state, in CellId order."""
+        """Final full state, in global DOF order."""
         return self.data.state
 
     @property

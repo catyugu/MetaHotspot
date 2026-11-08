@@ -143,17 +143,17 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
     const auto definition = mhs::app::pta::read_xml(path.string());
     std::filesystem::remove(path);
 
-    ASSERT_EQ(definition.model.domain.volumes.size(), 2u);
-    EXPECT_EQ(definition.model.materials[definition.model.domain.volumes[0].material].name, "background");
-    EXPECT_EQ(definition.model.materials[definition.model.domain.volumes[1].material].name, "foreground");
-    ASSERT_EQ(definition.model.domain.volumes[0].geometry.size(), 2u);
-    EXPECT_EQ(definition.model.domain.volumes[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
-    EXPECT_EQ(definition.model.domain.volumes[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
-    ASSERT_EQ(definition.model.domain.thermal_boundaries.size(), 2u);
-    EXPECT_TRUE(
-        std::holds_alternative<mhs::model::DirichletBoundary>(definition.model.domain.thermal_boundaries[0].condition));
+    ASSERT_EQ(definition.model.domains[0].volumes.size(), 2u);
+    EXPECT_EQ(definition.model.materials[definition.model.domains[0].volumes[0].material].name, "background");
+    EXPECT_EQ(definition.model.materials[definition.model.domains[0].volumes[1].material].name, "foreground");
+    ASSERT_EQ(definition.model.domains[0].volumes[0].geometry.size(), 2u);
+    EXPECT_EQ(definition.model.domains[0].volumes[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
+    EXPECT_EQ(definition.model.domains[0].volumes[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
+    ASSERT_EQ(definition.model.domains[0].thermal_boundaries.size(), 2u);
+    EXPECT_TRUE(std::holds_alternative<mhs::model::DirichletBoundary>(
+        definition.model.domains[0].thermal_boundaries[0].condition));
     EXPECT_TRUE(std::holds_alternative<mhs::model::ConvectionBoundary>(
-        definition.model.domain.thermal_boundaries[1].condition));
+        definition.model.domains[0].thermal_boundaries[1].condition));
 }
 
 TEST(IoTest, WriteXmlEmitsResult0DTransient)
