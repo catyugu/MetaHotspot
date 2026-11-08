@@ -319,7 +319,7 @@ namespace mhs::compiler {
                     const auto original = surface_bounds(ports[p].patches[j].rectangle);
                     for (const auto& tagged : partition_surface_bounds(original, per_port[p]))
                         compiled.rom_boundary_terms.push_back({domain_id, static_cast<model::PortId>(p), j,
-                            static_cast<model::BoundaryConditionId>(tagged.tag), tagged.bounds});
+                            tagged.tag, tagged.bounds});
                 }
         }
         return compiled;
