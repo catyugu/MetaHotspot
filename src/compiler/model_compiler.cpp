@@ -11,6 +11,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace mhs::compiler {
     namespace {
@@ -189,10 +190,8 @@ namespace mhs::compiler {
                 bool has_pressure_boundary = false;
                 for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
                     const auto& face = model.discrete.faces[id];
-                    const auto i = face.minus == core::invalid_id ? core::invalid_id
-                        : fluid.global_to_fluid[face.minus];
-                    const auto j = face.plus == core::invalid_id ? core::invalid_id
-                        : fluid.global_to_fluid[face.plus];
+                    const auto i = face.minus == core::invalid_id ? core::invalid_id : fluid.global_to_fluid[face.minus];
+                    const auto j = face.plus == core::invalid_id ? core::invalid_id : fluid.global_to_fluid[face.plus];
                     if (i != core::invalid_id && j != core::invalid_id) {
                         fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
                     }
@@ -294,9 +293,7 @@ namespace mhs::compiler {
             using Bounds = std::array<double, 4>;
             using RegionLaw = std::pair<Bounds, model::BoundaryConditionId>;
             core::Vector<core::Vector<RegionLaw>> per_port(rom.ports.size());
-            const auto bounds_of = [](const auto& r) -> Bounds {
-                return {r.a_min, r.a_max, r.b_min, r.b_max};
-            };
+            const auto bounds_of = [](const auto& r) -> Bounds { return {r.a_min, r.a_max, r.b_min, r.b_max}; };
             const auto overlaps = [](const Bounds& a, const Bounds& b) {
                 return a[1] > b[0] && b[1] > a[0] && a[3] > b[2] && b[3] > a[2];
             };
@@ -317,9 +314,11 @@ namespace mhs::compiler {
                         if (region.axis != port.region.axis || region.coordinate != port.region.coordinate)
                             continue;
                         const auto outer = bounds_of(port.region.rectangle);
-                        const Bounds intersection {
-                            std::max(rectangle[0], outer[0]), std::min(rectangle[1], outer[1]),
-                            std::max(rectangle[2], outer[2]), std::min(rectangle[3], outer[3])};
+                        Bounds intersection {};
+                        intersection[0] = std::max(rectangle[0], outer[0]);
+                        intersection[1] = std::min(rectangle[1], outer[1]);
+                        intersection[2] = std::max(rectangle[2], outer[2]);
+                        intersection[3] = std::min(rectangle[3], outer[3]);
                         if (!overlaps(intersection, outer))
                             continue;
                         for (const auto& connection : definition.connections)
@@ -327,11 +326,9 @@ namespace mhs::compiler {
                                 || (connection.b.domain == domain_id && connection.b.port == p))
                                 throw std::invalid_argument("ROM thermal boundary overlaps a connected port");
                         per_port[p].push_back({intersection, condition});
-                        covered += (intersection[1] - intersection[0])
-                            * (intersection[3] - intersection[2]);
+                        covered += (intersection[1] - intersection[0]) * (intersection[3] - intersection[2]);
                     }
-                    const double requested
-                        = (rectangle[1] - rectangle[0]) * (rectangle[3] - rectangle[2]);
+                    const double requested = (rectangle[1] - rectangle[0]) * (rectangle[3] - rectangle[2]);
                     if (std::abs(covered - requested) > 1e-10 * requested)
                         throw std::invalid_argument("ROM thermal boundary must be covered by exposed ports");
                 }
@@ -341,7 +338,8 @@ namespace mhs::compiler {
                 for (std::size_t j = 0; j < rom.ports[p].patches.size(); ++j) {
                     const auto original = bounds_of(rom.ports[p].patches[j].rectangle);
                     core::Vector<double> a {original[0], original[1]}, b {original[2], original[3]};
-                    for (const auto& [region, condition] : per_port[p]) {
+                    for (const auto& tagged : per_port[p]) {
+                        const auto& region = tagged.first;
                         if (!overlaps(original, region))
                             continue;
                         a.push_back(std::max(original[0], region[0]));
@@ -362,10 +360,15 @@ namespace mhs::compiler {
                             for (const auto& [region, id] : per_port[p])
                                 if (x >= region[0] && x <= region[1] && y >= region[2] && y <= region[3])
                                     condition = id; // Last declared law wins.
-                            if (condition != core::invalid_id)
-                                compiled.rom_boundary_terms.push_back(
-                                    {domain_id, static_cast<model::PortId>(p), j, condition,
-                                        {a[u - 1], a[u], b[v - 1], b[v]}});
+                            if (condition != core::invalid_id) {
+                                model::RomBoundaryTerm term;
+                                term.domain = domain_id;
+                                term.port = static_cast<model::PortId>(p);
+                                term.patch = j;
+                                term.condition = condition;
+                                term.bounds = {a[u - 1], a[u], b[v - 1], b[v]};
+                                compiled.rom_boundary_terms.push_back(term);
+                            }
                         }
                 }
         }

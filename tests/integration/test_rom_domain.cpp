@@ -252,8 +252,10 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
     patch.trace = {1};
     port.patches.push_back(patch);
     rom.ports.push_back(port);
-    rom.thermal_boundaries.push_back(
-        {{{Axis::Z, 1, {0, 0.1, 0, 0.1}}}, ConvectionBoundary {"100", "300"}});
+    ThermalBoundarySpec boundary;
+    boundary.regions.push_back({Axis::Z, 1, {0, 0.1, 0, 0.1}});
+    boundary.condition = ConvectionBoundary {"100", "300"};
+    rom.thermal_boundaries.push_back(std::move(boundary));
     d.rom_domains.push_back(rom);
     const mhs::core::Vector<double> initial {300};
 
