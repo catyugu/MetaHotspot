@@ -56,7 +56,7 @@ namespace mhs::solver {
                 const auto& field = compiled.layout.field(compiled.layout.find(
                     static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
                 for (std::size_t i = 0; i < field.dofs.size(); ++i)
-                    t.at(field.entities[i]) = state.at(field.dofs[i]);
+                    t.at(field.entities[i]) = state[field.dofs[i]];
             }
             return values;
         }
