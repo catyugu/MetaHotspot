@@ -5,6 +5,7 @@ Usage::
     import metahotspot
 
     model = metahotspot.Model()
+    model.add_cartesian_component()
     # Construct SI volumes and mesh axes before compiling.
     compiled = model.compile()
     solution = compiled.solve()
@@ -17,7 +18,7 @@ from metahotspot._error import MetaHotspotError
 from metahotspot._lib import library_version
 from metahotspot.compiled import Compiled, SolveOptions
 from metahotspot.logging import get_log_level, set_log_level
-from metahotspot.model import Model, RomPortPatch, Study, SurfaceRegion
+from metahotspot.model import Convection, Dirichlet, Model, Neumann, RomPortPatch, Study, SurfaceRegion
 from metahotspot.solution import Solution
 
 # Reported by the library this module binds, so it can never drift from it.
@@ -27,6 +28,9 @@ __all__ = [
     "Compiled",
     "MetaHotspotError",
     "Model",
+    "Dirichlet",
+    "Neumann",
+    "Convection",
     "Operators",
     "RomPortPatch",
     "Solution",

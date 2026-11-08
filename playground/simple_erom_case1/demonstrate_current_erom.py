@@ -91,7 +91,7 @@ def build_current_detailed(x: np.ndarray, y: np.ndarray):
     base_pos, base_size = xyz(base, "location"), xyz(base, "size")
     src_pos, src_size = xyz(source, "location"), xyz(source, "size")
     model = metahotspot.Model()
-    model.add_fom_domain()
+    model.add_cartesian_component()
     grid_mm = current_grid_axis_mm()
     model.set_cartesian_mesh(grid_mm * 1e-3, grid_mm * 1e-3, grid_mm * 1e-3)
     material_id = model.add_material(name, k, k, k, rho, c)
@@ -100,7 +100,7 @@ def build_current_detailed(x: np.ndarray, y: np.ndarray):
     heat = 100.0 / np.prod(src_size)
     source = model.add_volume(material_id, model.add_source(f"{heat:.17g}"))
     model.add_box(source, src_pos, np.array(src_pos) + src_size)
-    model.set_default_neumann("0")
+    model.set_default_thermal_boundary(metahotspot.Neumann("0"))
     compiled = model.compile()
     return normalized_operators(*compiled.assemble()), compiled
 

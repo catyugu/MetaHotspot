@@ -205,7 +205,7 @@ def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
     model = metahotspot.Model()
-    model.add_fom_domain()
+    model.add_cartesian_component()
     model.set_cartesian_mesh(
         cfg.x_vertices_mm * 1e-3, cfg.y_vertices_mm * 1e-3, cfg.z_vertices_mm * 1e-3
     )
@@ -241,7 +241,7 @@ def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
             [xhi, yhi, z + DIE_THICKNESS_MM],
             power,
         )
-    model.set_default_neumann("0")
+    model.set_default_thermal_boundary(metahotspot.Neumann("0"))
     return model
 
 

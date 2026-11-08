@@ -165,7 +165,7 @@ def build_model(
     if model is None:
         model = metahotspot.Model()
     m = model
-    m.add_fom_domain()
+    m.add_cartesian_component()
 
 
     # -- Mesh: full sink XY extent, 4 Z layers --
@@ -234,16 +234,14 @@ def build_model(
             (S_SINK + CHIP_L) / 2,
         ),
     ]
-    m.add_convection(
-        coefficient=str(H_CONV), ambient_temperature=str(T_AMB), regions=_regions
-    )
+    m.add_thermal_boundary(_regions, metahotspot.Convection(str(H_CONV), str(T_AMB)))
 
     # -- Probes at each block centroid (in chip layer z=0+) --
     probe_z = T_CHIP / 2.0  # mid-chip
     for name in EV6_NAMES:
         cx, cy = EV6_CENTER[name]
-        m.add_point_probe(f"chip_{name}", (cx, cy, probe_z))
-    m.add_point_probe("tim_center", (CHIP_L / 2, CHIP_L / 2, T_CHIP + T_INTERFACE / 2))
+        m.add_observation(0, f"chip_{name}", (cx, cy, probe_z))
+    m.add_observation(0, "tim_center", (CHIP_L / 2, CHIP_L / 2, T_CHIP + T_INTERFACE / 2))
 
     return m
 

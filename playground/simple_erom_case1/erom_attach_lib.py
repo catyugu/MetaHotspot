@@ -145,7 +145,7 @@ def build_geometry(cfg: AttachConfig, *, detail: bool, macro: bool):
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
     model = metahotspot.Model()
-    model.add_fom_domain()
+    model.add_cartesian_component()
     model.set_cartesian_mesh(cube_axis_mm() * 1e-3, cube_axis_mm() * 1e-3, _z_full_mm(cfg) * 1e-3)
     copper = model.add_material("Copper (Pure)", *COPPER)
     H = cfg.ext_thickness_mm
@@ -175,7 +175,7 @@ def build_geometry(cfg: AttachConfig, *, detail: bool, macro: bool):
                     [75, 75, zhi],
                     cfg.ext_source_w / SOURCE_VOL_M3,
                 )
-    model.set_default_neumann("0")
+    model.set_default_thermal_boundary(metahotspot.Neumann("0"))
     return model
 
 
