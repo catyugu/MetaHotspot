@@ -335,7 +335,7 @@ namespace mhs::solver {
                 else {
                     const auto cells = accepted_state.subspan(field.offset, field.count);
                     const auto& interfaces = traces[slot.domain];
-                    temperature = sample_point(compiled.fom(slot.domain), compiled.library.material_table, compiled.library.boundary_conditions, cells, t, slot.cell, slot.point, interfaces);
+                    temperature = sample_point(compiled.fom(slot.domain), compiled.library->material_table, compiled.library->boundary_conditions, cells, t, slot.cell, slot.point, interfaces);
                 }
                 slot.trace.values.push_back(temperature);
             }
