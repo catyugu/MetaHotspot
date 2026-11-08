@@ -10,15 +10,47 @@ namespace mhs::compiler {
 
     constexpr double EPS = mhs::model::geometry_eps;
 
-    namespace {
+    SurfaceBounds surface_bounds(const mhs::model::RegionRect& r) { return {r.a_min, r.a_max, r.b_min, r.b_max}; }
+    SurfaceBounds surface_bounds(const mhs::model::SurfaceRegion& r) { return surface_bounds(r.rectangle); }
+    SurfaceBounds intersect_bounds(const SurfaceBounds& a, const SurfaceBounds& b)
+    {
+        return {std::max(a[0], b[0]), std::min(a[1], b[1]), std::max(a[2], b[2]), std::min(a[3], b[3])};
+    }
+    bool positive_bounds(const SurfaceBounds& r) { return r[1] > r[0] && r[3] > r[2]; }
+    double surface_area(const SurfaceBounds& r) { return (r[1] - r[0]) * (r[3] - r[2]); }
 
-        bool point_in_region(const mhs::model::SurfaceRegion& region, double a, double b)
-        {
-            const auto& r = region.rectangle;
-            return a >= r.a_min - EPS && a <= r.a_max + EPS && b >= r.b_min - EPS && b <= r.b_max + EPS;
+    mhs::core::Vector<TaggedBounds> partition_surface_bounds(
+        const SurfaceBounds& outer, std::span<const TaggedBounds> regions, std::optional<std::size_t> fallback)
+    {
+        mhs::core::Vector<double> a {outer[0], outer[1]}, b {outer[2], outer[3]};
+        for (const auto& tagged : regions) {
+            const auto overlap = intersect_bounds(outer, tagged.bounds);
+            if (!positive_bounds(overlap))
+                continue;
+            a.insert(a.end(), {overlap[0], overlap[1]});
+            b.insert(b.end(), {overlap[2], overlap[3]});
         }
-
-    } // namespace
+        auto unique = [](auto& values) {
+            std::sort(values.begin(), values.end());
+            values.erase(std::unique(values.begin(), values.end()), values.end());
+        };
+        unique(a);
+        unique(b);
+        mhs::core::Vector<TaggedBounds> result;
+        for (std::size_t i = 1; i < a.size(); ++i)
+            for (std::size_t j = 1; j < b.size(); ++j) {
+                SurfaceBounds bounds {a[i - 1], a[i], b[j - 1], b[j]};
+                const double x = (bounds[0] + bounds[1]) / 2, y = (bounds[2] + bounds[3]) / 2;
+                auto tag = fallback;
+                for (const auto& region : regions)
+                    if (x >= region.bounds[0] && x <= region.bounds[1] && y >= region.bounds[2]
+                        && y <= region.bounds[3])
+                        tag = region.tag;
+                if (tag)
+                    result.push_back({bounds, *tag});
+            }
+        return result;
+    }
 
     std::optional<std::size_t> classify_point(
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& p)
@@ -96,53 +128,21 @@ namespace mhs::compiler {
         using namespace mhs::core;
         using namespace mhs::model;
         mhs::core::Vector<ProjectedSurfacePatch> faces;
-        for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
-            const auto& face = mesh.faces[id];
+        for (const auto& face : mesh.faces) {
             if (!face.exterior())
                 continue;
             const auto cell = face.minus != invalid_id ? face.minus : face.plus;
             const auto axis = static_cast<std::size_t>(face.axis);
             const std::int8_t sign = face.minus != invalid_id ? 1 : -1;
             const double coordinate = sign > 0 ? mesh.cells[cell].max[axis] : mesh.cells[cell].min[axis];
-            mhs::core::Vector<double> ca {face.bounds[0], face.bounds[1]}, cb {face.bounds[2], face.bounds[3]};
-            for (const auto& tagged : boundaries) {
-                const auto& region = tagged.region;
-                if (region.axis != face.axis || std::abs(region.coordinate - coordinate) >= EPS)
-                    continue;
-                const auto& r = region.rectangle;
-                if (r.a_max <= face.bounds[0] || r.a_min >= face.bounds[1] || r.b_max <= face.bounds[2]
-                    || r.b_min >= face.bounds[3])
-                    continue;
-                ca.push_back(std::clamp(r.a_min, face.bounds[0], face.bounds[1]));
-                ca.push_back(std::clamp(r.a_max, face.bounds[0], face.bounds[1]));
-                cb.push_back(std::clamp(r.b_min, face.bounds[2], face.bounds[3]));
-                cb.push_back(std::clamp(r.b_max, face.bounds[2], face.bounds[3]));
-            }
-            auto unique = [](auto& cuts) {
-                std::sort(cuts.begin(), cuts.end());
-                cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
-            };
-            unique(ca);
-            unique(cb);
-            for (std::size_t i = 1; i < ca.size(); ++i)
-                for (std::size_t j = 1; j < cb.size(); ++j) {
-                    const std::array<double, 4> bounds {ca[i - 1], ca[i], cb[j - 1], cb[j]};
-                    const double center_a = (bounds[0] + bounds[1]) / 2;
-                    const double center_b = (bounds[2] + bounds[3]) / 2;
-                    auto tag = fallback;
-                    for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
-                        if (it->region.axis == face.axis && std::abs(it->region.coordinate - coordinate) < EPS
-                            && point_in_region(it->region, center_a, center_b)) {
-                            tag = it->tag;
-                            break;
-                        }
-                    }
-                    if (tag)
-                        faces.push_back({cell, face.axis, sign, *tag, bounds});
-                }
+            mhs::core::Vector<TaggedBounds> regions;
+            for (const auto& tagged : boundaries)
+                if (tagged.region.axis == face.axis && std::abs(tagged.region.coordinate - coordinate) < EPS)
+                    regions.push_back({surface_bounds(tagged.region), tagged.tag});
+            for (const auto& patch : partition_surface_bounds(face.bounds, regions, fallback))
+                faces.push_back({cell, face.axis, sign, patch.tag, patch.bounds});
         }
         std::stable_sort(faces.begin(), faces.end(), [](const auto& a, const auto& b) { return a.cell < b.cell; });
         return faces;
     }
-
 } // namespace mhs::compiler
