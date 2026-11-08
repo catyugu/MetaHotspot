@@ -124,7 +124,13 @@ _CORE_FUNC_SIGS = [
     (
         "mhs_model_add_thermal_boundary",
         I32,
-        [P(MhsModel), ctypes.c_uint32, P(MhsSurfaceRegion), Size, P(MhsThermalBoundary)],
+        [
+            P(MhsModel),
+            ctypes.c_uint32,
+            P(MhsSurfaceRegion),
+            Size,
+            P(MhsThermalBoundary),
+        ],
     ),
     (
         "mhs_model_set_default_thermal_boundary",

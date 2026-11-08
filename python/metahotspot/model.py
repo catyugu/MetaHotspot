@@ -93,9 +93,13 @@ ThermalBoundary = Dirichlet | Neumann | Convection
 
 def _thermal_boundary(condition: ThermalBoundary) -> MhsThermalBoundary:
     if isinstance(condition, Dirichlet):
-        return MhsThermalBoundary(int(ThermalBoundaryKind.DIRICHLET), _text(condition.temperature), None)
+        return MhsThermalBoundary(
+            int(ThermalBoundaryKind.DIRICHLET), _text(condition.temperature), None
+        )
     if isinstance(condition, Neumann):
-        return MhsThermalBoundary(int(ThermalBoundaryKind.NEUMANN), _text(condition.heat_flux), None)
+        return MhsThermalBoundary(
+            int(ThermalBoundaryKind.NEUMANN), _text(condition.heat_flux), None
+        )
     if isinstance(condition, Convection):
         return MhsThermalBoundary(
             int(ThermalBoundaryKind.CONVECTION),
@@ -288,7 +292,11 @@ class Model(OwnedHandle):
     # ---- Thermal boundaries ----
 
     def add_thermal_boundary(
-        self, regions: Sequence[SurfaceRegion], condition: ThermalBoundary, *, component: int = 0
+        self,
+        regions: Sequence[SurfaceRegion],
+        condition: ThermalBoundary,
+        *,
+        component: int = 0,
     ) -> None:
         native, count = _surface_regions(regions)
         spec = _thermal_boundary(condition)
@@ -485,7 +493,7 @@ class Model(OwnedHandle):
         patches: Sequence[RomPortPatch] = (),
         outward_sign: int = 0,
     ) -> int:
-        """Declare an exterior port. Reduced components require physical trace patches."""
+        """Declare an exterior port with optional reduced trace patches."""
         order = self._reduced_orders.get(component)
         if order is None:
             if patches or outward_sign:
@@ -506,7 +514,9 @@ class Model(OwnedHandle):
                 None if grad is None else np.ascontiguousarray(grad, dtype=np.float64)
                 for grad in (patch.gradient_a, patch.gradient_b)
             ]
-            if any(grad is not None and grad.shape != trace.shape for grad in gradients):
+            if any(
+                grad is not None and grad.shape != trace.shape for grad in gradients
+            ):
                 raise ValueError("tangential gradient shape must match trace")
             keepalive.extend((center, trace, *gradients))
             native_patches[i] = MhsRomPortPatch(
@@ -567,7 +577,9 @@ class Model(OwnedHandle):
             ctx="add_observation",
         )
 
-    def connect(self, component_a: int, port_a: int, component_b: int, port_b: int) -> int:
+    def connect(
+        self, component_a: int, port_a: int, component_b: int, port_b: int
+    ) -> int:
         """Connect coincident thermal ports with nonmatching-interface correction."""
         identifier = ctypes.c_uint32()
         self._call(

@@ -34,11 +34,11 @@ __version__ = library_version()
 
 __all__ = [
     "Compiled",
+    "Convection",
+    "Dirichlet",
     "MetaHotspotError",
     "Model",
-    "Dirichlet",
     "Neumann",
-    "Convection",
     "Operators",
     "RomPortPatch",
     "Solution",

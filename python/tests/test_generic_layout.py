@@ -205,7 +205,9 @@ def test_gl04_matched_foms_equal_monolith_operators_states_and_probes():
         traces_b = {probe.name: probe.values for probe in sb.probes}
         assert traces_a.keys() == traces_b.keys()
         for name in traces_a:
-            np.testing.assert_allclose(traces_a[name], traces_b[name], atol=2e-5, rtol=1e-8)
+            np.testing.assert_allclose(
+                traces_a[name], traces_b[name], atol=2e-5, rtol=1e-8
+            )
     flux = b.connection_flux(0, sb.state)
     assert flux.size == 96 and np.isfinite(flux).all()
     repeated = b.solve()

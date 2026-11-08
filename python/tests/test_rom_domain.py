@@ -3,7 +3,15 @@
 import numpy as np
 import pytest
 
-from metahotspot import Convection, Dirichlet, Model, Neumann, RomPortPatch, Study, SurfaceRegion
+from metahotspot import (
+    Convection,
+    Dirichlet,
+    Model,
+    Neumann,
+    RomPortPatch,
+    Study,
+    SurfaceRegion,
+)
 from metahotspot.enums import Axis, StudyType
 
 
@@ -91,7 +99,9 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
 @pytest.mark.parametrize("htc", [100.0, 200.0])
 def test_rom_exposed_port_uses_regular_convection(htc):
     model = Model()
-    domain = model.add_reduced_component(np.array([[2.0]]), np.array([[1.0]]), np.array([0.0]))
+    domain = model.add_reduced_component(
+        np.array([[2.0]]), np.array([[1.0]]), np.array([0.0])
+    )
     model.add_port(
         domain,
         "exposed",
