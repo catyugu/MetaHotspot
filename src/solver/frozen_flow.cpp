@@ -85,8 +85,7 @@ namespace mhs::solver {
             mobility[i] *= rho[i];
         }
         const auto& projected = model.fluid_boundaries;
-        const auto& boundaries = model.fluid_assignments;
-        mhs::core::Vector<double> total_area(boundaries.size(), 0);
+        mhs::core::Vector<double> total_area(conditions.size(), 0);
         for (const auto& term : projected)
             total_area[term.condition] += ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]));
         mhs::core::Vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
@@ -128,7 +127,7 @@ namespace mhs::solver {
                         rhs[i] += g * bc.pressure;
                     }
                 },
-                conditions[boundaries[term.condition]]);
+                conditions[term.condition]);
         }
         if (std::find(pressure_references.begin(), pressure_references.end(), false) != pressure_references.end())
             throw std::runtime_error("every connected fluid component needs a pressure inlet or outlet");
@@ -151,7 +150,7 @@ namespace mhs::solver {
         for (std::size_t t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
             const auto i = fluid.global_to_fluid[term.cell];
-            const auto& condition = conditions[boundaries[term.condition]];
+            const auto& condition = conditions[term.condition];
             const double mass = std::visit(
                 [&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
