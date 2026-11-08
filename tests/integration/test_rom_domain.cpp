@@ -267,8 +267,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
     ASSERT_EQ(compiled.connections.size(), 1u);
     ASSERT_TRUE(compiled.connections.front().nonmatching);
     const mhs::core::Vector<double> state {300, 310, 1};
-    const auto corrected
-        = mhs::solver::evaluate_connection_flux(compiled, compiled.connections.front(), state, 0);
+    const auto corrected = mhs::solver::evaluate_connection_flux(compiled, compiled.connections.front(), state, 0);
     ASSERT_EQ(corrected.size(), 2u);
     for (const auto& part : corrected)
         EXPECT_NEAR(part.outward_a, 0, 1e-12);
