@@ -279,19 +279,13 @@ namespace mhs::compiler {
             const auto& ports = definition.components[d].ports;
             const auto& boundaries = definition.components[d].thermal_boundaries;
             const auto domain_id = static_cast<model::DomainId>(d);
-            using Bounds = std::array<double, 4>;
-            using RegionLaw = std::pair<Bounds, model::BoundaryConditionId>;
-            core::Vector<core::Vector<RegionLaw>> per_port(ports.size());
-            const auto bounds_of = [](const auto& r) -> Bounds { return {r.a_min, r.a_max, r.b_min, r.b_max}; };
-            const auto overlaps = [](const Bounds& a, const Bounds& b) {
-                return a[1] > b[0] && b[1] > a[0] && a[3] > b[2] && b[3] > a[2];
-            };
+            core::Vector<core::Vector<TaggedBounds>> per_port(ports.size());
             for (const auto& boundary : boundaries) {
                 if (boundary.condition >= library.thermal_boundaries.size())
                     throw std::out_of_range("thermal boundary ID out of range");
                 const auto condition = boundary.condition;
                 for (const auto& region : boundary.regions) {
-                    const auto rectangle = bounds_of(region.rectangle);
+                    const auto rectangle = surface_bounds(region.rectangle);
                     if (static_cast<unsigned>(region.axis) > 2 || !std::isfinite(region.coordinate)
                         || !std::all_of(rectangle.begin(), rectangle.end(), [](double v) { return std::isfinite(v); })
                         || rectangle[0] >= rectangle[1] || rectangle[2] >= rectangle[3])
@@ -303,22 +297,18 @@ namespace mhs::compiler {
                         const auto& port = ports[p];
                         if (region.axis != port.region.axis || region.coordinate != port.region.coordinate)
                             continue;
-                        const auto outer = bounds_of(port.region.rectangle);
-                        Bounds intersection {};
-                        intersection[0] = std::max(rectangle[0], outer[0]);
-                        intersection[1] = std::min(rectangle[1], outer[1]);
-                        intersection[2] = std::max(rectangle[2], outer[2]);
-                        intersection[3] = std::min(rectangle[3], outer[3]);
-                        if (!overlaps(intersection, outer))
+                        const auto outer = surface_bounds(port.region.rectangle);
+                        const auto intersection = intersect_bounds(rectangle, outer);
+                        if (!positive_bounds(intersection))
                             continue;
                         for (const auto& connection : definition.connections)
                             if ((connection.a.domain == domain_id && connection.a.port == p)
                                 || (connection.b.domain == domain_id && connection.b.port == p))
                                 throw std::invalid_argument("ROM thermal boundary overlaps a connected port");
                         per_port[p].push_back({intersection, condition});
-                        covered += (intersection[1] - intersection[0]) * (intersection[3] - intersection[2]);
+                        covered += surface_area(intersection);
                     }
-                    const double requested = (rectangle[1] - rectangle[0]) * (rectangle[3] - rectangle[2]);
+                    const double requested = surface_area(rectangle);
                     if (std::abs(covered - requested) > 1e-10 * requested)
                         throw std::invalid_argument("ROM thermal boundary must be covered by exposed ports");
                 }
@@ -326,40 +316,10 @@ namespace mhs::compiler {
 
             for (std::size_t p = 0; p < ports.size(); ++p)
                 for (std::size_t j = 0; j < ports[p].patches.size(); ++j) {
-                    const auto original = bounds_of(ports[p].patches[j].rectangle);
-                    core::Vector<double> a {original[0], original[1]}, b {original[2], original[3]};
-                    for (const auto& tagged : per_port[p]) {
-                        const auto& region = tagged.first;
-                        if (!overlaps(original, region))
-                            continue;
-                        a.push_back(std::max(original[0], region[0]));
-                        a.push_back(std::min(original[1], region[1]));
-                        b.push_back(std::max(original[2], region[2]));
-                        b.push_back(std::min(original[3], region[3]));
-                    }
-                    auto unique = [](auto& values) {
-                        std::sort(values.begin(), values.end());
-                        values.erase(std::unique(values.begin(), values.end()), values.end());
-                    };
-                    unique(a);
-                    unique(b);
-                    for (std::size_t u = 1; u < a.size(); ++u)
-                        for (std::size_t v = 1; v < b.size(); ++v) {
-                            const double x = (a[u - 1] + a[u]) / 2, y = (b[v - 1] + b[v]) / 2;
-                            auto condition = core::invalid_id;
-                            for (const auto& [region, id] : per_port[p])
-                                if (x >= region[0] && x <= region[1] && y >= region[2] && y <= region[3])
-                                    condition = id; // Last declared law wins.
-                            if (condition != core::invalid_id) {
-                                model::RomBoundaryTerm term;
-                                term.domain = domain_id;
-                                term.port = static_cast<model::PortId>(p);
-                                term.patch = j;
-                                term.condition = condition;
-                                term.bounds = {a[u - 1], a[u], b[v - 1], b[v]};
-                                compiled.rom_boundary_terms.push_back(term);
-                            }
-                        }
+                    const auto original = surface_bounds(ports[p].patches[j].rectangle);
+                    for (const auto& tagged : partition_surface_bounds(original, per_port[p]))
+                        compiled.rom_boundary_terms.push_back({domain_id, static_cast<model::PortId>(p), j,
+                            static_cast<model::BoundaryConditionId>(tagged.tag), tagged.bounds});
                 }
         }
         return compiled;
