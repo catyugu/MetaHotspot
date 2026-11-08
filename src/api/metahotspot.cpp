@@ -439,21 +439,6 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t do
     });
 }
 
-MHS_API mhs_status_t mhs_model_refine_cartesian_box(mhs_model_t* m, mhs_index_t domain,
-    const double min_xyz[3], const double max_xyz[3], uint32_t levels)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(min_xyz);
-    CHECK_NULL(max_xyz);
-    MHS_TRY({
-        mhs::model::CartesianRefinement refinement;
-        std::copy_n(min_xyz, 3, refinement.min.begin());
-        std::copy_n(max_xyz, 3, refinement.max.begin());
-        refinement.levels = levels;
-        m->def.domains.at(domain).refinements.push_back(refinement);
-    });
-}
-
 MHS_API mhs_status_t mhs_model_set_flow_mode(mhs_model_t* m, mhs_index_t domain, mhs_flow_mode_t mode)
 {
     CHECK_NULL(m);

@@ -165,26 +165,6 @@ class Model(OwnedHandle):
             ctx="set_cartesian_mesh",
         )
 
-    def refine_cartesian_box(
-        self,
-        lo: Sequence[float],
-        hi: Sequence[float],
-        *,
-        levels: int = 1,
-        domain: int = 0,
-    ) -> None:
-        """Octree-refine parent cells inside a vertex-aligned Cartesian box."""
-        bounds = [np.ascontiguousarray(p, dtype=np.float64) for p in (lo, hi)]
-        if any(p.shape != (3,) for p in bounds):
-            raise ValueError("refinement box endpoints must have three coordinates")
-        self._call(
-            "mhs_model_refine_cartesian_box",
-            domain,
-            *[_double_ptr(p) for p in bounds],
-            levels,
-            ctx="refine_cartesian_box",
-        )
-
     def set_flow_mode(self, mode: int, *, domain: int = 0) -> None:
         """Select the fluid solution: FROZEN (legacy) or STOKES (coupled)."""
         self._call("mhs_model_set_flow_mode", domain, int(mode), ctx="set_flow_mode")
