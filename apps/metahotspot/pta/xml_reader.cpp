@@ -213,7 +213,7 @@ namespace mhs::app::pta {
                     var.value = get_text(val);
                 }
                 if (!var.name.empty()) {
-                    def.model.library->variables.push_back(std::move(var));
+                    def.model.library().variables.push_back(std::move(var));
                 }
             }
         }
@@ -284,7 +284,7 @@ namespace mhs::app::pta {
                     }
                 }
                 if (!name.empty()) {
-                    def.model.library->materials.push_back({std::move(name), std::move(mat)});
+                    def.model.library().materials.push_back({std::move(name), std::move(mat)});
                 }
             }
         }
@@ -358,7 +358,7 @@ namespace mhs::app::pta {
                     }
                 }
                 if (!name.empty()) {
-                    def.model.library->functions.push_back({std::move(name), std::move(fn)});
+                    def.model.library().functions.push_back({std::move(name), std::move(fn)});
                 }
             }
         }
@@ -469,7 +469,7 @@ namespace mhs::app::pta {
                             "fluid boundary fields do not match ThermalBoundary i:type: " + type_str);
                     if (fluid_boundary.regions.empty())
                         throw std::runtime_error("fluid boundary has no FaceKeys regions");
-                    fluid_boundary.condition = def.model.library->add_fluid_boundary(std::move(condition));
+                    fluid_boundary.condition = def.model.library().add_fluid_boundary(std::move(condition));
                     def.model.fom(0).fluid_boundaries.push_back(std::move(fluid_boundary));
                     continue;
                 }
@@ -482,14 +482,14 @@ namespace mhs::app::pta {
                         if (const XMLElement* t = child_by_local_name(thermal, "Temperature")) {
                             bc.temperature = get_text(t);
                         }
-                        boundary.condition = def.model.library->add_thermal_boundary(std::move(bc));
+                        boundary.condition = def.model.library().add_thermal_boundary(std::move(bc));
                     }
                     else if (type_str.find("SecondType") != std::string::npos) {
                         mhs::model::NeumannBoundary bc;
                         if (const XMLElement* q = child_by_local_name(thermal, "HeatFlux")) {
                             bc.heat_flux = get_text(q);
                         }
-                        boundary.condition = def.model.library->add_thermal_boundary(std::move(bc));
+                        boundary.condition = def.model.library().add_thermal_boundary(std::move(bc));
                     }
                     else if (type_str.find("ThirdType") != std::string::npos) {
                         mhs::model::ConvectionBoundary bc;
@@ -499,7 +499,7 @@ namespace mhs::app::pta {
                         if (const XMLElement* t = child_by_local_name(thermal, "EnvironmentTemperature")) {
                             bc.ambient_temperature = get_text(t);
                         }
-                        boundary.condition = def.model.library->add_thermal_boundary(std::move(bc));
+                        boundary.condition = def.model.library().add_thermal_boundary(std::move(bc));
                     }
                     else {
                         throw std::runtime_error("unknown Boundary ThermalBoundary i:type: " + type_str);
@@ -580,7 +580,7 @@ namespace mhs::app::pta {
         }
 
         def.model.fom(0).default_thermal_boundary =
-            def.model.library->add_thermal_boundary(std::move(default_thermal_boundary));
+            def.model.library().add_thermal_boundary(std::move(default_thermal_boundary));
         return {study, normalize(std::move(def))};
     }
 
