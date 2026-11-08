@@ -231,10 +231,10 @@ namespace mhs::solver {
                     stiffness.emplace_back(row, static_cast<core::SparseIndex>(pressure_dof_[n.plus]), area);
                 if (n.condition != core::invalid_id) {
                     const auto& bc = domain_.fluid_conditions[n.condition];
-                    if (const auto* pressure = std::get_if<PressureInlet>(&bc))
-                        load[row] += (n.minus == core::invalid_id ? 1.0 : -1.0) * area * pressure->pressure;
-                    else if (const auto* pressure = std::get_if<PressureOutlet>(&bc))
-                        load[row] += (n.minus == core::invalid_id ? 1.0 : -1.0) * area * pressure->pressure;
+                    if (const auto* inlet_pressure = std::get_if<PressureInlet>(&bc))
+                        load[row] += (n.minus == core::invalid_id ? 1.0 : -1.0) * area * inlet_pressure->pressure;
+                    else if (const auto* outlet_pressure = std::get_if<PressureOutlet>(&bc))
+                        load[row] += (n.minus == core::invalid_id ? 1.0 : -1.0) * area * outlet_pressure->pressure;
                 }
             }
             // Conservative cell continuity: sum of signed mass fluxes is zero.

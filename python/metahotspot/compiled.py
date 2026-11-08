@@ -29,7 +29,11 @@ from metahotspot.types import (
 
 # ---- SolveOptions --------------------------------------------------------
 
-_SOLVER_VALUES = {"Pardiso": SolverType.PARDISO, "Amg": SolverType.AMG, "SparseLu": SolverType.SPARSE_LU}
+_SOLVER_VALUES = {
+    "Pardiso": SolverType.PARDISO,
+    "Amg": SolverType.AMG,
+    "SparseLu": SolverType.SPARSE_LU,
+}
 # SolveOptions field -> C field name, with enum coercion for the solver.
 _ENUM_FIELDS = {
     "linear_solver": (SolverType, _SOLVER_VALUES, "solver_type"),
