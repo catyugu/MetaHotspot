@@ -577,66 +577,58 @@ MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(
 /*  Model construction  —  function library                            */
 /* ------------------------------------------------------------------ */
 
+namespace {
+    template <class Spec>
+    mhs_status_t add_function(mhs_library_t* library, const char* name, Spec spec)
+    {
+        CHECK_NULL(library);
+        CHECK_NULL(name);
+        MHS_TRY({ library->def->functions.push_back({name, std::move(spec)}); });
+    }
+}
+
 MHS_API mhs_status_t mhs_library_add_function_expr(mhs_library_t* library, const char* name, const char* expression)
 {
-    CHECK_NULL(library);
-    CHECK_NULL(name);
     CHECK_NULL(expression);
-    MHS_TRY({ library->def->functions.push_back({name, mhs::model::ExpressionFunctionSpec {expression}}); });
+    return add_function(library, name, mhs::model::ExpressionFunctionSpec {expression});
 }
 
 MHS_API mhs_status_t mhs_library_add_function_gauss(
     mhs_library_t* library, const char* name, double amplitude, double tau, double center)
 {
-    CHECK_NULL(library);
-    CHECK_NULL(name);
-    MHS_TRY({ library->def->functions.push_back({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}}); });
+    return add_function(library, name, mhs::model::GaussFunctionSpec {amplitude, tau, center});
 }
 
 MHS_API mhs_status_t mhs_library_add_function_sine(
     mhs_library_t* library, const char* name, double amplitude, double angular_frequency, double phase)
 {
-    CHECK_NULL(library);
-    CHECK_NULL(name);
-    MHS_TRY(
-        { library->def->functions.push_back({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}}); });
+    return add_function(library, name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase});
 }
 
 MHS_API mhs_status_t mhs_library_add_function_double_exponential(
     mhs_library_t* library, const char* name, double amplitude, double alpha, double beta)
 {
-    CHECK_NULL(library);
-    CHECK_NULL(name);
-    MHS_TRY(
-        { library->def->functions.push_back({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}}); });
+    return add_function(library, name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta});
 }
 
 MHS_API mhs_status_t mhs_library_add_function_piecewise(
     mhs_library_t* library, const char* name, const mhs_point2d_t* points, size_t count)
 {
-    CHECK_NULL(library);
-    CHECK_NULL(name);
     CHECK_NULL(points);
-    MHS_TRY({
-        mhs::model::PiecewiseFunctionSpec spec;
-        for (size_t i = 0; i < count; ++i)
-            spec.points.push_back({points[i].x, points[i].y});
-        library->def->functions.push_back({name, std::move(spec)});
-    });
+    mhs::model::PiecewiseFunctionSpec spec;
+    for (size_t i = 0; i < count; ++i)
+        spec.points.push_back({points[i].x, points[i].y});
+    return add_function(library, name, std::move(spec));
 }
 
 MHS_API mhs_status_t mhs_library_add_function_periodic_piecewise_constant(
     mhs_library_t* library, const char* name, const double* values, size_t count, double period)
 {
-    CHECK_NULL(library);
-    CHECK_NULL(name);
     CHECK_NULL(values);
-    MHS_TRY({
-        mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
-        spec.period = period;
-        spec.values.assign(values, values + count);
-        library->def->functions.push_back({name, std::move(spec)});
-    });
+    mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
+    spec.period = period;
+    spec.values.assign(values, values + count);
+    return add_function(library, name, std::move(spec));
 }
 
 /* ------------------------------------------------------------------ */
