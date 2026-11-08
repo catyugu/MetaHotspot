@@ -97,9 +97,7 @@ namespace mhs::compiler {
         for (std::size_t domain_id = 0; domain_id < definition.components.size(); ++domain_id) {
             const auto& component = definition.components[domain_id];
             if (const auto* value = std::get_if<model::RomDomainDefinition>(&component.physics)) {
-                model::CompiledRomDomain rom;
-                static_cast<model::RomDomain&>(rom) = *value;
-                rom.library = compiled_library;
+                auto rom = *value;
                 const auto n = rom.order;
                 if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n || rom.K.size() != n * n
                     || rom.C.size() != n * n || rom.f.size() != n
@@ -130,7 +128,7 @@ namespace mhs::compiler {
                         throw std::invalid_argument("reduced observation has invalid dimension or values");
                 }
                 append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::ReducedCoordinate, n);
-                compiled.components.push_back({std::move(rom), component.ports, component.observations});
+                compiled.components.push_back({std::move(rom), component.ports, component.observations, compiled_library});
                 continue;
             }
 
@@ -139,7 +137,7 @@ namespace mhs::compiler {
                 if (!obs.weights.empty() || obs.offset != 0.0 || obs.point.name.empty() || !std::isfinite(obs.point.x)
                     || !std::isfinite(obs.point.y) || !std::isfinite(obs.point.z))
                     throw std::invalid_argument("Cartesian observation requires only a finite physical point");
-            compiled.components.push_back({model::FomDomain {}, component.ports, component.observations});
+            compiled.components.push_back({model::FomDomain {}, component.ports, component.observations, compiled_library});
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
             model.library = compiled_library;
             model.flow_mode = domain.flow_mode;
