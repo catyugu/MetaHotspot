@@ -91,3 +91,40 @@ def test_solution_views_derive_from_one_native_snapshot():
     assert solution.history_times[-1] == pytest.approx(1.0)
     assert [trace.name for trace in solution.probes] == ["center"]
     assert solution.probes[0].values.size == solution.history_times.size
+
+
+def test_stokes_public_multifield_layout_and_solve():
+    from metahotspot.enums import EntitySupport, FieldQuantity, FlowMode, FluidBC
+
+    model = metahotspot.Model()
+    model.set_cartesian_mesh([0.0, 1.0, 2.0], [0.0, 1.0], [0.0, 1.0])
+    material = model.add_material("fluid", "1", "1", "1", "1", "1", "T/300")
+    volume = model.add_volume(material)
+    model.add_box(volume, [0, 0, 0], [2, 1, 1])
+    model.set_flow_mode(FlowMode.STOKES)
+    model.add_fluid_boundary(
+        [SurfaceRegion(Axis.X, 0, 0, 1, 0, 1)],
+        FluidBC.PRESSURE_INLET,
+        1.0,
+        300.0,
+    )
+    model.add_fluid_boundary(
+        [SurfaceRegion(Axis.X, 2, 0, 1, 0, 1)],
+        FluidBC.OUTLET,
+        0.0,
+        300.0,
+    )
+    compiled = model.compile()
+    assert compiled.info.state_count == 7
+    assert len(compiled.field_layouts) == 5
+    pressure, velocity = compiled.field_layouts[1:3]
+    assert pressure.quantity == FieldQuantity.PRESSURE
+    assert pressure.support == EntitySupport.CELL
+    assert velocity.quantity == FieldQuantity.VELOCITY
+    assert velocity.support == EntitySupport.FACE
+    assert velocity.dofs.size == 3
+    solution = compiled.solve()
+    assert solution.converged
+    assert np.all(np.isfinite(solution.state))
+    assert np.all(solution.state[velocity.dofs] > 0)
+    np.testing.assert_allclose(compiled.solve().state, solution.state, atol=1e-9)

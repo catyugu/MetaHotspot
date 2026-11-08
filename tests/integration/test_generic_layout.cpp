@@ -336,3 +336,34 @@ TEST(GenericLayout, StaggeredStokesThermalFeedbackUpdatesViscosityAndMassFlux)
     ASSERT_TRUE(repeated.converged);
     EXPECT_NEAR(repeated.state[face.dofs[1]], cold_flow, 1e-9);
 }
+
+TEST(GenericLayout, TransientStokesKeepsPressureAlgebraicAndConservesMass)
+{
+    using namespace mhs::model;
+    auto definition = channel();
+    definition.domains[0].flow_mode = FlowMode::Stokes;
+    definition.domains[0].fluid_boundaries[0].condition = PressureInlet {1, 300};
+    definition.domains[0].fluid_boundaries[1].condition = PressureOutlet {0, 300};
+    auto compiled = mhs::compiler::build_model(definition);
+    auto study = compiled.study;
+    study.type = StudyType::Transient;
+    study.duration = 0.2;
+    study.output_interval = 0.1;
+    const auto solution = mhs::solver::solve(compiled, study);
+    ASSERT_TRUE(solution.converged);
+    ASSERT_EQ(solution.snapshot_times.size(), 3u);
+    const auto n = compiled.layout.state_count;
+    ASSERT_EQ(solution.snapshot_states.size(), 3 * n);
+    for (std::size_t step = 0; step < solution.snapshot_times.size(); ++step) {
+        const auto time = solution.snapshot_times[step];
+        const std::span<const double> state(solution.snapshot_states.data() + step * n, n);
+        const auto ops = mhs::solver::assemble_thermal(compiled, state, time);
+        for (const auto dof : compiled.layout.fields[1].dofs) {
+            EXPECT_DOUBLE_EQ(ops.C.coeff(dof, dof), 0);
+            double continuity = -ops.f[dof];
+            for (auto entry = ops.K.row_ptr()[dof]; entry < ops.K.row_ptr()[dof + 1]; ++entry)
+                continuity += ops.K.values()[entry] * state[ops.K.col_idx()[entry]];
+            EXPECT_NEAR(continuity, 0.0, 1e-8);
+        }
+    }
+}
