@@ -223,6 +223,70 @@ TEST(RomDomain, AffineHtcTermsReuseOneReducedSystemForDifferentBoundaryValues)
     EXPECT_NEAR(first_again.state[0], first_solution.state[0], 1e-12);
 }
 
+TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
+{
+    using namespace mhs::model;
+    ModelDefinition d;
+    MaterialSpec solid;
+    solid.conductivity_x = solid.conductivity_y = solid.conductivity_z = "1";
+    solid.density = solid.specific_heat = "1";
+    d.materials.push_back({"solid", solid});
+    auto& fom = d.domains[0];
+    fom.mesh.x_vertices = {0, 1};
+    fom.mesh.y_vertices = {0, 0.5, 1};
+    fom.mesh.z_vertices = {0, 1};
+    fom.volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}}};
+    fom.ports.push_back({"join", {Axis::X, 1, {0, 1, 0, 1}}});
+
+    RomDomainDefinition rom;
+    rom.order = 1;
+    rom.K = {1};
+    rom.C = {1};
+    rom.f = {0};
+    rom.initial_state = {1};
+    RomPort port;
+    port.name = "join";
+    port.region = {Axis::X, 1, {0, 1, 0, 1}};
+    port.outward_sign = -1;
+    RomPortPatch patch;
+    patch.rectangle = {0, 1, 0, 1};
+    patch.half_resistance = 0.5;
+    patch.center = {0.5, 0.5};
+    // At z=1 the ROM center temperature is 305 K, with a physical
+    // tangential gradient of 20 K/m. The FOM cells at y=.25 and y=.75
+    // have temperatures 300 and 310 K, so the corrected flux is zero.
+    patch.trace = {305};
+    patch.tangential_gradient[0] = {20};
+    patch.tangential_gradient[1] = {0};
+    port.patches.push_back(patch);
+    rom.ports.push_back(port);
+    d.rom_domains.push_back(rom);
+    d.connections = {{{0, 0}, {1, 0}}};
+
+    const auto compiled = mhs::compiler::build_model(d);
+    ASSERT_EQ(compiled.connections.size(), 1u);
+    ASSERT_TRUE(compiled.connections.front().nonmatching);
+    const mhs::core::Vector<double> state {300, 310, 1};
+    const auto corrected
+        = mhs::solver::evaluate_connection_flux(compiled, compiled.connections.front(), state, 0);
+    ASSERT_EQ(corrected.size(), 2u);
+    for (const auto& part : corrected)
+        EXPECT_NEAR(part.outward_a, 0, 1e-12);
+
+    auto uncorrected = d;
+    uncorrected.rom_domains[0].ports[0].patches[0].tangential_gradient[0] = {0};
+    const auto model_tpfa = mhs::compiler::build_model(uncorrected);
+    const auto tpfa = mhs::solver::evaluate_connection_flux(model_tpfa, model_tpfa.connections.front(), state, 0);
+    ASSERT_EQ(tpfa.size(), 2u);
+    EXPECT_NEAR(tpfa[0].outward_a, -2.5, 1e-12);
+    EXPECT_NEAR(tpfa[1].outward_a, 2.5, 1e-12);
+
+    const auto ops = mhs::solver::assemble_thermal(compiled, state, 0);
+    for (std::size_t i = 0; i < state.size(); ++i)
+        for (std::size_t j = 0; j < state.size(); ++j)
+            EXPECT_NEAR(ops.K.coeff(i, j), ops.K.coeff(j, i), 1e-12);
+}
+
 TEST(RomDomain, NonmatchingRomPortRequiresNccGradient)
 {
     mhs::model::ModelDefinition d;
