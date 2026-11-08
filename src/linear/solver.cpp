@@ -3,6 +3,7 @@
 
 namespace mhs::linear {
     SolverPtr make_amg_solver(SolverConfig config);
+    SolverPtr make_sparse_lu_solver(SolverConfig config);
 #ifdef MHS_ENABLE_PARDISO
     SolverPtr make_pardiso_solver(SolverConfig config);
 #endif
@@ -19,6 +20,8 @@ namespace mhs::linear {
 #endif
         case SolverType::Amg:
             return make_amg_solver(spec.config);
+        case SolverType::SparseLu:
+            return make_sparse_lu_solver(spec.config);
         default:
             throw std::invalid_argument("create_solver: unknown solver type");
         }

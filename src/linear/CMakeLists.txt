@@ -1,6 +1,7 @@
 set(_linear_sources
     solver.cpp
     amg_solver.cpp
+    sparse_lu_solver.cpp
 )
 if(MHS_ENABLE_PARDISO)
     list(APPEND _linear_sources pardiso_lu_solver.cpp)
@@ -17,6 +18,7 @@ target_link_libraries(mhs_linear
     $<BUILD_INTERFACE:mhs_options>
     $<BUILD_INTERFACE:amgcl::amgcl>
     OpenMP::OpenMP_CXX
+    $<BUILD_INTERFACE:Eigen3::Eigen>
 )
 
 # amgcl is third-party template code and this is the only TU that instantiates

@@ -6,7 +6,7 @@
 
 namespace mhs::linear {
 
-    enum class SolverType { Pardiso, Amg };
+    enum class SolverType { Pardiso, Amg, SparseLu };
 
     // Solver configuration (shared by direct and iterative backends).
     struct SolverConfig {

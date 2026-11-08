@@ -140,6 +140,8 @@ static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_ty
         return mhs::solver::SolveOptions::LinearSolverType::Pardiso;
     case MHS_SOLVER_AMG:
         return mhs::solver::SolveOptions::LinearSolverType::Amg;
+    case MHS_SOLVER_SPARSE_LU:
+        return mhs::solver::SolveOptions::LinearSolverType::SparseLu;
     }
     throw std::invalid_argument("invalid solver type: " + std::to_string(t));
 }
@@ -165,7 +167,8 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
     const mhs::solver::SolveOptions defaults {};
     opts->solver_type = defaults.linear_solver == mhs::solver::SolveOptions::LinearSolverType::Pardiso
         ? MHS_SOLVER_PARDISO
-        : MHS_SOLVER_AMG;
+        : defaults.linear_solver == mhs::solver::SolveOptions::LinearSolverType::SparseLu ? MHS_SOLVER_SPARSE_LU
+                                                                                          : MHS_SOLVER_AMG;
     opts->linear_tolerance = defaults.linear_tolerance;
     opts->linear_max_iterations = defaults.linear_max_iterations;
     opts->underrelaxation = defaults.underrelaxation;
