@@ -98,8 +98,12 @@ namespace mhs::model {
         std::array<double, 4> bounds {};
     };
 
+    struct CompiledRomDomain : RomDomain {
+        std::shared_ptr<const CompiledLibrary> library;
+    };
+
     struct CompiledComponent {
-        std::variant<FomDomain, RomDomain> physics;
+        std::variant<FomDomain, CompiledRomDomain> physics;
         core::Vector<PortDefinition> ports;
         core::Vector<ObservationDefinition> observations;
     };
@@ -111,7 +115,7 @@ namespace mhs::model {
 
         FomDomain& fom(DomainId id) { return std::get<FomDomain>(components.at(id).physics); }
         const FomDomain& fom(DomainId id) const { return std::get<FomDomain>(components.at(id).physics); }
-        const RomDomain& rom(DomainId id) const { return std::get<RomDomain>(components.at(id).physics); }
+        const RomDomain& rom(DomainId id) const { return std::get<CompiledRomDomain>(components.at(id).physics); }
 
         StateLayout layout;
         core::Vector<ThermalConnection> connections;
