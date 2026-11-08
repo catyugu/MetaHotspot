@@ -19,6 +19,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python -m pip install --group dev
           clang-format -i \
             include/metahotspot/model/rom_domain.hpp \
             include/metahotspot/model/model_definition.hpp \
@@ -32,7 +33,6 @@ jobs:
             src/solver/solve.cpp \
             src/api/metahotspot.cpp \
             tests/integration/test_rom_domain.cpp
-          python -m pip install --group dev
           ruff format python/metahotspot/model.py python/metahotspot/compiled.py \
             python/metahotspot/_dll_interface.py python/tests/test_rom_domain.py
           ruff check --fix python/metahotspot/model.py python/metahotspot/compiled.py \
