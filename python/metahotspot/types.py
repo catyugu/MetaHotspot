@@ -10,6 +10,10 @@ import ctypes
 # ---- Opaque handle types ----
 
 
+class MhsLibrary(ctypes.Structure):
+    pass
+
+
 class MhsModel(ctypes.Structure):
     pass
 
