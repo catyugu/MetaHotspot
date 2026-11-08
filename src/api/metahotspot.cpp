@@ -367,9 +367,7 @@ MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t domain_a, mhs
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        const auto check_port = [&](mhs_index_t d, mhs_index_t p) {
-            (void)m->def.component(d).ports.at(p);
-        };
+        const auto check_port = [&](mhs_index_t d, mhs_index_t p) { (void)m->def.component(d).ports.at(p); };
         check_port(domain_a, port_a);
         check_port(domain_b, port_b);
         const auto id = static_cast<mhs_index_t>(m->def.connections.size());

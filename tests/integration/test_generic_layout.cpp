@@ -12,7 +12,7 @@ namespace {
     {
         using namespace mhs::model;
         ModelDefinition d;
-    d.components.emplace_back();
+        d.components.emplace_back();
         d.fom(0).mesh.x_vertices = {0, 1, 2};
         d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 1};
         MaterialSpec liquid;
@@ -95,7 +95,7 @@ namespace {
     {
         using namespace mhs::model;
         ModelDefinition d;
-    d.components.emplace_back();
+        d.components.emplace_back();
         d.components.resize(2);
         MaterialSpec solid;
         solid.conductivity_x = solid.conductivity_y = solid.conductivity_z = "1";

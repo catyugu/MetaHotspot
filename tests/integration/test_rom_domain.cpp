@@ -67,7 +67,7 @@ namespace {
     ModelDefinition blocks(bool reduced)
     {
         ModelDefinition model;
-    model.components.emplace_back();
+        model.components.emplace_back();
         MaterialSpec mat;
         mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
         mat.density = mat.specific_heat = "1";

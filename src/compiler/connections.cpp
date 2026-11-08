@@ -84,7 +84,6 @@ namespace mhs::compiler {
                         [&](const auto& x) { return x.sign == projection.front().sign; }))
                     throw std::invalid_argument("port must have a single outward normal");
             }
-
         }
 
         // ROM ports describe only their physical boundary; their interior is
@@ -137,9 +136,7 @@ namespace mhs::compiler {
             }
         }
 
-        auto region = [&](PortReference x) -> SurfaceRegion {
-            return definition.component(x.domain).ports.at(x.port).region;
-        };
+        auto region = [&](PortReference x) -> SurfaceRegion { return definition.component(x.domain).ports.at(x.port).region; };
         for (const auto& spec : definition.connections) {
             if (spec.a.domain == spec.b.domain || spec.a.domain >= ndom || spec.b.domain >= ndom)
                 throw std::invalid_argument("connection must join two different domains");
