@@ -174,13 +174,12 @@ namespace mhs::compiler {
         for (std::size_t r = 0; r < definition.rom_domains.size(); ++r) {
             auto rom = definition.rom_domains[r];
             const auto n = rom.order;
-            if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n
-                || rom.K.size() != n * n || rom.C.size() != n * n || rom.f.size() != n
+            if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n || rom.K.size() != n * n
+                || rom.C.size() != n * n || rom.f.size() != n
                 || (!rom.initial_state.empty() && rom.initial_state.size() != n))
                 throw std::invalid_argument("ROM operators or initial state have invalid dimensions");
             auto finite = [](double value) { return std::isfinite(value); };
-            if (!std::all_of(rom.K.begin(), rom.K.end(), finite)
-                || !std::all_of(rom.C.begin(), rom.C.end(), finite)
+            if (!std::all_of(rom.K.begin(), rom.K.end(), finite) || !std::all_of(rom.C.begin(), rom.C.end(), finite)
                 || !std::all_of(rom.f.begin(), rom.f.end(), finite)
                 || !std::all_of(rom.initial_state.begin(), rom.initial_state.end(), finite))
                 throw std::invalid_argument("ROM operators and initial state must be finite");
@@ -188,8 +187,7 @@ namespace mhs::compiler {
                 rom.initial_state.assign(n, 0.0);
             for (const auto& obs : rom.observations) {
                 if (obs.weights.size() != n || !std::all_of(obs.weights.begin(), obs.weights.end(), finite)
-                    || !finite(obs.offset) || !finite(obs.point.x) || !finite(obs.point.y)
-                    || !finite(obs.point.z))
+                    || !finite(obs.offset) || !finite(obs.point.x) || !finite(obs.point.y) || !finite(obs.point.z))
                     throw std::invalid_argument("ROM observation has invalid dimension or values");
             }
             const auto global_id = static_cast<model::DomainId>(compiled.domains.size() + r);

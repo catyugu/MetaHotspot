@@ -47,22 +47,21 @@ namespace mhs::solver {
             return sum;
         }
 
-        core::Vector<core::Vector<double>> gather_fom(const model::CompiledModel& compiled,
-            std::span<const double> state)
+        core::Vector<core::Vector<double>> gather_fom(
+            const model::CompiledModel& compiled, std::span<const double> state)
         {
             core::Vector<core::Vector<double>> values;
             for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
                 auto& t = values.emplace_back(compiled.domains[d].discrete.cells.size());
-                const auto& field = compiled.layout.field(compiled.layout.find(
-                    static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
+                const auto& field = compiled.layout.field(
+                    compiled.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
                 for (std::size_t i = 0; i < field.dofs.size(); ++i)
                     t.at(field.entities[i]) = state[field.dofs[i]];
             }
             return values;
         }
 
-        double dot(std::span<const double> weights, std::span<const double> state,
-            const model::FieldLayout& field)
+        double dot(std::span<const double> weights, std::span<const double> state, const model::FieldLayout& field)
         {
             double value = 0.0;
             for (std::size_t i = 0; i < weights.size(); ++i)
@@ -103,8 +102,8 @@ namespace mhs::solver {
                     throw std::invalid_argument("connection requires finite positive normal conductivity");
                 result.resistance = box.size()[axis] / (2 * k);
                 result.temperature = temperature;
-                const auto& field = compiled.layout.field(
-                    compiled.layout.find(ref.domain, model::FieldQuantity::Temperature));
+                const auto& field
+                    = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::Temperature));
                 for (std::size_t j = 0; j < field.entities.size(); ++j)
                     if (field.entities[j] == cell) {
                         result.weights.push_back({field.dofs[j], 1.0});
@@ -124,8 +123,8 @@ namespace mhs::solver {
             else {
                 const auto& rom = compiled.rom_domains.at(ref.domain - nfom);
                 const auto& facet = rom.ports.at(ref.port).patches.at(index);
-                const auto& field = compiled.layout.field(
-                    compiled.layout.find(ref.domain, model::FieldQuantity::ReducedCoordinate));
+                const auto& field
+                    = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::ReducedCoordinate));
                 result.resistance = facet.half_resistance;
                 result.offset = facet.offset;
                 result.temperature = dot(facet.trace, state, field) + facet.offset;

@@ -42,7 +42,9 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     )
     a = model.add_port(0, "fom-join", SurfaceRegion(Axis.X, 1, 0, 1, 0, 1))
     rom = model.add_rom_domain(
-        np.array([[2.0]]), np.array([[1.0]]), np.array([560.0]),
+        np.array([[2.0]]),
+        np.array([[1.0]]),
+        np.array([560.0]),
         initial_state=np.array([290.0]),
     )
     b = model.add_rom_port(
@@ -74,9 +76,7 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     assert solution.probes[0].name == "rom-probe"
     assert solution.probes[0].values[-1] == pytest.approx(285.0)
 
-    transient = compiled.solve(
-        study=Study(StudyType.TRANSIENT, 300.0, 0.5, 0.25)
-    )
+    transient = compiled.solve(study=Study(StudyType.TRANSIENT, 300.0, 0.5, 0.25))
     assert transient.converged
     assert transient.state_history.shape[1] == 2
     assert transient.probes[0].values.size == transient.history_times.size

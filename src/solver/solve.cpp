@@ -201,8 +201,8 @@ namespace mhs::solver {
             state.assign(state_count, study.initial_temperature);
             for (std::size_t r = 0; r < compiled.rom_domains.size(); ++r) {
                 const auto domain = static_cast<model::DomainId>(compiled.domains.size() + r);
-                const auto& field = compiled.layout.field(
-                    compiled.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
+                const auto& field
+                    = compiled.layout.field(compiled.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
                 const auto& initial = compiled.rom_domains[r].initial_state;
                 for (std::size_t j = 0; j < initial.size(); ++j)
                     state[field.dofs[j]] = initial[j];
@@ -257,16 +257,14 @@ namespace mhs::solver {
             if (observation)
                 recorders.push_back(nullptr);
             else
-                recorders.push_back(
-                    std::make_unique<ProbeRecorder>(compiled.domains[owner], std::span(&probe, 1)));
+                recorders.push_back(std::make_unique<ProbeRecorder>(compiled.domains[owner], std::span(&probe, 1)));
         }
 
         StateObserver observe = [&](double t, std::span<const double> accepted_state) {
             assembler.gather(accepted_state);
             core::Vector<core::Vector<SurfaceTrace>> traces(compiled.domains.size());
             for (const auto& connection : compiled.connections) {
-                if (connection.a.domain >= compiled.domains.size()
-                    && connection.b.domain >= compiled.domains.size())
+                if (connection.a.domain >= compiled.domains.size() && connection.b.domain >= compiled.domains.size())
                     continue;
                 const auto flux = evaluate_connection_flux(compiled, connection, accepted_state, t);
                 for (std::size_t p = 0; p < connection.patches.size(); ++p) {
@@ -277,8 +275,8 @@ namespace mhs::solver {
                                 flux[p].interface_temperature});
                     if (connection.b.domain < compiled.domains.size())
                         traces[connection.b.domain].push_back(
-                            {{patch.b, connection.axis, static_cast<std::int8_t>(-connection.sign_a),
-                                 core::invalid_id, patch.bounds},
+                            {{patch.b, connection.axis, static_cast<std::int8_t>(-connection.sign_a), core::invalid_id,
+                                 patch.bounds},
                                 flux[p].interface_temperature});
                 }
             }

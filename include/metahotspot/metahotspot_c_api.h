@@ -242,11 +242,11 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
 MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
     const mhs_surface_region_t* region, int32_t outward_sign, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_rom_port_add_patch(mhs_model_t* m, mhs_index_t domain, mhs_index_t port,
-    const mhs_rect2d_t* rectangle, double half_resistance, const double tangent_center[2],
-    const double* trace, double offset, const double* gradient_a, const double* gradient_b);
+    const mhs_rect2d_t* rectangle, double half_resistance, const double tangent_center[2], const double* trace,
+    double offset, const double* gradient_a, const double* gradient_b);
 // A ROM output map can satisfy an existing named point probe without a FOM mesh.
-MHS_API mhs_status_t mhs_model_add_rom_observation(mhs_model_t* m, mhs_index_t domain, const char* name,
-    const double xyz[3], const double* weights, double offset);
+MHS_API mhs_status_t mhs_model_add_rom_observation(
+    mhs_model_t* m, mhs_index_t domain, const char* name, const double xyz[3], const double* weights, double offset);
 
 MHS_API mhs_status_t mhs_model_add_port(
     mhs_model_t* m, mhs_index_t domain, const char* name, const mhs_surface_region_t* region, mhs_index_t* out_id);

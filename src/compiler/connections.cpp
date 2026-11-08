@@ -18,19 +18,13 @@ namespace mhs::compiler {
 
         double area(const Bounds& r) { return (r[1] - r[0]) * (r[3] - r[2]); }
         Bounds overlap(const Bounds& a, const Bounds& b)
-        {
-            return {std::max(a[0], b[0]), std::min(a[1], b[1]), std::max(a[2], b[2]), std::min(a[3], b[3])};
-        }
+        { return {std::max(a[0], b[0]), std::min(a[1], b[1]), std::max(a[2], b[2]), std::min(a[3], b[3])}; }
         bool positive(const Bounds& r) { return r[1] > r[0] && r[3] > r[2]; }
         Bounds bounds(const SurfaceRegion& r)
-        {
-            return {r.rectangle.a_min, r.rectangle.a_max, r.rectangle.b_min, r.rectangle.b_max};
-        }
+        { return {r.rectangle.a_min, r.rectangle.a_max, r.rectangle.b_min, r.rectangle.b_max}; }
         Bounds bounds(const RegionRect& r) { return {r.a_min, r.a_max, r.b_min, r.b_max}; }
         bool intersects(const SurfaceRegion& a, const SurfaceRegion& b)
-        {
-            return a.axis == b.axis && a.coordinate == b.coordinate && positive(overlap(bounds(a), bounds(b)));
-        }
+        { return a.axis == b.axis && a.coordinate == b.coordinate && positive(overlap(bounds(a), bounds(b))); }
         void validate_region(const SurfaceRegion& r)
         {
             const auto rect = bounds(r);
@@ -38,10 +32,7 @@ namespace mhs::compiler {
                 || !std::all_of(rect.begin(), rect.end(), [](double x) { return std::isfinite(x); }))
                 throw std::invalid_argument("invalid port surface region");
         }
-        bool same_bounds(const Bounds& a, const Bounds& b)
-        {
-            return a == b;
-        }
+        bool same_bounds(const Bounds& a, const Bounds& b) { return a == b; }
     } // namespace
 
     void compile_connections(const model::ModelDefinition& definition, model::CompiledModel& compiled)
@@ -75,8 +66,7 @@ namespace mhs::compiler {
                     for (const auto& region : bc.regions)
                         if (intersects(r, region))
                             throw std::invalid_argument("port overlaps a fluid boundary");
-                const auto projection
-                    = project_exterior_surface_regions(compiled.domains[d].discrete, {{r, 0}});
+                const auto projection = project_exterior_surface_regions(compiled.domains[d].discrete, {{r, 0}});
                 double covered = 0;
                 for (const auto& patch : projection) {
                     covered += area(patch.bounds);
@@ -132,17 +122,16 @@ namespace mhs::compiler {
                     const auto rect = bounds(patch.rectangle);
                     const auto common = overlap(rect, bounds(port.region));
                     if (!positive(rect) || !same_bounds(rect, common) || !std::isfinite(patch.half_resistance)
-                        || patch.half_resistance <= 0 || !std::isfinite(patch.offset)
-                        || patch.trace.size() != rom.order
-                        || !std::all_of(patch.trace.begin(), patch.trace.end(),
-                            [](double x) { return std::isfinite(x); })
-                        || !std::all_of(patch.center.begin(), patch.center.end(),
-                            [](double x) { return std::isfinite(x); }))
+                        || patch.half_resistance <= 0 || !std::isfinite(patch.offset) || patch.trace.size() != rom.order
+                        || !std::all_of(
+                            patch.trace.begin(), patch.trace.end(), [](double x) { return std::isfinite(x); })
+                        || !std::all_of(
+                            patch.center.begin(), patch.center.end(), [](double x) { return std::isfinite(x); }))
                         throw std::invalid_argument("invalid ROM port patch geometry or trace");
                     for (const auto& row : patch.tangential_gradient)
-                        if (!row.empty() && (row.size() != rom.order
-                                || !std::all_of(row.begin(), row.end(),
-                                    [](double x) { return std::isfinite(x); })))
+                        if (!row.empty()
+                            && (row.size() != rom.order
+                                || !std::all_of(row.begin(), row.end(), [](double x) { return std::isfinite(x); })))
                             throw std::invalid_argument("ROM tangential gradient has invalid dimensions");
                     for (std::size_t prev = 0; prev < j; ++prev)
                         if (positive(overlap(rect, bounds(port.patches[prev].rectangle))))
@@ -150,8 +139,8 @@ namespace mhs::compiler {
                     total += area(rect);
                     ports[d].at(p).push_back({static_cast<CellId>(j), rect, port.outward_sign});
                 }
-                if (port.patches.empty() || std::abs(total - area(bounds(port.region)))
-                        > 1e-10 * area(bounds(port.region)))
+                if (port.patches.empty()
+                    || std::abs(total - area(bounds(port.region))) > 1e-10 * area(bounds(port.region)))
                     throw std::invalid_argument("ROM port patches must exactly cover the port");
             }
         }

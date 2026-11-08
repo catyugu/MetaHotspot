@@ -441,7 +441,12 @@ class Model(OwnedHandle):
         k = np.ascontiguousarray(stiffness, dtype=np.float64)
         c = np.ascontiguousarray(capacity, dtype=np.float64)
         f = np.ascontiguousarray(rhs, dtype=np.float64)
-        if k.ndim != 2 or k.shape[0] == 0 or k.shape[0] != k.shape[1] or c.shape != k.shape:
+        if (
+            k.ndim != 2
+            or k.shape[0] == 0
+            or k.shape[0] != k.shape[1]
+            or c.shape != k.shape
+        ):
             raise ValueError("ROM K/C must be nonempty square matrices")
         if f.shape != (k.shape[0],):
             raise ValueError("ROM rhs must have shape (order,)")
@@ -539,7 +544,9 @@ class Model(OwnedHandle):
         if xyz.shape != (3,) or coefficients.shape != (
             self._rom_orders.get(domain, -1),
         ):
-            raise ValueError("ROM observation requires xyz=(3,) and modal weights=(order,)")
+            raise ValueError(
+                "ROM observation requires xyz=(3,) and modal weights=(order,)"
+            )
         self._call(
             "mhs_model_add_rom_observation",
             domain,

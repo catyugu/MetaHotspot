@@ -15,12 +15,10 @@ namespace {
         FomDomainDefinition d;
         d.mesh.x_vertices = x;
         d.mesh.y_vertices = d.mesh.z_vertices = {0.0, 1.0};
-        d.volumes = {{0, mhs::core::invalid_id,
-            {{GeometryOperation::Add, {0, 0, 0}, {3, 1, 1}}}}};
+        d.volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {3, 1, 1}}}}};
         d.default_thermal_boundary = NeumannBoundary {};
         d.thermal_boundaries.push_back(
-            {{{Axis::X, first ? 0.0 : 3.0, {0, 1, 0, 1}}},
-                DirichletBoundary {first ? "300" : "280"}});
+            {{{Axis::X, first ? 0.0 : 3.0, {0, 1, 0, 1}}}, DirichletBoundary {first ? "300" : "280"}});
         d.ports.push_back({"interface", {Axis::X, 1.0, {0, 1, 0, 1}}});
         return d;
     }
@@ -168,8 +166,7 @@ TEST(RomDomain, RomToRomConnectionNeedsNoFakeFomMesh)
     ASSERT_TRUE(solution.converged);
     EXPECT_NEAR(solution.state[0], 295, 1e-8);
     EXPECT_NEAR(solution.state[1], 285, 1e-8);
-    const auto solved_flux
-        = mhs::solver::evaluate_connection_flux(model, model.connections[0], solution.state, 0);
+    const auto solved_flux = mhs::solver::evaluate_connection_flux(model, model.connections[0], solution.state, 0);
     EXPECT_NEAR(solved_flux[0].outward_a, 10, 1e-8);
 }
 

@@ -191,8 +191,7 @@ namespace mhs::solver {
         }
         for (std::size_t r = 0; r < model.rom_domains.size(); ++r) {
             const auto domain = static_cast<model::DomainId>(model.domains.size() + r);
-            const auto& field = model.layout.field(
-                model.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
+            const auto& field = model.layout.field(model.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
             const auto n = model.rom_domains[r].order;
             if (field.entities.size() != n || field.dofs.size() != n)
                 throw std::invalid_argument("ROM field does not cover modal coordinates");
@@ -249,8 +248,8 @@ namespace mhs::solver {
         for (std::size_t r = 0; r < model_.rom_domains.size(); ++r) {
             const auto& rom = model_.rom_domains[r];
             const auto domain = static_cast<model::DomainId>(model_.domains.size() + r);
-            const auto& field = model_.layout.field(
-                model_.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
+            const auto& field
+                = model_.layout.field(model_.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
             for (std::size_t i = 0; i < rom.order; ++i) {
                 const auto row = static_cast<core::SparseIndex>(field.dofs[i]);
                 load[row] += rom.f[i];
@@ -274,21 +273,17 @@ namespace mhs::solver {
                     const auto row = static_cast<core::SparseIndex>(wa.dof);
                     load[row] -= wa.weight * forcing;
                     for (const auto& xa : patch_flux.a)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xa.dof),
-                            g * wa.weight * xa.weight);
+                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xa.dof), g * wa.weight * xa.weight);
                     for (const auto& xb : patch_flux.b)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xb.dof),
-                            -g * wa.weight * xb.weight);
+                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xb.dof), -g * wa.weight * xb.weight);
                 }
                 for (const auto& wb : patch_flux.b) {
                     const auto row = static_cast<core::SparseIndex>(wb.dof);
                     load[row] += wb.weight * forcing;
                     for (const auto& xa : patch_flux.a)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xa.dof),
-                            -g * wb.weight * xa.weight);
+                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xa.dof), -g * wb.weight * xa.weight);
                     for (const auto& xb : patch_flux.b)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xb.dof),
-                            g * wb.weight * xb.weight);
+                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xb.dof), g * wb.weight * xb.weight);
                 }
             }
         }

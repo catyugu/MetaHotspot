@@ -13,8 +13,8 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
-#include <memory>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <span>
 #include <sstream>
@@ -259,8 +259,7 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
         // The default, untouched FOM is a convenience for ordinary models;
         // a ROM-only assembly does not need an artificial empty FOM.
         if (m->def.domains.size() == 1 && m->def.domains[0].mesh.x_vertices.empty()
-            && m->def.domains[0].mesh.y_vertices.empty()
-            && m->def.domains[0].mesh.z_vertices.empty()
+            && m->def.domains[0].mesh.y_vertices.empty() && m->def.domains[0].mesh.z_vertices.empty()
             && m->def.domains[0].volumes.empty() && m->def.domains[0].ports.empty()
             && m->def.domains[0].thermal_boundaries.empty() && m->def.domains[0].fluid_boundaries.empty())
             m->def.domains.clear();
@@ -297,8 +296,8 @@ MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, 
 }
 
 MHS_API mhs_status_t mhs_model_rom_port_add_patch(mhs_model_t* m, mhs_index_t domain, mhs_index_t port,
-    const mhs_rect2d_t* rectangle, double half_resistance, const double tangent_center[2],
-    const double* trace, double offset, const double* gradient_a, const double* gradient_b)
+    const mhs_rect2d_t* rectangle, double half_resistance, const double tangent_center[2], const double* trace,
+    double offset, const double* gradient_a, const double* gradient_b)
 {
     CHECK_NULL(m);
     CHECK_NULL(rectangle);
@@ -321,8 +320,8 @@ MHS_API mhs_status_t mhs_model_rom_port_add_patch(mhs_model_t* m, mhs_index_t do
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_rom_observation(mhs_model_t* m, mhs_index_t domain, const char* name,
-    const double xyz[3], const double* weights, double offset)
+MHS_API mhs_status_t mhs_model_add_rom_observation(
+    mhs_model_t* m, mhs_index_t domain, const char* name, const double xyz[3], const double* weights, double offset)
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
@@ -774,8 +773,8 @@ MHS_API mhs_status_t mhs_compiled_default_state(
         std::fill_n(state, state_count, initial_temperature);
         for (std::size_t r = 0; r < c->model.rom_domains.size(); ++r) {
             const auto d = static_cast<mhs::model::DomainId>(c->model.domains.size() + r);
-            const auto& field = c->model.layout.field(
-                c->model.layout.find(d, mhs::model::FieldQuantity::ReducedCoordinate));
+            const auto& field
+                = c->model.layout.field(c->model.layout.find(d, mhs::model::FieldQuantity::ReducedCoordinate));
             for (std::size_t j = 0; j < field.dofs.size(); ++j)
                 state[field.dofs[j]] = c->model.rom_domains[r].initial_state[j];
         }
