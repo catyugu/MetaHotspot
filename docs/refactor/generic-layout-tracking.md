@@ -19,6 +19,7 @@
 4. **网格限制与非匹配处理边界保持明确。** 全阶内部控制体全部是轴对齐六面体；允许局部加细和粗细非共形，不扩展到一般非结构化单元。几何面、通量积分子片、交错速度自由度可以是不同实体。**同一 FOM Domain 内的非匹配网格直接按 TPFA 装配，无需非正交校正；不同 Domain 间的非匹配热界面必须使用 NCC（non-orthogonal correction）校正热流。**
 5. **现有用户抽象继续清晰。** `Study` 和命名 `Probe` 归属于可变模型定义；已编译模型保持与定义分离的不可变快照。保留 C ABI 的模型、编译结果、算子、解四种独立拥有型 opaque handle，优先使用整数 Domain/Field/Port/Connection ID，不为每个概念引入生命周期 handle。
 6. **允许破坏接口兼容性。** 不增加兼容别名、`MHS_ABI_VERSION` 或 ABI 版本查询。PTA 外部网格兼容逻辑只在 app 层，不能重新进入内核公共建模契约。
+7. **不保留模型级参考温度。** 最终删除 `ModelDefinition::reference_temperature`、编译后 `Model::reference_temperature`，连同 C ABI / Python 中对应的模型设置与编译信息接口；物性评价和流体边界不能再依赖隐式的全局 `300 K`。
 
 非目标：通用非结构网格、ECS 实体系统、任意物理模型动态注册框架、通用材料属性键值数据库，以及在此轮重构中承诺特定 ROM 提取算法的精度或阶数。
 
@@ -28,14 +29,14 @@
 
 - 保存材料、参数/函数、体积几何、表面区域、热/流体边界、Domain 定义、域间 Connection、Study 和 Probe。
 - 普通使用路径可隐式拥有一个默认 FOM Domain；单体含流体模型无需调用“添加流体域”接口。
-- 材料表达物理属性；是否冻结流场、是否联立压力—速度—温度等属于 FOM 的物理求解配置。
+- 材料表达物理属性；是否冻结流场、是否联立压力—速度—温度等属于 FOM 的物理求解配置。温度初值由 `Study` 或显式状态提供，模型定义不存储运行参考温度。
 
 ### 2.2 不可变 CompiledModel
 
 - 由 `FomDomain` 与 `RomDomain` 的编译后表示组合构成，并保存 Domain 表、`StateLayout`、已编译 Connection 及观测映射。
 - FOM 拥有笛卡尔几何、离散关联、局部材料/物性引用、源与边界投影及内部物理装配元数据。流体单元只是此 FOM 网格的子集。
 - ROM 拥有约化算子（可参数化）、端口与迹/输出映射；其状态自由度无需与任何 `CellId` 一一对应。
-- 不可变的预处理结果可保存在 CompiledModel；**压力/速度、冻结或实时流量、随时间更新的系数、迭代暂存值和求解器缓存**应按其是否依赖运行条件明确归属 `SolveWorkspace` / `SimulationState`，不得把某次求解状态永久写回可复用的编译模型。
+- 不可变的预处理结果可保存在 CompiledModel；**压力/速度、冻结或实时流量、随时间更新的系数、迭代暂存值和求解器缓存**应按其是否依赖运行条件明确归属 `SolveWorkspace` / `SimulationState`，不得把某次求解状态永久写回可复用的编译模型。温度依赖的黏度和密度保留编译后的物性表达式，求解期间依据对应状态评价。
 - `SourceTerm`、边界投影、基础网格面等数据应各自保留必要语义并消除重复存储；特别不能因合并 `BoundaryFace` 与表面投影记录而丢失一个面被多个条件切分的情况。
 
 ### 2.3 FieldLayout / StateLayout
@@ -60,6 +61,14 @@
 **域之间（inter-domain）：非匹配界面采用 NCC。** 跨 Domain 的匹配热界面使用相容的普通界面传热装配；跨 Domain 的非匹配热界面先建立重叠覆盖及两侧迹/法向导热传递，再对两侧采样位置与共同界面子片的切向偏移引入 NCC 热流修正。可参考 `playground/interface_nc_correction/nc_interface.py` 的延迟修正/非正交 corrector 迭代原型，但具体迭代与线性化实现须由正式求解器设计确定。修正后的同一界面热流以相反号分配给两侧 Domain，必须保持局部与全局能量守恒。**只做 common-patch 重叠投影加 TPFA（零次 NCC corrector）属于对照基线，不能作为 GL-05 的最终验收实现。** 对 FOM–ROM 等连接，NCC 必需的界面信息应通过 ROM 端口映射提供，不得默认跳过校正。
 
 因此，决定 TPFA 或 NCC 的首要条件是**界面是否跨越 Domain 边界**；只有跨域且非匹配的热界面要求 NCC。两种离散路径分属 FOM 内部装配和 Connection 装配，不共用隐式的“所有非匹配面均需 NCC”分支。
+
+### 2.6 模型级 `reference_temperature` 的删除与迁移
+
+- **最终数据模型：** `ModelDefinition`、编译后 `Model` / `FomDomain` 均不再拥有 `reference_temperature`。`Study.initial_temperature` 和显式初始 Field 状态负责运行初始化；不借此恢复编译时统一物性评价温度。
+- **现有依赖：** `src/compiler/model_compiler.cpp` 当前以参考温度求取一次 `dynamic_viscosity`；`src/compiler/fluid_preprocessor.cpp` 又使用该值评价密度以及填充缺省入口温度。改造后，编译过程保留流体物性表达式与边界定义。冻结流场模式在求解初始化时，按实际初始温度场求取物性并形成一次流场；完全耦合模式按当前温度与流动状态更新。
+- **边界条件：** 流体进入计算域所需的入口温度、压力边界逆流时的回流温度必须具有明确物理来源；如果实际出现逆流但缺少温度条件，应给出清晰诊断，不使用未声明的 `300 K` 默认值。`Study.initial_temperature` 也不应偷偷作为边界回流温度。外部 Robin 环境温度属于独立边界数据，不受此次删除影响。
+- **公开接口：** 删除 `mhs_model_set_reference_temperature()`、`mhs_compiled_info_t.reference_temperature`、`Model.set_reference_temperature()` 和 `CompiledInfo.reference_temperature`；不保留兼容别名。迁移应覆盖 C ABI、Python 和依赖这些字段的调用方。
+- **实施顺序：** 首先在 FOM 所有权收敛时清理静态数据依赖；字段和公开接口的最终删除必须与流体预处理改为运行初始化相协调，保持现有冻结流场回归可用。最迟在流动求解/公开契约收尾阶段完成。
 
 ## 3. 主集成模型 GL-01：带单域内液冷的层状封装
 
@@ -155,10 +164,10 @@ GL-03 的理论参考必须明确入口发展段的处理与壁面条件，不�
 
 ## 7. 实施与运行策略
 
-1. **阶段 I — CompiledModel / FieldLayout：** 保持单体热解可运行；启用 GL-01 A、GL-02 的布局部分及 GL-09；用现有单域热装配、流体质量守恒和 Python 测试回归，不额外添加无关测试。
+1. **阶段 I — CompiledModel / FieldLayout：** 保持单体热解可运行；启用 GL-01 A、GL-02 的布局部分及 GL-09；用现有单域热装配、流体质量守恒和 Python 测试回归，不额外添加无关测试。隔离模型级参考温度的现有依赖，为运行态物性评价迁移做准备。
 2. **阶段 II — 域间 Connection：** 启用 GL-04，随后 GL-05；匹配连接检查分域等价，非匹配连接必须落地 NCC 热流校正及对应收敛/守恒验收。支持局部加细后再启用 GL-06，确认单域内部仍只用 TPFA。
 3. **阶段 III — ROM Domain：** 启用 GL-07，先验证满秩再测试截断与参数变化；复用 `playground/simple_erom_case1/`、`playground/connecting_mor_models/` 的已有数值原型与参考。
-4. **阶段 IV — 通用耦合与交错流体：** 启用 GL-03 和 GL-08；将流场状态与编译后常量分离，验证真正的双向传热反馈。
+4. **阶段 IV — 通用耦合与交错流体：** 启用 GL-03 和 GL-08；将流场状态与编译后常量分离，验证真正的双向传热反馈；落实参考温度的模型级移除与 C ABI/Python 同步瘦身。
 5. **每次结构改动后的原有回归：** 现有 CTest、Python 测试和非 archived 的 playground 示例保持可运行；HotSpot 复现与 PTA app 验证不能因核心 API 改造而静默失效。
 
 CI 采用小规模、固定种子的确定性端到端验收；性能/规模验证在单独的手动或专用工作流中运行 30–50 万 DOF 案例，记录建模/编译、峰值内存、装配、线性求解与 ROM 接口耦合开销。大型生成的 `.json`、`.csv`、网格场及矩阵结果应存放在忽略目录或 CI artifacts，**不提交到仓库**；如需数值金标准，仅保留有来源、少量关键标量、容差及复现命令。
@@ -167,6 +176,7 @@ CI 采用小规模、固定种子的确定性端到端验收；性能/规模验�
 
 - [ ] C++ ModelDefinition / CompiledModel 所有权、域表示和 FOM 内部流体语义已固定；不要求用户建 Fluid Domain。
 - [ ] `StateLayout` 明确区分 Cell/Face/DOF，并支持 FOM 多物理场与 ROM 状态。
+- [ ] 已删除 ModelDefinition/编译后 Model 的 `reference_temperature` 及 C ABI/Python 关联接口；冻结流场与完全耦合流场按运行温度评价物性，入口/逆流温度边界具有明确来源，没有隐藏的模型级默认温度。
 - [ ] 单 FOM GL-01 A 与 GL-02 的现有稳态、瞬态和流体回归通过。
 - [ ] Connection 支持匹配 FOM–FOM，GL-04 的代数等价与守恒通过。
 - [ ] 跨 Domain 非匹配连接 GL-05 已实现 NCC 热流校正并通过修正收敛、守恒及参考误差验收；单 FOM 内非匹配 GL-06 使用 TPFA 且无需 NCC，具备验证结果或明确、已接受的范围结论。
