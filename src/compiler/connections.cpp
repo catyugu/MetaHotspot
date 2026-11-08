@@ -183,6 +183,7 @@ namespace mhs::compiler {
                 }
             if (conn.patches.empty())
                 throw std::invalid_argument("connection has no common interface area");
+            conn.sign_a = pa.front().sign;
             used[spec.a.domain][spec.a.port] = used[spec.b.domain][spec.b.port] = true;
             compiled.connections.push_back(std::move(conn));
         }
