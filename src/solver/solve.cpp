@@ -260,8 +260,7 @@ namespace mhs::solver {
                 const auto& field
                     = compiled.layout.field(compiled.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
                 const auto& initial = compiled.rom_domains[r].initial_state;
-                for (std::size_t j = 0; j < initial.size(); ++j)
-                    state[field.dofs[j]] = initial[j];
+                std::copy(initial.begin(), initial.end(), state.begin() + field.offset);
             }
         }
         else {
@@ -319,7 +318,6 @@ namespace mhs::solver {
         }
 
         StateObserver observe = [&](double t, std::span<const double> accepted_state) {
-            assembler.gather(accepted_state);
             core::Vector<core::Vector<SurfaceTrace>> traces(compiled.domains.size());
             for (const auto& connection : compiled.connections) {
                 if (connection.a.domain >= compiled.domains.size() && connection.b.domain >= compiled.domains.size())
@@ -340,7 +338,10 @@ namespace mhs::solver {
             }
             for (std::size_t p = 0; p < recorders.size(); ++p) {
                 if (recorders[p]) {
-                    recorders[p]->record(t, assembler.temperatures()[probe_domains[p]], traces[probe_domains[p]]);
+                    const auto& field = compiled.layout.field(
+                        compiled.layout.find(probe_domains[p], model::FieldQuantity::Temperature));
+                    recorders[p]->record(
+                        t, accepted_state.subspan(field.offset, field.count), traces[probe_domains[p]]);
                     continue;
                 }
                 const auto* observation = rom_observations[p];
@@ -348,7 +349,7 @@ namespace mhs::solver {
                     compiled.layout.find(probe_domains[p], model::FieldQuantity::ReducedCoordinate));
                 double temperature = observation->offset;
                 for (std::size_t j = 0; j < observation->weights.size(); ++j)
-                    temperature += observation->weights[j] * accepted_state[field.dofs[j]];
+                    temperature += observation->weights[j] * accepted_state[field.dof(j)];
                 rom_traces[p].values.push_back(temperature);
             }
         };

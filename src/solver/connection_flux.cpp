@@ -56,7 +56,7 @@ namespace mhs::solver {
                 const auto& field = compiled.layout.field(
                     compiled.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
                 for (std::size_t i = 0; i < field.dofs.size(); ++i)
-                    t.at(field.entities[i]) = state[field.dofs[i]];
+                    t.at(field.entities[i]) = state[field.dof(i)];
             }
             return values;
         }
@@ -86,7 +86,6 @@ namespace mhs::solver {
             throw std::invalid_argument("connection flux requires a complete state");
         const auto nfom = compiled.domains.size();
         const auto axis = static_cast<std::size_t>(connection.axis);
-        const auto temperatures = gather_fom(compiled, state);
         auto side = [&](model::PortReference ref, model::CellId index) -> Side {
             Side result;
             if (ref.domain < nfom) {
@@ -106,7 +105,7 @@ namespace mhs::solver {
                     = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::Temperature));
                 for (std::size_t j = 0; j < field.entities.size(); ++j)
                     if (field.entities[j] == cell) {
-                        result.weights.push_back({field.dofs[j], 1.0});
+                        result.weights.push_back({field.dof(j), 1.0});
                         break;
                     }
                 if (result.weights.empty())
@@ -131,7 +130,7 @@ namespace mhs::solver {
                 result.center = facet.center;
                 for (std::size_t j = 0; j < rom.order; ++j)
                     if (facet.trace[j] != 0.0)
-                        result.weights.push_back({field.dofs[j], facet.trace[j]});
+                        result.weights.push_back({field.dof(j), facet.trace[j]});
                 for (std::size_t t = 0; t < 2; ++t)
                     if (!facet.tangential_gradient[t].empty())
                         result.tangent[t] = dot(facet.tangential_gradient[t], state, field);

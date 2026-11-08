@@ -68,6 +68,12 @@ namespace mhs::compiler {
     mhs::model::CompiledModel build_model(const mhs::model::ModelDefinition& definition)
     {
         mhs::model::CompiledModel compiled;
+        auto append_field = [&](model::DomainId domain, model::FieldQuantity quantity, std::size_t count) {
+            core::detail::checked_sparse_size(compiled.layout.state_count + count);
+            const auto offset = static_cast<model::DofId>(compiled.layout.state_count);
+            compiled.layout.fields.push_back({domain, quantity, offset, count});
+            compiled.layout.state_count += count;
+        };
         compiled.study = definition.study;
         if (definition.domains.empty() && definition.rom_domains.empty())
             throw std::invalid_argument("model must contain a FOM or ROM domain");
