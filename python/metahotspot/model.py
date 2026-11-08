@@ -170,6 +170,11 @@ class Library(OwnedHandle):
         check(dll.mhs_library_create(ctypes.byref(handle)), "create_library")
         super().__init__(dll, handle, dll.mhs_library_destroy)
 
+    def _add_id(self, function: str, *args, ctx: str | None = None) -> int:
+        identifier = ctypes.c_uint32()
+        self._call(function, *args, ctypes.byref(identifier), ctx=ctx)
+        return identifier.value
+
     def add_variable(self, name: str, expression: str) -> None:
         """Add an expression constant."""
         self._call(
@@ -187,28 +192,14 @@ class Library(OwnedHandle):
         dynamic_viscosity: str | None = None,
     ) -> int:
         """Register a material and return its ID. Laws use canonical T."""
-        identifier = ctypes.c_uint32()
         text_args = tuple(_text(v) for v in (name, kx, ky, kz, rho, c))
-        self._call(
-            "mhs_library_add_material",
-            *text_args,
-            _text(dynamic_viscosity),
-            ctypes.byref(identifier),
-            ctx="add_material",
+        return self._add_id(
+            "mhs_library_add_material", *text_args, _text(dynamic_viscosity), ctx="add_material"
         )
-
-        return identifier.value
 
     def add_source(self, expression: str) -> int:
         """Register a volumetric source in W/m³ (canonical x/y/z/T/t)."""
-        identifier = ctypes.c_uint32()
-        self._call(
-            "mhs_library_add_source",
-            _text(expression),
-            ctypes.byref(identifier),
-            ctx="add_source",
-        )
-        return identifier.value
+        return self._add_id("mhs_library_add_source", _text(expression), ctx="add_source")
 
     # ---- Functions ----
 
@@ -273,18 +264,16 @@ class Library(OwnedHandle):
 
     def add_thermal_boundary(self, condition: ThermalBoundary) -> int:
         native = _thermal_boundary(condition)
-        identifier = ctypes.c_uint32()
-        self._call("mhs_library_add_thermal_boundary", ctypes.byref(native),
-                   ctypes.byref(identifier))
-        return identifier.value
+        return self._add_id("mhs_library_add_thermal_boundary", ctypes.byref(native))
 
     def add_fluid_boundary(self, kind: FluidBC, value: float, inlet_temperature: float | None = None) -> int:
         temperature = None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
-        identifier = ctypes.c_uint32()
-        self._call("mhs_library_add_fluid_boundary", int(kind), value,
-                   None if temperature is None else ctypes.byref(temperature),
-                   ctypes.byref(identifier))
-        return identifier.value
+        return self._add_id(
+            "mhs_library_add_fluid_boundary",
+            int(kind),
+            value,
+            None if temperature is None else ctypes.byref(temperature),
+        )
 
 
 class Model(OwnedHandle):
