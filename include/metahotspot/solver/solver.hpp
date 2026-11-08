@@ -11,7 +11,8 @@ namespace mhs::solver {
     // cell. Coincident patches use Dirichlet precedence. Interior points have
     // no boundary value. State size and cell ID must match the compiled model.
     std::optional<double> boundary_value_at(const mhs::model::FomDomain& model,
-        std::span<const mhs::model::MaterialProps> materials, std::span<const double> temperature, double time,
+        std::span<const mhs::model::MaterialProps> materials,
+        std::span<const mhs::model::BoundaryCondition> conditions, std::span<const double> temperature, double time,
         mhs::model::CellId cell, const mhs::model::Vec3& point);
 
     /// Flattened user-facing solver configuration.
