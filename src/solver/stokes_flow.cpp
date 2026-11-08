@@ -21,7 +21,8 @@ namespace mhs::solver {
 
     StokesAssembler::StokesAssembler(const model::CompiledModel& compiled, model::DomainId id)
         : domain_(compiled.fom(id))
-        , materials_(compiled.material_table)
+        , materials_(compiled.library.material_table)
+        , compiled_library_(compiled.library)
     {
         using namespace mhs::model;
         const auto& domain = domain_;
@@ -41,7 +42,7 @@ namespace mhs::solver {
         for (std::size_t i = 0; i < fluid.velocity_faces.size(); ++i)
             face_dof_[fluid.velocity_faces[i]] = velocity.dof(i);
 
-        boundary_area_.assign(domain.fluid_conditions.size(), 0.0);
+        boundary_area_.assign(compiled_library_.fluid_conditions.size(), 0.0);
         for (const auto& boundary : domain.fluid_boundaries)
             boundary_area_.at(boundary.condition) += patch_area(boundary.bounds);
 
@@ -187,7 +188,7 @@ namespace mhs::solver {
                 velocity = state[n.dof];
             }
             else if (n.condition != core::invalid_id) {
-                if (const auto* bc = std::get_if<MassFlowInlet>(&domain_.fluid_conditions[n.condition])) {
+                if (const auto* bc = std::get_if<MassFlowInlet>(&compiled_library_.fluid_conditions[domain_.fluid_assignments[n.condition]])) {
                     const double mass = bc->mass_flow_rate * area / boundary_area_[n.condition];
                     velocity = (n.minus != core::invalid_id ? -mass : mass) / (nodal_rho[i] * area);
                 }
@@ -209,7 +210,7 @@ namespace mhs::solver {
                 if (n.plus != core::invalid_id)
                     stiffness.emplace_back(row, static_cast<core::SparseIndex>(pressure_dof_[n.plus]), area);
                 if (n.condition != core::invalid_id) {
-                    const auto& bc = domain_.fluid_conditions[n.condition];
+                    const auto& bc = compiled_library_.fluid_conditions[domain_.fluid_assignments[n.condition]];
                     if (const auto* inlet_pressure = std::get_if<PressureInlet>(&bc))
                         load[row] += (n.minus == core::invalid_id ? 1.0 : -1.0) * area * inlet_pressure->pressure;
                     else if (const auto* outlet_pressure = std::get_if<PressureOutlet>(&bc))
@@ -227,12 +228,12 @@ namespace mhs::solver {
                         static_cast<core::SparseIndex>(n.dof), -nodal_rho[i] * area);
             }
             else if (n.condition != core::invalid_id) {
-                if (const auto* bc = std::get_if<MassFlowInlet>(&domain_.fluid_conditions[n.condition]))
+                if (const auto* bc = std::get_if<MassFlowInlet>(&compiled_library_.fluid_conditions[domain_.fluid_assignments[n.condition]]))
                     load[pressure_dof_[cell]] += bc->mass_flow_rate * area / boundary_area_[n.condition];
             }
 
             if (n.condition != core::invalid_id && !two) {
-                const auto& condition = domain_.fluid_conditions[n.condition];
+                const auto& condition = compiled_library_.fluid_conditions[domain_.fluid_assignments[n.condition]];
                 const double outward_mass = (n.minus != core::invalid_id ? 1.0 : -1.0) * mass;
                 if (outward_mass < 0) {
                     const auto temperature_bc
