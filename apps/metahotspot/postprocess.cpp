@@ -28,7 +28,8 @@ namespace mhs::app::postprocess {
     } // namespace
 
     mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::FomDomain& model,
-        const mhs::model::MeshSpec& grid, std::span<const double> cell_temperature, double time)
+        const mhs::model::CompiledLibrary& library, const mhs::model::MeshSpec& grid,
+        std::span<const double> cell_temperature, double time)
     {
         if (cell_temperature.size() != model.discrete.cells.size())
             throw std::invalid_argument("node sampling state size mismatch");
@@ -43,7 +44,7 @@ namespace mhs::app::postprocess {
             const auto center = cell.center();
             const auto temperature = cell_temperature[c];
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], temperature, time};
-            const auto& mat = model.material_table[model.cell_material[c]];
+            const auto& mat = library.material_table[model.cell_material[c]];
             const mhs::model::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             for (double x : {cell.min[0], cell.max[0]})
                 for (double y : {cell.min[1], cell.max[1]})
@@ -54,7 +55,7 @@ namespace mhs::app::postprocess {
                             continue;
                         const auto v = it->second;
                         const double sample = boundary_value_at(
-                            model, cell_temperature, time, static_cast<mhs::model::CellId>(c), point)
+                            model, library.material_table, library.boundary_conditions, cell_temperature, time, static_cast<mhs::model::CellId>(c), point)
                                                   .value_or(temperature);
                         const double w = anisotropic_weight(center, point, conductivity);
                         node_T[v] += w * sample;
