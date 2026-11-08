@@ -116,7 +116,7 @@ def test_stokes_public_multifield_layout_and_solve():
     )
     compiled = model.compile()
     assert compiled.info.state_count == 7
-    assert len(compiled.field_layouts) == 5
+    assert len(compiled.field_layouts) == 3
     pressure, velocity = compiled.field_layouts[1:3]
     assert pressure.quantity == FieldQuantity.PRESSURE
     assert pressure.support == EntitySupport.CELL

@@ -172,58 +172,11 @@ namespace mhs::solver {
     {
         if (initial.size() != model.layout.state_count || (model.domains.empty() && model.rom_domains.empty()))
             throw std::invalid_argument("thermal assembly requires a complete state and a physical domain");
-        core::Vector<bool> seen(initial.size(), false);
         for (std::size_t d = 0; d < model.domains.size(); ++d) {
             const auto& domain = model.domains[d];
             const auto& field = model.layout.field(
                 model.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
-            const auto n = domain.discrete.cells.size();
-            auto& map = dofs_.emplace_back(n, core::invalid_id);
-            if (field.entities.size() != n || field.dofs.size() != n)
-                throw std::invalid_argument("invalid thermal state layout");
-            for (std::size_t i = 0; i < n; ++i) {
-                const auto c = field.entities[i], dof = field.dofs[i];
-                if (c >= n || dof >= seen.size() || seen[dof] || map[c] != core::invalid_id)
-                    throw std::invalid_argument("invalid thermal state mapping");
-                seen[dof] = true;
-                map[c] = dof;
-            }
-            temperatures_.emplace_back(n);
-        }
-        // Nonthermal fields are independent state entries, not cell temperatures.
-        // Validate the full injective map before constructing workspaces.
-        for (const auto& field : model.layout.fields)
-            if (field.quantity == model::FieldQuantity::Pressure || field.quantity == model::FieldQuantity::Velocity) {
-                if (field.domain >= model.domains.size() || field.entities.size() != field.dofs.size())
-                    throw std::invalid_argument("invalid fluid state layout");
-                if (model.domains[field.domain].flow_mode != model::FlowMode::Stokes)
-                    throw std::invalid_argument("fluid state field on a frozen-flow domain");
-                for (const auto dof : field.dofs) {
-                    if (dof >= seen.size() || seen[dof])
-                        throw std::invalid_argument("invalid or repeated fluid DOF");
-                    seen[dof] = true;
-                }
-            }
-        for (std::size_t r = 0; r < model.rom_domains.size(); ++r) {
-            const auto domain = static_cast<model::DomainId>(model.domains.size() + r);
-            const auto& field = model.layout.field(model.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
-            const auto n = model.rom_domains[r].order;
-            if (field.entities.size() != n || field.dofs.size() != n)
-                throw std::invalid_argument("ROM field does not cover modal coordinates");
-            core::Vector<bool> local_seen(n, false);
-            for (std::size_t i = 0; i < n; ++i) {
-                const auto entity = field.entities[i], dof = field.dofs[i];
-                if (entity >= n || dof >= seen.size() || seen[dof] || local_seen[entity])
-                    throw std::invalid_argument("invalid ROM state mapping");
-                seen[dof] = true;
-                local_seen[entity] = true;
-            }
-        }
-        if (std::find(seen.begin(), seen.end(), false) != seen.end())
-            throw std::invalid_argument("fields do not cover entire system state");
-        gather(initial);
-        for (std::size_t d = 0; d < model.domains.size(); ++d) {
-            const auto& domain = model.domains[d];
+            const auto temperature = initial.subspan(field.offset, field.count);
             if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
                 stokes_.push_back(
                     std::make_unique<StokesAssembler>(domain, model.layout, static_cast<model::DomainId>(d)));
@@ -232,60 +185,60 @@ namespace mhs::solver {
             else {
                 stokes_.push_back(nullptr);
                 domains_.push_back(
-                    std::make_unique<ThermalAssembler>(domain, initialize_frozen_flow(domain, temperatures_[d], time)));
+                    std::make_unique<ThermalAssembler>(domain, initialize_frozen_flow(domain, temperature, time)));
             }
         }
         identity_
             = model.domains.size() == 1 && model.rom_domains.empty() && model.connections.empty() && !stokes_.front();
-        for (std::size_t c = 0; identity_ && c < dofs_[0].size(); ++c)
-            identity_ = dofs_[0][c] == c;
-    }
-
-    void ModelAssembler::gather(std::span<const double> state)
-    {
-        if (state.size() != model_.layout.state_count)
-            throw std::invalid_argument("thermal assembly state size mismatch");
-        for (std::size_t d = 0; d < temperatures_.size(); ++d)
-            for (std::size_t c = 0; c < temperatures_[d].size(); ++c)
-                temperatures_[d][c] = state[dofs_[d][c]];
     }
 
     const Operators& ModelAssembler::assemble(std::span<const double> state, double time)
     {
-        gather(state);
-        if (identity_)
-            return domains_[0]->assemble(temperatures_[0], time);
+        if (state.size() != model_.layout.state_count)
+            throw std::invalid_argument("thermal assembly state size mismatch");
+
+        const auto temperature_field = [&](std::size_t d) -> const model::FieldLayout& {
+            return model_.layout.field(
+                model_.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
+        };
+        if (identity_) {
+            const auto& field = temperature_field(0);
+            return domains_[0]->assemble(state.subspan(field.offset, field.count), time);
+        }
+
         core::Vector<core::Triplet<double>> stiffness, capacity;
         core::Vector<double> load(state.size(), 0.0);
         for (std::size_t d = 0; d < domains_.size(); ++d) {
+            const auto& field = temperature_field(d);
+            const auto temperature = state.subspan(field.offset, field.count);
             if (stokes_[d])
-                domains_[d]->set_flow(stokes_[d]->assemble(state, temperatures_[d], time, stiffness, capacity, load));
-            const auto& ops = domains_[d]->assemble(temperatures_[d], time);
-            const auto& map = dofs_[d];
+                domains_[d]->set_flow(stokes_[d]->assemble(state, temperature, time, stiffness, capacity, load));
+            const auto& ops = domains_[d]->assemble(temperature, time);
             auto append = [&](const core::CSRMatrix<double>& matrix, auto& entries) {
                 for (std::size_t row = 0; row < matrix.rows(); ++row)
                     for (auto j = matrix.row_ptr()[row]; j < matrix.row_ptr()[row + 1]; ++j)
-                        entries.emplace_back(static_cast<core::SparseIndex>(map[row]),
-                            static_cast<core::SparseIndex>(map[matrix.col_idx()[j]]), matrix.values()[j]);
+                        entries.emplace_back(static_cast<core::SparseIndex>(field.dof(row)),
+                            static_cast<core::SparseIndex>(field.dof(matrix.col_idx()[j])), matrix.values()[j]);
             };
             append(ops.K, stiffness);
             append(ops.C, capacity);
             for (std::size_t c = 0; c < ops.f.size(); ++c)
-                load[map[c]] += ops.f[c];
+                load[field.dof(c)] += ops.f[c];
         }
+
         for (std::size_t r = 0; r < model_.rom_domains.size(); ++r) {
             const auto& rom = model_.rom_domains[r];
             const auto domain = static_cast<model::DomainId>(model_.domains.size() + r);
             const auto& field
                 = model_.layout.field(model_.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
             for (std::size_t i = 0; i < rom.order; ++i) {
-                const auto row = static_cast<core::SparseIndex>(field.dofs[i]);
+                const auto row = static_cast<core::SparseIndex>(field.dof(i));
                 double rhs = rom.f[i];
                 for (const auto& term : rom.affine_terms)
                     rhs += term.value * term.f[i];
                 load[row] += rhs;
                 for (std::size_t j = 0; j < rom.order; ++j) {
-                    const auto col = static_cast<core::SparseIndex>(field.dofs[j]);
+                    const auto col = static_cast<core::SparseIndex>(field.dof(j));
                     double stiffness_value = rom.K[i * rom.order + j];
                     for (const auto& term : rom.affine_terms)
                         stiffness_value += term.value * term.K[i * rom.order + j];
@@ -308,7 +261,7 @@ namespace mhs::solver {
                 = model_.layout.field(model_.layout.find(term.domain, model::FieldQuantity::ReducedCoordinate));
             double temperature = facet.offset;
             for (std::size_t i = 0; i < rom.order; ++i)
-                temperature += facet.trace[i] * state[field.dofs[i]];
+                temperature += facet.trace[i] * state[field.dof(i)];
             const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
             model::Vec3 center {};
             const auto axis = static_cast<std::size_t>(port.region.axis);
@@ -319,31 +272,27 @@ namespace mhs::solver {
                     center[d] = (term.bounds[2 * tangent] + term.bounds[2 * tangent + 1]) / 2;
                     ++tangent;
                 }
-            // The equivalent normal conductance is area/half_resistance.
             const auto& condition = model_.rom_boundary_conditions.at(term.condition);
-            const auto normal_resistance = facet.half_resistance;
-            const auto trace = evaluate_boundary(condition, center, area, normal_resistance, temperature, 1.0, time);
-            // Retain structural zeros when a transient boundary conductance vanishes.
-            // q_out = g*(V*z + offset) - load; ROM contribution V^T*q_out.
+            const auto trace
+                = evaluate_boundary(condition, center, area, facet.half_resistance, temperature, 1.0, time);
             const double rhs = trace.load - trace.conductance * facet.offset;
             for (std::size_t i = 0; i < rom.order; ++i) {
                 if (facet.trace[i] == 0.0)
                     continue;
-                const auto row = static_cast<core::SparseIndex>(field.dofs[i]);
+                const auto row = static_cast<core::SparseIndex>(field.dof(i));
                 load[row] += facet.trace[i] * rhs;
                 for (std::size_t j = 0; j < rom.order; ++j)
                     if (facet.trace[j] != 0.0)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(field.dofs[j]),
+                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(field.dof(j)),
                             facet.trace[i] * trace.conductance * facet.trace[j]);
             }
         }
+
         for (const auto& connection : model_.connections) {
             const auto flux = evaluate_connection_flux(model_, connection, state, time);
             for (const auto& patch_flux : flux) {
                 const auto g = patch_flux.conductance;
                 const auto forcing = patch_flux.correction + patch_flux.bias_flux;
-                // Galerkin transpose scattering: q = g*(P_a*x-P_b*x)+forcing.
-                // Inject P_a^T*q and -P_b^T*q so both sides use one flux.
                 for (const auto& wa : patch_flux.a) {
                     const auto row = static_cast<core::SparseIndex>(wa.dof);
                     load[row] -= wa.weight * forcing;

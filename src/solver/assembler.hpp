@@ -33,13 +33,9 @@ namespace mhs::solver {
     public:
         ModelAssembler(const model::CompiledModel& model, std::span<const double> initial, double time = 0.0);
         const Operators& assemble(std::span<const double> state, double time);
-        const core::Vector<core::Vector<double>>& temperatures() const { return temperatures_; }
-        void gather(std::span<const double> state);
 
     private:
         const model::CompiledModel& model_;
-        core::Vector<core::Vector<double>> temperatures_;
-        core::Vector<core::Vector<model::DofId>> dofs_;
         core::Vector<std::unique_ptr<ThermalAssembler>> domains_;
         core::Vector<std::unique_ptr<StokesAssembler>> stokes_;
         Operators operators_;

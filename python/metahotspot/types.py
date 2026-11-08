@@ -164,6 +164,6 @@ class MhsFieldInfo(ctypes.Structure):
         ("domain", ctypes.c_uint32),
         ("quantity", ctypes.c_int32),
         ("support", ctypes.c_int32),
-        ("component", ctypes.c_uint32),
+        ("dof_offset", ctypes.c_uint32),
         ("dof_count", ctypes.c_size_t),
     ]

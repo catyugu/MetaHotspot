@@ -102,7 +102,7 @@ def test_package_layout_recompile_and_snapshot_lifetime(fluid):
     assert c.info.domain_count == c.info.field_count == 1
     assert c.domains[0].cell_count == 960
     field = c.field_layouts[0]
-    assert (field.domain, field.quantity, field.support, field.component) == (
+    assert (field.domain, field.quantity, field.support, field.offset) == (
         0,
         FieldQuantity.TEMPERATURE,
         EntitySupport.CELL,

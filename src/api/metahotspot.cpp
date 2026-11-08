@@ -764,22 +764,37 @@ MHS_API mhs_status_t mhs_compiled_get_field_info(const mhs_compiled_t* c, mhs_in
     MHS_TRY({
         const auto& value = c->model.layout.field(field);
         *out = {value.domain, static_cast<mhs_field_quantity_t>(value.quantity),
-            static_cast<mhs_entity_support_t>(value.support), value.component, value.dofs.size()};
+            static_cast<mhs_entity_support_t>(value.support()), value.offset, value.count};
     });
 }
 
-MHS_API mhs_status_t mhs_compiled_copy_field_mapping(
-    const mhs_compiled_t* c, mhs_index_t field, mhs_index_t* entities, mhs_index_t* dofs, size_t count)
+MHS_API mhs_status_t mhs_compiled_copy_field_entities(
+    const mhs_compiled_t* c, mhs_index_t field, mhs_index_t* entities, size_t count)
 {
     CHECK_NULL(c);
     MHS_TRY({
         const auto& value = c->model.layout.field(field);
-        if (count != value.dofs.size())
-            throw std::invalid_argument("field mapping count mismatch");
-        if (count && (!entities || !dofs))
-            throw std::invalid_argument("NULL field mapping buffer");
-        std::copy(value.entities.begin(), value.entities.end(), entities);
-        std::copy(value.dofs.begin(), value.dofs.end(), dofs);
+        if (count != value.count)
+            throw std::invalid_argument("field entity count mismatch");
+        if (count && !entities)
+            throw std::invalid_argument("NULL field entity buffer");
+        switch (value.quantity) {
+        case mhs::model::FieldQuantity::Temperature:
+        case mhs::model::FieldQuantity::ReducedCoordinate:
+            for (std::size_t i = 0; i < count; ++i)
+                entities[i] = static_cast<mhs_index_t>(i);
+            break;
+        case mhs::model::FieldQuantity::Pressure: {
+            const auto& cells = c->model.domains.at(value.domain).fluid.fluid_to_global;
+            std::copy(cells.begin(), cells.end(), entities);
+            break;
+        }
+        case mhs::model::FieldQuantity::Velocity: {
+            const auto& faces = c->model.domains.at(value.domain).fluid.velocity_faces;
+            std::copy(faces.begin(), faces.end(), entities);
+            break;
+        }
+        }
     });
 }
 
@@ -813,14 +828,13 @@ MHS_API mhs_status_t mhs_compiled_default_state(
         std::fill_n(state, state_count, 0.0);
         for (const auto& field : c->model.layout.fields)
             if (field.quantity == mhs::model::FieldQuantity::Temperature)
-                for (const auto dof : field.dofs)
-                    state[dof] = initial_temperature;
+                std::fill_n(state + field.offset, field.count, initial_temperature);
         for (std::size_t r = 0; r < c->model.rom_domains.size(); ++r) {
             const auto d = static_cast<mhs::model::DomainId>(c->model.domains.size() + r);
             const auto& field
                 = c->model.layout.field(c->model.layout.find(d, mhs::model::FieldQuantity::ReducedCoordinate));
-            for (std::size_t j = 0; j < field.dofs.size(); ++j)
-                state[field.dofs[j]] = c->model.rom_domains[r].initial_state[j];
+            std::copy(c->model.rom_domains[r].initial_state.begin(), c->model.rom_domains[r].initial_state.end(),
+                state + field.offset);
         }
     });
 }
@@ -943,13 +957,11 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
             const auto& model = c->model.domains[d];
             const auto& field = c->model.layout.field(
                 c->model.layout.find(static_cast<mhs_index_t>(d), mhs::model::FieldQuantity::Temperature));
-            mhs::core::Vector<mhs::model::DofId> dofs(model.discrete.cells.size());
-            for (size_t i = 0; i < field.dofs.size(); ++i)
-                dofs[field.entities[i]] = field.dofs[i];
             for (const auto& term : model.source_terms) {
                 const auto& p = term.point;
-                powers[offset++] = term.weight
-                    * model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[dofs[term.cell]], time});
+                const auto density
+                    = model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[field.dof(term.cell)], time});
+                powers[offset++] = term.weight * density;
             }
         }
     });
@@ -979,13 +991,10 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
             const auto& mesh = model.discrete;
             const auto& field = c->model.layout.field(
                 c->model.layout.find(static_cast<mhs_index_t>(d), mhs::model::FieldQuantity::Temperature));
-            mhs::core::Vector<mhs::model::DofId> dofs(mesh.cells.size());
-            for (size_t i = 0; i < field.dofs.size(); ++i)
-                dofs[field.entities[i]] = field.dofs[i];
             for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
                 const auto p = mesh.cells[cell].center();
                 const auto& props = model.material_table[model.cell_material[cell]];
-                const auto dof = dofs[cell];
+                const auto dof = field.dof(cell);
                 const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
                 values->conductivity_x[offset + cell] = props.kx.eval(context);
                 values->conductivity_y[offset + cell] = props.ky.eval(context);
