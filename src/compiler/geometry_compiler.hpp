@@ -1,6 +1,7 @@
 #pragma once
 #include <optional>
 #include <span>
+#include <utility>
 
 #include "model/model.hpp"
 #include "model/model_definition.hpp"
@@ -18,10 +19,7 @@ namespace mhs::compiler {
     };
 
     using SurfaceBounds = std::array<double, 4>;
-    struct TaggedBounds {
-        SurfaceBounds bounds;
-        mhs::core::EntityIndex tag;
-    };
+    using TaggedBounds = std::pair<SurfaceBounds, mhs::core::EntityIndex>;
     struct ProjectedSurfacePatch {
         mhs::model::CellId cell;
         mhs::model::Axis axis;
