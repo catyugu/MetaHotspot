@@ -93,7 +93,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         d.component(0).thermal_boundaries = {
             {{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, d.library->add_thermal_boundary(conditions[kind])}};
         const auto model = test_pta::build_model(d);
-        // All other faces share the compiled zero-flux default condition.
+        // All other faces use the implicit adiabatic fallback.
         ASSERT_EQ(model.library->boundary_conditions.size(), 1u);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         for (const auto& term : model.boundary_faces) {
