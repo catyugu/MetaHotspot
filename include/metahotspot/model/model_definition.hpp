@@ -67,12 +67,10 @@ namespace mhs::model {
         RegionRect rectangle;
     };
 
-    template <typename Condition> struct SurfaceConditionSpec {
+    struct ThermalBoundarySpec {
         mhs::core::Vector<SurfaceRegion> regions;
-        Condition condition;
+        ThermalBoundaryHandle condition;
     };
-
-    using ThermalBoundarySpec = SurfaceConditionSpec<ThermalBoundaryHandle>;
 
     struct MaterialSpec {
         Expression conductivity_x = "0.0";
@@ -152,7 +150,10 @@ namespace mhs::model {
         std::optional<double> temperature = std::nullopt;
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
-    using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryHandle>;
+    struct FluidBoundarySpec {
+        mhs::core::Vector<SurfaceRegion> regions;
+        FluidBoundaryHandle condition;
+    };
 
     // Reusable attributes shared by any number of models.
     struct LibraryDefinition {
