@@ -55,6 +55,8 @@ namespace mhs::compiler {
     mhs::model::CompiledModel build_model(const mhs::model::ModelDefinition& definition)
     {
         mhs::model::CompiledModel compiled;
+        auto compiled_library = std::make_shared<mhs::model::CompiledLibrary>();
+        compiled.library = compiled_library;
         const auto& library = *definition.library;
         auto append_field = [&](model::DomainId domain, model::FieldQuantity quantity, std::size_t count) {
             core::detail::checked_sparse_size(compiled.layout.state_count + count);
@@ -66,11 +68,11 @@ namespace mhs::compiler {
             throw std::invalid_argument("model must contain at least one component");
 
         auto symbols = build_symbol_table(definition);
-        compiled.library.material_table.resize(library.materials.size());
+        compiled_library->material_table.resize(library.materials.size());
         for (std::size_t m = 0; m < library.materials.size(); ++m) {
             const auto& mat = library.materials[m].value;
             auto compile = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
-            auto& props = compiled.library.material_table[m];
+            auto& props = compiled_library->material_table[m];
             props.kx = compile(mat.conductivity_x);
             props.ky = compile(mat.conductivity_y);
             props.kz = compile(mat.conductivity_z);
@@ -84,12 +86,10 @@ namespace mhs::compiler {
             }
         }
         for (const auto& source : library.sources)
-            compiled.library.heat_source_table.push_back(mhs::expression::parse(source, symbols));
+            compiled_library->heat_source_table.push_back(mhs::expression::parse(source, symbols));
         for (const auto& boundary : library.thermal_boundaries)
-            compile_thermal_boundary(boundary, compiled.library.boundary_conditions, symbols);
-        compiled.library.adiabatic_condition = compile_thermal_boundary(
-            mhs::model::NeumannBoundary {}, compiled.library.boundary_conditions, symbols);
-        compiled.library.fluid_conditions = library.fluid_boundaries;
+            compile_thermal_boundary(boundary, compiled_library->boundary_conditions, symbols);
+        compiled_library->fluid_conditions = library.fluid_boundaries;
         for (std::size_t domain_id = 0; domain_id < definition.components.size(); ++domain_id) {
             const auto& component = definition.components[domain_id];
             if (const auto* value = std::get_if<model::RomDomainDefinition>(&component.physics)) {
@@ -135,6 +135,7 @@ namespace mhs::compiler {
                     throw std::invalid_argument("Cartesian observation requires only a finite physical point");
             compiled.components.push_back({model::FomDomain {}, component.ports, component.observations});
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
+            model.library = compiled.library;
             model.flow_mode = domain.flow_mode;
             for (const auto& volume : domain.volumes) {
                 if (volume.material >= library.materials.size())
@@ -157,14 +158,14 @@ namespace mhs::compiler {
             compile_cartesian_mesh(model, domain.mesh, domain.volumes);
             project_cell_regions(model, domain.volumes);
             for (const auto material : model.cell_material)
-                if (material >= compiled.library.material_table.size())
+                if (material >= compiled_library->material_table.size())
                     throw std::out_of_range("cell has no valid material assignment");
 
             // Fluid membership and boundary projection are immutable; no pressure solve here.
             auto& fluid = model.fluid;
             fluid.global_to_fluid.assign(model.discrete.cells.size(), mhs::core::invalid_id);
             for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
-                if (!compiled.library.material_table[model.cell_material[c]].dynamic_viscosity)
+                if (!compiled_library->material_table[model.cell_material[c]].dynamic_viscosity)
                     continue;
                 fluid.global_to_fluid[c] = static_cast<mhs::model::FluidCellId>(fluid.fluid_to_global.size());
                 fluid.fluid_to_global.push_back(static_cast<mhs::model::CellId>(c));
@@ -244,7 +245,7 @@ namespace mhs::compiler {
                     }
                     else if (face.exterior() && (i != core::invalid_id || j != core::invalid_id)
                         && fluid.face_conditions[id] != core::invalid_id) {
-                        const auto& bc = compiled.library.fluid_conditions[model.fluid_assignments[fluid.face_conditions[id]]];
+                        const auto& bc = compiled_library->fluid_conditions[model.fluid_assignments[fluid.face_conditions[id]]];
                         if (std::holds_alternative<model::PressureInlet>(bc)
                             || std::holds_alternative<model::PressureOutlet>(bc)) {
                             fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
