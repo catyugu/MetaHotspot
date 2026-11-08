@@ -405,8 +405,7 @@ TEST(GenericLayout, StaggeredStokesRectangularPoiseuilleConvergesToAnalyticDuctF
             double reference = 0;
             for (int harmonic = 1; harmonic <= 41; harmonic += 2) {
                 const double kappa = harmonic * pi;
-                const double transverse
-                    = 1 - std::cosh(kappa * (z - 0.5)) / std::cosh(kappa / 2);
+                const double transverse = 1 - std::cosh(kappa * (z - 0.5)) / std::cosh(kappa / 2);
                 reference += 4 * std::sin(kappa * y) * transverse / (kappa * kappa * kappa);
             }
             const double difference = solved.state[velocity.dofs[k]] - reference;

@@ -209,6 +209,15 @@ CI 采用小规模、固定种子的确定性端到端验收；性能/规模验�
 
 PR4 `refactor/generic-multiphysics` 专注于通用多场布局、压力与交错速度状态、流体守恒方程、温度相关物性反馈、双向热流耦合、C ABI/Python 统一及 GL-03/GL-08/GL-09 验收。**不新增 `CartesianRefinement`、八叉加细的 C/Python 建模入口或域内非共形网格构造器。** GL-06 在本轮明确延期；保留域内 TPFA、域间非匹配 NCC 的物理原则。
 
+### 7.3 PR4 多物理求解与公开接口验证记录（2026-11-08）
+
+- **方程与布局：** Stokes 模式将单元中心压力、面法向速度及 FOM 单元温度作为独立 DOF；压力方程保持零容量，速度具有惯性容量。默认 Steady 初态先求水力子系统；热方程以当前流量装配上风焓通量，随温度重评估密度、黏度及能量算子。Frozen flow 保留原有路径。Stokes 使用非 SPD 的 SparseLU；修复了 Eigen 在 `analyzePattern()` 后过早查询 `info()` 的 Debug 断言。
+- **独立物理参考：** `GenericLayout.StaggeredStokesRectangularPoiseuilleConvergesToAnalyticDuctFlow` 对固定压差、定物性、单位正方形截面直通道使用独立 Fourier 级数参考，对 4×4 与 8×8 截面比较中间面速度场的面积加权误差，要求加密后误差至少下降 20%。这项检验与质量守恒残差测试分开，防止仅通过自洽离散残差掩盖速度剖面错误。
+- **稳态、瞬态与反馈：** `StaggeredStokesPressureAndVelocitySatisfyConservativeContinuity` 检查各流体单元质量平衡和压力零容量；`StaggeredStokesThermalFeedbackUpdatesViscosityAndMassFlux` 采用固定压差和温度相关黏度，检验加热后流量变化及同一编译快照的复用；`TransientStokesKeepsPressureAlgebraicAndConservesMass` 在各输出时刻检查压力代数约束和质量残差。
+- **公开接口：** 纯 C 集成客户端及 Python 绑定测试分别经 Model→Compiled→FieldLayout→Solve→Solution 路径构造交错 Stokes 流道，检查状态数量、压力/速度实体支撑、面速度值及重复求解。Python `SolveOptions` 补齐 SparseLU 名称映射。
+- **自动回归证据：** GitHub Actions `Build and package` 运行 [#42479552655](https://github.com/catyugu/MetaHotspot/actions/runs/42479552655) 的 GCC Release、Clang Debug、Clang Sanitizer、macOS、MSVC、ClangCL、Linux/macOS/Windows wheels 和六组 Python 3.10/3.14 jobs 均通过；该运行只有新解析解测试的 clang-format 排版检查失败，随后在独立最终提交修正格式并重新验证。
+- **验收边界：** 上述结果证明当前确定性算例及 SDK CI 回归；不宣称完成尚未逐项运行的所有非 archived `playground/` 算例或全量 GL-01 Python/C 物理一致性与生命周期矩阵。关闭清单仍要求逐项核实这些内容。局部八叉加细 GL-06 维持延期。
+
 ## 8. 关闭清单（全部完成后关闭本临时文档）
 
 - [ ] C++ ModelDefinition / CompiledModel 所有权、域表示和 FOM 内部流体语义已固定；不要求用户建 Fluid Domain。
