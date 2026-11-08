@@ -56,6 +56,7 @@ namespace mhs::model {
     };
 
     struct FomDomain {
+        std::shared_ptr<const struct CompiledLibrary> library;
         DiscreteMesh discrete;
         FlowMode flow_mode = FlowMode::Frozen;
 
@@ -72,7 +73,6 @@ namespace mhs::model {
         mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
         mhs::core::Vector<BoundaryCondition> boundary_conditions;
         mhs::core::Vector<FluidBoundaryCondition> fluid_conditions;
-        BoundaryConditionId adiabatic_condition = mhs::core::invalid_id;
     };
 
     struct ConnectionPatch {
@@ -107,7 +107,7 @@ namespace mhs::model {
     // Published as a const snapshot by the API; solve workspaces own all flow state.
     struct CompiledModel {
         mhs::core::Vector<CompiledComponent> components;
-        CompiledLibrary library; // owned immutable compiled property snapshot
+        std::shared_ptr<const CompiledLibrary> library; // owned immutable compiled property snapshot
 
         FomDomain& fom(DomainId id) { return std::get<FomDomain>(components.at(id).physics); }
         const FomDomain& fom(DomainId id) const { return std::get<FomDomain>(components.at(id).physics); }
