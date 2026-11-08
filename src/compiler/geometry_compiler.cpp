@@ -21,7 +21,7 @@ namespace mhs::compiler {
     {
         mhs::core::Vector<double> a {outer[0], outer[1]}, b {outer[2], outer[3]};
         for (const auto& tagged : regions) {
-            const auto overlap = intersect_bounds(outer, tagged.bounds);
+            const auto overlap = intersect_bounds(outer, tagged.first);
             if (!positive_bounds(overlap))
                 continue;
             a.insert(a.end(), {overlap[0], overlap[1]});
@@ -44,7 +44,7 @@ namespace mhs::compiler {
                         && y <= region.bounds[3])
                         tag = region.tag;
                 if (tag)
-                    result.push_back({bounds, *tag});
+                    result.emplace_back(bounds, *tag)
             }
         return result;
     }
@@ -135,9 +135,9 @@ namespace mhs::compiler {
             mhs::core::Vector<TaggedBounds> regions;
             for (const auto& tagged : boundaries)
                 if (tagged.region.axis == face.axis && std::abs(tagged.region.coordinate - coordinate) < EPS)
-                    regions.push_back({surface_bounds(tagged.region.rectangle), tagged.tag});
+                    regions.push_back({surface_bounds(tagged.region.rectangle), tagged.second});
             for (const auto& patch : partition_surface_bounds(face.bounds, regions, fallback))
-                faces.push_back({cell, face.axis, sign, patch.tag, patch.bounds});
+                faces.push_back({cell, face.axis, sign, patch.second, patch.first});
         }
         std::stable_sort(faces.begin(), faces.end(), [](const auto& a, const auto& b) { return a.cell < b.cell; });
         return faces;
