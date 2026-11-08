@@ -250,8 +250,6 @@ namespace mhs::model {
 
         ComponentDefinition& component(DomainId id) { return components.at(id); }
         const ComponentDefinition& component(DomainId id) const { return components.at(id); }
-        LibraryDefinition& library() { return *components.front().library; }
-        const LibraryDefinition& library() const { return *components.front().library; }
         FomDomainDefinition& fom(DomainId id) { return std::get<FomDomainDefinition>(component(id).physics); }
         const auto& fom(DomainId id) const { return std::get<FomDomainDefinition>(component(id).physics); }
         RomDomainDefinition& rom(DomainId id) { return std::get<RomDomainDefinition>(component(id).physics); }
