@@ -72,7 +72,7 @@ namespace mhs::model {
         Condition condition;
     };
 
-    using ThermalBoundarySpec = SurfaceConditionSpec<BoundaryConditionId>;
+    using ThermalBoundarySpec = SurfaceConditionSpec<ThermalBoundaryHandle>;
 
     struct MaterialSpec {
         Expression conductivity_x = "0.0";
@@ -152,7 +152,7 @@ namespace mhs::model {
         std::optional<double> temperature = std::nullopt;
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
-    using FluidBoundarySpec = SurfaceConditionSpec<BoundaryConditionId>;
+    using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryHandle>;
 
     // Reusable attributes shared by any number of models.
     struct LibraryDefinition {
@@ -163,13 +163,13 @@ namespace mhs::model {
         mhs::core::Vector<ThermalBoundary> thermal_boundaries;
         mhs::core::Vector<FluidBoundaryCondition> fluid_boundaries;
 
-        BoundaryConditionId add_thermal_boundary(ThermalBoundary value)
+        ThermalBoundaryHandle add_thermal_boundary(ThermalBoundary value)
         {
             const auto id = static_cast<BoundaryConditionId>(thermal_boundaries.size());
             thermal_boundaries.push_back(std::move(value));
             return id;
         }
-        BoundaryConditionId add_fluid_boundary(FluidBoundaryCondition value)
+        FluidBoundaryHandle add_fluid_boundary(FluidBoundaryCondition value)
         {
             const auto id = static_cast<BoundaryConditionId>(fluid_boundaries.size());
             fluid_boundaries.push_back(std::move(value));
@@ -193,7 +193,7 @@ namespace mhs::model {
         MeshSpec mesh;
         FlowMode flow_mode = FlowMode::Frozen;
         mhs::core::Vector<VolumeSpec> volumes;
-        BoundaryConditionId default_thermal_boundary = mhs::core::invalid_id;
+        ThermalBoundaryHandle default_thermal_boundary = mhs::core::invalid_id;
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
     };
 
