@@ -284,6 +284,85 @@ namespace mhs::compiler {
             compiled.rom_domains.push_back(std::move(rom));
         }
         compile_connections(definition, compiled);
+
+        // Boundary laws on exposed ROM ports are assembled through their
+        // physical trace maps, not through HTC-specific affine ROM operators.
+        // Subdivide each port patch by the ordinary surface-condition regions.
+        for (std::size_t r = 0; r < definition.rom_domains.size(); ++r) {
+            const auto& rom = definition.rom_domains[r];
+            const auto domain_id = static_cast<model::DomainId>(definition.domains.size() + r);
+            using Bounds = std::array<double, 4>;
+            using RegionLaw = std::pair<Bounds, model::BoundaryConditionId>;
+            core::Vector<core::Vector<RegionLaw>> per_port(rom.ports.size());
+            const auto bounds_of = [](const auto& r) -> Bounds {
+                return {r.a_min, r.a_max, r.b_min, r.b_max};
+            };
+            const auto overlaps = [](const Bounds& a, const Bounds& b) {
+                return a[1] > b[0] && b[1] > a[0] && a[3] > b[2] && b[3] > a[2];
+            };
+            for (const auto& boundary : rom.thermal_boundaries) {
+                const auto condition
+                    = compile_thermal_boundary(boundary.condition, compiled.rom_boundary_conditions, symbols);
+                for (const auto& region : boundary.regions) {
+                    const auto rectangle = bounds_of(region.rectangle);
+                    if (static_cast<unsigned>(region.axis) > 2 || !std::isfinite(region.coordinate)
+                        || !std::all_of(rectangle.begin(), rectangle.end(), [](double v) { return std::isfinite(v); })
+                        || rectangle[0] >= rectangle[1] || rectangle[2] >= rectangle[3])
+                        throw std::invalid_argument("invalid ROM thermal boundary region");
+                    std::size_t owner = rom.ports.size();
+                    for (std::size_t p = 0; p < rom.ports.size(); ++p) {
+                        const auto& port = rom.ports[p];
+                        const auto outer = bounds_of(port.region.rectangle);
+                        if (region.axis != port.region.axis || region.coordinate != port.region.coordinate
+                            || rectangle[0] < outer[0] || rectangle[1] > outer[1] || rectangle[2] < outer[2]
+                            || rectangle[3] > outer[3])
+                            continue;
+                        if (owner != rom.ports.size())
+                            throw std::invalid_argument("ROM thermal boundary has ambiguous owning port");
+                        owner = p;
+                    }
+                    if (owner == rom.ports.size())
+                        throw std::invalid_argument("ROM thermal boundary must lie inside a declared ROM port");
+                    for (const auto& connection : definition.connections)
+                        if ((connection.a.domain == domain_id && connection.a.port == owner)
+                            || (connection.b.domain == domain_id && connection.b.port == owner))
+                            throw std::invalid_argument("ROM thermal boundary overlaps a connected port");
+                    per_port[owner].push_back({rectangle, condition});
+                }
+            }
+
+            for (std::size_t p = 0; p < rom.ports.size(); ++p)
+                for (std::size_t j = 0; j < rom.ports[p].patches.size(); ++j) {
+                    const auto original = bounds_of(rom.ports[p].patches[j].rectangle);
+                    core::Vector<double> a {original[0], original[1]}, b {original[2], original[3]};
+                    for (const auto& [region, condition] : per_port[p]) {
+                        if (!overlaps(original, region))
+                            continue;
+                        a.push_back(std::max(original[0], region[0]));
+                        a.push_back(std::min(original[1], region[1]));
+                        b.push_back(std::max(original[2], region[2]));
+                        b.push_back(std::min(original[3], region[3]));
+                    }
+                    auto unique = [](auto& values) {
+                        std::sort(values.begin(), values.end());
+                        values.erase(std::unique(values.begin(), values.end()), values.end());
+                    };
+                    unique(a);
+                    unique(b);
+                    for (std::size_t u = 1; u < a.size(); ++u)
+                        for (std::size_t v = 1; v < b.size(); ++v) {
+                            const double x = (a[u - 1] + a[u]) / 2, y = (b[v - 1] + b[v]) / 2;
+                            auto condition = core::invalid_id;
+                            for (const auto& [region, id] : per_port[p])
+                                if (x >= region[0] && x <= region[1] && y >= region[2] && y <= region[3])
+                                    condition = id; // Last declared law wins.
+                            if (condition != core::invalid_id)
+                                compiled.rom_boundary_terms.push_back(
+                                    {domain_id, static_cast<model::PortId>(p), j, condition,
+                                        {a[u - 1], a[u], b[v - 1], b[v]}});
+                        }
+                }
+        }
         return compiled;
     }
 
