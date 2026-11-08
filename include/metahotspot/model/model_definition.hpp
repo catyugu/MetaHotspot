@@ -308,9 +308,12 @@ namespace mhs::model {
             if (registry.size() != 1 || !registry.is_fom(0))
                 return false;
             const auto& domain = domains.front();
-            return domain.mesh.x_vertices.empty() && domain.mesh.y_vertices.empty()
-                && domain.mesh.z_vertices.empty() && domain.volumes.empty() && domain.ports.empty()
-                && domain.thermal_boundaries.empty() && domain.fluid_boundaries.empty();
+            const auto& mesh = domain.mesh;
+            if (!mesh.x_vertices.empty() || !mesh.y_vertices.empty() || !mesh.z_vertices.empty())
+                return false;
+            if (!domain.volumes.empty() || !domain.ports.empty())
+                return false;
+            return domain.thermal_boundaries.empty() && domain.fluid_boundaries.empty();
         }
         void clear_domains()
         {

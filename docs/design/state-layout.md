@@ -86,6 +86,10 @@ compiled = model.compile()
 heat_rates = compiled.connection_flux(connection, compiled.solve().state)
 ```
 
+The public DomainId refers to the registry; the raw `domains[i]` array
+indexes only FOMs, and `rom_domains[i]` indexes only ROMs. C++ builders
+should use `add_fom_domain` / `add_rom_domain` to keep registry IDs stable.
+
 C domain-local construction functions take `domain` immediately after the model
 pointer. Python supplies `domain=0` by default. C++ callers use `domains[0]` for
 the default FOM. These are breaking C/C++ changes, with no compatibility aliases.
