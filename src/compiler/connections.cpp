@@ -18,11 +18,11 @@ namespace mhs::compiler {
         bool intersects(const SurfaceRegion& a, const SurfaceRegion& b)
         {
             return a.axis == b.axis && a.coordinate == b.coordinate
-                && positive_bounds(intersect_bounds(surface_bounds(a), surface_bounds(b)));
+                && positive_bounds(intersect_bounds(surface_bounds(a.rectangle), surface_bounds(b.rectangle)));
         }
         void validate_region(const SurfaceRegion& r)
         {
-            const auto rect = surface_bounds(r);
+            const auto rect = surface_bounds(r.rectangle);
             if (static_cast<unsigned>(r.axis) > 2 || !std::isfinite(r.coordinate) || !positive_bounds(rect)
                 || !std::all_of(rect.begin(), rect.end(), [](double x) { return std::isfinite(x); }))
                 throw std::invalid_argument("invalid port surface region");
@@ -81,7 +81,7 @@ namespace mhs::compiler {
                 for (std::size_t j = 0; j < port.patches.size(); ++j) {
                     const auto& patch = port.patches[j];
                     const auto rect = surface_bounds(patch.rectangle);
-                    const auto common = intersect_bounds(rect, surface_bounds(r));
+                    const auto common = intersect_bounds(rect, surface_bounds(r.rectangle));
                     if (!positive_bounds(rect) || rect != common || !std::isfinite(patch.half_resistance)
                         || patch.half_resistance <= 0 || !std::isfinite(patch.offset) || patch.trace.size() != order
                         || !std::all_of(patch.trace.begin(), patch.trace.end(), finite)
@@ -96,7 +96,7 @@ namespace mhs::compiler {
                     total += surface_area(rect);
                     ports[d][p].push_back({static_cast<CellId>(j), rect, port.outward_sign});
                 }
-                const double required = surface_area(surface_bounds(r));
+                const double required = surface_area(surface_bounds(r.rectangle));
                 if (port.patches.empty() || std::abs(total - required) > 1e-10 * required)
                     throw std::invalid_argument("ROM port patches must exactly cover the port");
             }
@@ -119,7 +119,7 @@ namespace mhs::compiler {
                 double covered = 0;
                 for (const auto& facet : facets)
                     covered += surface_area(facet.bounds);
-                const double required = surface_area(surface_bounds(component.ports[p].region));
+                const double required = surface_area(surface_bounds(component.ports[p].region.rectangle));
                 if (facets.empty() || std::abs(covered - required) > 1e-10 * required)
                     throw std::invalid_argument("port is not fully covered by exterior domain faces");
                 if (!std::all_of(facets.begin(), facets.end(),
@@ -137,7 +137,7 @@ namespace mhs::compiler {
             if (used.at(spec.a.domain).at(spec.a.port) || used.at(spec.b.domain).at(spec.b.port))
                 throw std::invalid_argument("port is connected more than once");
             const auto a = region(spec.a), b = region(spec.b);
-            if (a.axis != b.axis || a.coordinate != b.coordinate || surface_bounds(a) != surface_bounds(b)
+            if (a.axis != b.axis || a.coordinate != b.coordinate || surface_bounds(a.rectangle) != surface_bounds(b.rectangle)
                 || pa.front().sign == pb.front().sign)
                 throw std::invalid_argument("connection ports must coincide and have opposing outward normals");
             ThermalConnection conn {spec.a, spec.b, a.axis, false, {}};
