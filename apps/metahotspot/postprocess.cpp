@@ -1,6 +1,6 @@
 #include "postprocess.hpp"
 #include "core/vector.hpp"
-#include "solver/solver.hpp"
+#include "solver/thermal_reconstruction.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
