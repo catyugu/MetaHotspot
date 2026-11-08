@@ -42,50 +42,85 @@ namespace mhs::compiler {
         core::Vector<core::Vector<Facets>> ports(ndom);
         core::Vector<core::Vector<bool>> used(ndom);
 
-        // Project each Cartesian component exterior once: physical boundary
-        // laws and port facets are mutually exclusive labels on the same face cuts.
-        for (const auto& field : compiled.layout.fields) {
-            if (field.quantity != FieldQuantity::Temperature)
-                continue;
-            const auto d = field.domain;
-            const auto& component = definition.component(d);
-            auto& fom = compiled.fom(d);
+        // Every component validates the same named physical-port contract.
+        // Cartesian faces are projected once for both boundary laws and ports;
+        // reduced ports instead carry explicit trace facets.
+        for (std::size_t d = 0; d < ndom; ++d) {
+            const auto& component = definition.component(static_cast<DomainId>(d));
+            const auto* rom = std::get_if<RomDomain>(&compiled.components[d].physics);
+            auto* fom = rom ? nullptr : &compiled.fom(static_cast<DomainId>(d));
             used[d].resize(component.ports.size(), false);
             ports[d].resize(component.ports.size());
             std::set<std::string> names;
             core::Vector<TaggedSurfaceRegion> regions;
-            for (std::size_t id = 0; id < component.thermal_boundaries.size(); ++id)
-                for (const auto& region : component.thermal_boundaries[id].regions)
-                    regions.push_back({region, id});
-            const auto port_offset = fom.boundary_conditions.size();
+            std::size_t port_offset = 0;
+            if (fom) {
+                for (std::size_t id = 0; id < component.thermal_boundaries.size(); ++id)
+                    for (const auto& region : component.thermal_boundaries[id].regions)
+                        regions.push_back({region, id});
+                port_offset = fom->boundary_conditions.size();
+            }
             for (std::size_t p = 0; p < component.ports.size(); ++p) {
                 const auto& port = component.ports[p];
                 const auto& r = port.region;
                 validate_region(r);
                 if (port.name.empty() || !names.insert(port.name).second)
-                    throw std::invalid_argument("port names must be nonempty and unique within a domain");
+                    throw std::invalid_argument("port names must be nonempty and unique within a component");
                 for (std::size_t previous = 0; previous < p; ++previous)
                     if (intersects(r, component.ports[previous].region))
-                        throw std::invalid_argument("domain ports overlap");
-                for (const auto& bc : component.thermal_boundaries)
-                    for (const auto& region : bc.regions)
-                        if (intersects(r, region))
-                            throw std::invalid_argument("port overlaps an explicit thermal boundary");
-                for (const auto& bc : definition.fom(d).fluid_boundaries)
-                    for (const auto& region : bc.regions)
-                        if (intersects(r, region))
-                            throw std::invalid_argument("port overlaps a fluid boundary");
-                regions.push_back({r, port_offset + p});
+                        throw std::invalid_argument("component ports overlap");
+                if (fom) {
+                    for (const auto& bc : component.thermal_boundaries)
+                        for (const auto& region : bc.regions)
+                            if (intersects(r, region))
+                                throw std::invalid_argument("port overlaps an explicit thermal boundary");
+                    for (const auto& bc : definition.fom(static_cast<DomainId>(d)).fluid_boundaries)
+                        for (const auto& region : bc.regions)
+                            if (intersects(r, region))
+                                throw std::invalid_argument("port overlaps a fluid boundary");
+                    regions.push_back({r, port_offset + p});
+                    continue;
+                }
+                if (port.outward_sign != 1 && port.outward_sign != -1)
+                    throw std::invalid_argument("ROM outward port sign must be +1 or -1");
+                double total = 0;
+                for (std::size_t j = 0; j < port.patches.size(); ++j) {
+                    const auto& patch = port.patches[j];
+                    const auto rect = bounds(patch.rectangle);
+                    const auto common = overlap(rect, bounds(r));
+                    if (!positive(rect) || !same_bounds(rect, common) || !std::isfinite(patch.half_resistance)
+                        || patch.half_resistance <= 0 || !std::isfinite(patch.offset) || patch.trace.size() != rom->order
+                        || !std::all_of(
+                            patch.trace.begin(), patch.trace.end(), [](double x) { return std::isfinite(x); })
+                        || !std::all_of(
+                            patch.center.begin(), patch.center.end(), [](double x) { return std::isfinite(x); }))
+                        throw std::invalid_argument("invalid ROM port patch geometry or trace");
+                    for (const auto& row : patch.tangential_gradient)
+                        if (!row.empty()
+                            && (row.size() != rom->order
+                                || !std::all_of(row.begin(), row.end(), [](double x) { return std::isfinite(x); })))
+                            throw std::invalid_argument("ROM tangential gradient has invalid dimensions");
+                    for (std::size_t prev = 0; prev < j; ++prev)
+                        if (positive(overlap(rect, bounds(port.patches[prev].rectangle))))
+                            throw std::invalid_argument("ROM port patches overlap");
+                    total += area(rect);
+                    ports[d][p].push_back({static_cast<CellId>(j), rect, port.outward_sign});
+                }
+                if (port.patches.empty() || std::abs(total - area(bounds(r))) > 1e-10 * area(bounds(r)))
+                    throw std::invalid_argument("ROM port patches must exactly cover the port");
             }
-            const auto projection = project_exterior_surface_regions(fom.discrete, regions, port_offset - 1);
+            if (!fom)
+                continue;
+            const auto projection = project_exterior_surface_regions(fom->discrete, regions, port_offset - 1);
             for (const auto& patch : projection) {
                 if (patch.tag < port_offset) {
-                    fom.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
+                    fom->boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
                         static_cast<BoundaryConditionId>(patch.tag), patch.bounds});
                     continue;
                 }
                 const auto p = patch.tag - port_offset;
-                if (!fom.fluid.global_to_fluid.empty() && fom.fluid.global_to_fluid[patch.cell] != core::invalid_id)
+                if (!fom->fluid.global_to_fluid.empty()
+                    && fom->fluid.global_to_fluid[patch.cell] != core::invalid_id)
                     throw std::invalid_argument("thermal connections currently require solid interface cells");
                 ports[d][p].push_back({patch.cell, patch.bounds, patch.sign});
             }
@@ -100,56 +135,6 @@ namespace mhs::compiler {
                 if (!std::all_of(facets.begin(), facets.end(),
                         [&](const auto& facet) { return facet.sign == facets.front().sign; }))
                     throw std::invalid_argument("port must have a single outward normal");
-            }
-        }
-
-        // ROM ports describe only their physical boundary; their interior is
-        // represented exclusively by the reduced operators.
-        for (const auto& field : compiled.layout.fields) {
-            if (field.quantity != FieldQuantity::ReducedCoordinate)
-                continue;
-            const auto d = field.domain;
-            const auto& rom = compiled.rom(d);
-            const auto& component_ports = compiled.components[d].ports;
-            used[d].resize(component_ports.size(), false);
-            ports[d].resize(component_ports.size());
-            std::set<std::string> names;
-            for (std::size_t p = 0; p < component_ports.size(); ++p) {
-                const auto& port = component_ports[p];
-                validate_region(port.region);
-                if (port.name.empty() || !names.insert(port.name).second)
-                    throw std::invalid_argument("ROM port names must be nonempty and unique");
-                if (port.outward_sign != 1 && port.outward_sign != -1)
-                    throw std::invalid_argument("ROM outward port sign must be +1 or -1");
-                for (std::size_t prev = 0; prev < p; ++prev)
-                    if (intersects(port.region, component_ports[prev].region))
-                        throw std::invalid_argument("ROM ports overlap");
-                double total = 0;
-                for (std::size_t j = 0; j < port.patches.size(); ++j) {
-                    const auto& patch = port.patches[j];
-                    const auto rect = bounds(patch.rectangle);
-                    const auto common = overlap(rect, bounds(port.region));
-                    if (!positive(rect) || !same_bounds(rect, common) || !std::isfinite(patch.half_resistance)
-                        || patch.half_resistance <= 0 || !std::isfinite(patch.offset) || patch.trace.size() != rom.order
-                        || !std::all_of(
-                            patch.trace.begin(), patch.trace.end(), [](double x) { return std::isfinite(x); })
-                        || !std::all_of(
-                            patch.center.begin(), patch.center.end(), [](double x) { return std::isfinite(x); }))
-                        throw std::invalid_argument("invalid ROM port patch geometry or trace");
-                    for (const auto& row : patch.tangential_gradient)
-                        if (!row.empty()
-                            && (row.size() != rom.order
-                                || !std::all_of(row.begin(), row.end(), [](double x) { return std::isfinite(x); })))
-                            throw std::invalid_argument("ROM tangential gradient has invalid dimensions");
-                    for (std::size_t prev = 0; prev < j; ++prev)
-                        if (positive(overlap(rect, bounds(port.patches[prev].rectangle))))
-                            throw std::invalid_argument("ROM port patches overlap");
-                    total += area(rect);
-                    ports[d].at(p).push_back({static_cast<CellId>(j), rect, port.outward_sign});
-                }
-                if (port.patches.empty()
-                    || std::abs(total - area(bounds(port.region))) > 1e-10 * area(bounds(port.region)))
-                    throw std::invalid_argument("ROM port patches must exactly cover the port");
             }
         }
 
