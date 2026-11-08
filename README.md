@@ -73,8 +73,8 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
 
 ## Python 包
 
-建模入口与本次不兼容接口迁移见[建模契约](docs/design/io-structure.md#建模契约迁移)。
-Python 使用 `SurfaceRegion` 统一指定热与流体边界，探针和 study 设置继续属于 `Model`。
+建模接口与示例见[建模契约](docs/design/io-structure.md#c-abi--python)。
+Python 使用 `SurfaceRegion` 统一指定热与流体边界，探针和 study 设置属于 `Model`。
 
 Python 包是对 C API 的 `ctypes` 封装，源码在 `python/metahotspot/`，构建由根目录的
 `pyproject.toml`（scikit-build-core）驱动：轮子里包含本项目编译出的 C API 动态库及其运行时依赖，

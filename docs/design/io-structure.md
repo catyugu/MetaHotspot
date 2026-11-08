@@ -24,18 +24,15 @@ PTA `VolumetricHeatSource` 使用 W/m³；引用裸函数名时，适配器转�
 
 ## C ABI / Python
 
-使用 add_material 返回的 ID、add_source 返回的 ID、add_volume 和 volume_add_box（Python 为 add_box）构造模型。所有坐标直接使用 SI。XML 读写、层/块/矩形和 VTU 导出接口已删除；调用方通过编译网格与 raw Solution 接口取得几何和场数据。
+使用 add_material 返回的 ID、add_source 返回的 ID、add_volume 和 volume_add_box（Python 为 add_box）构造模型。所有坐标直接使用 SI。调用方通过编译网格与 raw Solution 接口取得几何和场数据。
 
-
-### 建模契约迁移
-
-本次 C ABI 与 Python API 采用不兼容变更，旧入口不提供别名。C ABI 使用
+C ABI 使用
 `mhs_surface_region_t`、`mhs_model_set_cartesian_mesh`、`mhs_model_set_study`
 和 `mhs_model_add_point_probe`。点探针传入 `const double xyz[3]`。
 
 Python 的 `set_cartesian_mesh`、`set_study` 和 `add_point_probe(name, position)`
-对应这些入口。热边界与流体边界统一接受非空 `Sequence[SurfaceRegion]`，
-不再接受裸六元 tuple。以下示例创建一个可编译、可求解的模型：
+对应这些入口。热边界与流体边界统一接受非空 `Sequence[SurfaceRegion]`。
+以下示例创建一个可编译、可求解的模型：
 
 ```python
 from metahotspot import Model, SurfaceRegion
@@ -58,7 +55,7 @@ with Model() as model:
 多个矩形直接组成区域序列。默认热边界通过 `set_default_*` 指定；空区域调用报错。
 流体边界同样使用 `add_fluid_boundary(regions, kind, value, inlet_temperature=None)`。
 
-`mhs_model_t` 是可变建模入口，继续持有 study 设置与点探针。`compile` 创建独立、
+`mhs_model_t` 是可变建模入口，持有 study 设置与点探针。`compile` 创建独立、
 不可变的 compiled handle。内核中的材料以 `dynamic_viscosity` 是否存在区分固体/流体，
 不维护额外布尔标记。PTA 适配器在 app 侧校验 `FluidMaterial`，展开多矩形 FaceKey。
 
