@@ -53,13 +53,11 @@ namespace mhs::compiler {
             ports[d].resize(component.ports.size());
             std::set<std::string> names;
             core::Vector<TaggedSurfaceRegion> regions;
-            std::size_t port_offset = 0;
-            if (fom) {
-                for (std::size_t id = 0; id < component.thermal_boundaries.size(); ++id)
-                    for (const auto& region : component.thermal_boundaries[id].regions)
-                        regions.push_back({region, id});
-                port_offset = fom->boundary_conditions.size();
-            }
+            const std::size_t port_offset = compiled.library.boundary_conditions.size();
+            if (fom)
+                for (const auto& boundary : component.thermal_boundaries)
+                    for (const auto& region : boundary.regions)
+                        regions.push_back({region, boundary.condition});
             for (std::size_t p = 0; p < component.ports.size(); ++p) {
                 const auto& port = component.ports[p];
                 const auto& r = port.region;
@@ -109,7 +107,9 @@ namespace mhs::compiler {
             }
             if (!fom)
                 continue;
-            const auto projection = project_exterior_surface_regions(fom->discrete, regions, port_offset - 1);
+            const auto fallback = definition.fom(static_cast<DomainId>(d)).default_thermal_boundary;
+            const auto projection = project_exterior_surface_regions(fom->discrete, regions,
+                fallback == core::invalid_id ? compiled.library.adiabatic_condition : fallback);
             for (const auto& patch : projection) {
                 if (patch.tag < port_offset) {
                     fom->boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
