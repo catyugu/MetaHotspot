@@ -251,11 +251,11 @@ namespace mhs::model {
 
     // Numerical formulation and physical exterior are independent concepts.
     struct ComponentDefinition {
-        std::shared_ptr<LibraryDefinition> library;
         std::variant<FomDomainDefinition, RomDomainDefinition> physics;
         mhs::core::Vector<PortDefinition> ports;
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
         mhs::core::Vector<ObservationDefinition> observations;
+        std::shared_ptr<LibraryDefinition> library;
     };
 
     struct ModelDefinition {
