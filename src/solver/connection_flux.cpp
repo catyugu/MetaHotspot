@@ -7,8 +7,8 @@ namespace mhs::solver {
     namespace {
         // Directional least squares over internal neighbours and physical
         // boundary traces. One-sided stencils reproduce linear fields.
-        model::Vec3 gradient(const model::CompiledModel& compiled, const model::FomDomain& domain,
-            std::span<const double> t, model::CellId cell, model::Axis normal, double time)
+        model::Vec3 gradient(const model::FomDomain& domain, std::span<const double> t, model::CellId cell,
+            model::Axis normal, double time)
         {
             model::Vec3 sum {}, weights {};
             const auto center = domain.discrete.cells[cell].center();
@@ -30,7 +30,7 @@ namespace mhs::solver {
             const expression::FieldContext ctx {center[0], center[1], center[2], t[cell], time};
             const model::Vec3 k {props.kx.eval(ctx), props.ky.eval(ctx), props.kz.eval(ctx)};
             for (const auto& boundary : boundary_faces_on_cell(domain, cell)) {
-                if (boundary.axis == normal)
+                if (boundary.axis == normal || boundary.condition == core::invalid_id)
                     continue;
                 const auto axis = static_cast<std::size_t>(boundary.axis);
                 const auto point = boundary_center(domain.discrete.cells[cell], boundary);
@@ -91,7 +91,7 @@ namespace mhs::solver {
                 result.resistance = box.size()[axis] / (2 * k);
                 result.temperature = temperature;
                 result.weights.push_back({field.dof(cell), 1.0});
-                const auto grad = gradient(compiled, domain, temperatures, cell, connection.axis, time);
+                const auto grad = gradient(domain, temperatures, cell, connection.axis, time);
                 std::size_t t = 0;
                 for (std::size_t a = 0; a < 3; ++a)
                     if (a != axis) {
