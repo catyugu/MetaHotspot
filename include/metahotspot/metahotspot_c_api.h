@@ -85,6 +85,9 @@ enum { MHS_GEOM_ADD = 0, MHS_GEOM_SUB = 1 };
 typedef int32_t mhs_solver_type_t;
 enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1, MHS_SOLVER_SPARSE_LU = 2 };
 
+typedef int32_t mhs_component_kind_t;
+enum { MHS_COMPONENT_CARTESIAN = 0, MHS_COMPONENT_REDUCED = 1 };
+
 typedef int32_t mhs_flow_mode_t;
 enum { MHS_FLOW_FROZEN = 0, MHS_FLOW_STOKES = 1 };
 
@@ -163,12 +166,12 @@ typedef struct {
 /** Geometry sizes are independent of the algebraic state layout. */
 typedef struct {
     size_t cell_count, face_count, projection_count, source_count;
-    size_t state_count, domain_count, field_count;
+    size_t state_count, component_count, field_count;
 } mhs_compiled_info_t;
 
-/** Caller-owned geometry arrays, concatenated in DomainId order. XYZ bounds
- * are flattened (count,3). Cell IDs in this export include the domain cell offset;
- * Field support-entity IDs remain local to their domain; each field owns a
+/** Caller-owned geometry arrays, concatenated in ComponentId order. XYZ bounds
+ * are flattened (count,3). Cell IDs in this export include the component cell offset;
+ * Field support-entity IDs remain local to their component; each field owns a
  * contiguous global DOF range reported by mhs_field_info_t.
  * Face bounds are (face_count,4) in ascending
  * tangential axes: YZ for X, XZ for Y, XY for Z, each [a_min,a_max,b_min,b_max].
@@ -239,16 +242,16 @@ MHS_API const char* mhs_version_string(void);
 MHS_API const char* mhs_last_error(void);
 
 /* ------------------------------------------------------------------ */
-/*  Model life-cycle                                                   */
+/*  Component construction                                             */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
-/** Domain 0 starts as an implicit FOM; FOM/ROM DomainIds follow creation order and remain stable. */
-MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_id);
-// Meshless reduced thermal domain. K/C are dense row-major (order,order)
+/** Model starts empty; component IDs follow creation order. */
+MHS_API mhs_status_t mhs_model_add_cartesian_component(mhs_model_t* m, mhs_index_t* out_id);
+// Meshless reduced thermal component. K/C are dense row-major (order,order)
 // matrices of C dz/dt + K z = f. NULL initial coordinates select zero.
-MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, const double* stiffness,
+MHS_API mhs_status_t mhs_model_add_reduced_component(mhs_model_t* m, size_t order, const double* stiffness,
     const double* capacity, const double* rhs, const double* initial, mhs_index_t* out_id);
 // A ROM port is made of nonoverlapping facets covering its full rectangle.
 // A facet's trace maps modal coordinates to its adjacent physical temperature;
@@ -256,21 +259,23 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
 // optional for matching ports and required for nonmatching NCC.
 /** Add an intrinsic affine operator parameter mu*(K_i z - f_i) to a ROM.
  * Exposed-surface HTC instead uses mhs_model_add_convection() on the ROM
- * domain, sharing the same physical ports as inter-domain connections.
+ * component, sharing the same physical ports as inter-component connections.
  * K_i is dense row-major (order,order); f_i has order entries. */
-MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t domain, const char* name,
+MHS_API mhs_status_t mhs_model_add_reduced_affine_term(mhs_model_t* m, mhs_index_t component, const char* name,
     double coefficient, const double* stiffness, const double* rhs);
-/** Create a complete ROM port atomically; invalid patches leave the model unchanged. */
-MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
+/** One physical port interface. Cartesian components derive traces from geometry
+ * (pass outward_sign=0, patches=NULL, patch_count=0). Reduced components require
+ * outward_sign=+/-1 and patches that exactly cover the region. */
+MHS_API mhs_status_t mhs_model_add_port(mhs_model_t* m, mhs_index_t component, const char* name,
     const mhs_surface_region_t* region, int32_t outward_sign, const mhs_rom_port_patch_t* patches, size_t patch_count,
     mhs_index_t* out_id);
-// A ROM output map can satisfy an existing named point probe without a FOM mesh.
-MHS_API mhs_status_t mhs_model_add_rom_observation(
-    mhs_model_t* m, mhs_index_t domain, const char* name, const double xyz[3], const double* weights, double offset);
 
-MHS_API mhs_status_t mhs_model_add_port(
-    mhs_model_t* m, mhs_index_t domain, const char* name, const mhs_surface_region_t* region, mhs_index_t* out_id);
-MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t domain_a, mhs_index_t port_a, mhs_index_t domain_b,
+/** Physical temperature observation. Cartesian: weights=NULL, offset=0.
+ * Reduced: weights has one entry per reduced coordinate. */
+MHS_API mhs_status_t mhs_model_add_observation(mhs_model_t* m, mhs_index_t component, const char* name,
+    const double xyz[3], const double* weights, double offset);
+
+MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t component_a, mhs_index_t port_a, mhs_index_t component_b,
     mhs_index_t port_b, mhs_index_t* out_id);
 /** Number of common integration patches; positive flux is outward from side A. */
 MHS_API mhs_status_t mhs_compiled_connection_patch_count(const mhs_compiled_t* c, mhs_index_t connection, size_t* out);
@@ -283,11 +288,11 @@ MHS_API mhs_status_t mhs_compiled_eval_connection_flux(const mhs_compiled_t* c, 
 
 /** Cartesian vertex arrays in SI metres; each axis must be finite, strictly
  * increasing and contain at least two entries. All axes are replaced atomically. */
-MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t domain, size_t nx, const double* x,
+MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t component, size_t nx, const double* x,
     size_t ny, const double* y, size_t nz, const double* z);
 
 /** Select frozen-flux transport or coupled staggered Stokes/energy physics. */
-MHS_API mhs_status_t mhs_model_set_flow_mode(mhs_model_t* m, mhs_index_t domain, mhs_flow_mode_t mode);
+MHS_API mhs_status_t mhs_model_set_flow_mode(mhs_model_t* m, mhs_index_t component, mhs_flow_mode_t mode);
 
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
 
@@ -303,31 +308,30 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
  * Later volumes override earlier volumes. MHS_INVALID_INDEX omits the heat source. */
 MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_add_volume(
-    mhs_model_t* m, mhs_index_t domain, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id);
-MHS_API mhs_status_t mhs_model_volume_add_box(mhs_model_t* m, mhs_index_t domain, mhs_index_t volume,
+    mhs_model_t* m, mhs_index_t component, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_volume_add_box(mhs_model_t* m, mhs_index_t component, mhs_index_t volume,
     mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3]);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  atomic boundary conditions                 */
+/*  Thermal boundary conditions                                        */
 /* ------------------------------------------------------------------ */
 
-/** Surface conditions require nonempty SI rectangles; later regions win.
- * For FOM, uncovered exterior faces use the default thermal BC. For ROM,
- * regions must lie on declared, unconnected ROM ports; uncovered port areas
- * are adiabatic. Connected ROM ports exchange heat via Connection only. */
-MHS_API mhs_status_t mhs_model_add_dirichlet(
-    mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature);
+typedef int32_t mhs_thermal_bc_kind_t;
+enum { MHS_THERMAL_DIRICHLET = 0, MHS_THERMAL_NEUMANN = 1, MHS_THERMAL_CONVECTION = 2 };
 
-MHS_API mhs_status_t mhs_model_add_neumann(
-    mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux);
+/** expression: temperature (K), heat flux (W/m^2), or HTC (W/m^2/K).
+ * ambient_temperature is required only for convection. Input strings are copied.
+ * Later regions override earlier ones. Reduced boundary regions must lie on exposed ports. */
+typedef struct {
+    mhs_thermal_bc_kind_t kind;
+    const char* expression;
+    const char* ambient_temperature;
+} mhs_thermal_bc_t;
 
-MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, mhs_index_t domain, const mhs_surface_region_t* regions,
-    size_t n_regions, const char* coefficient, const char* ambient_temperature);
-
-MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, mhs_index_t domain, const char* temperature);
-MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, mhs_index_t domain, const char* heat_flux);
-MHS_API mhs_status_t mhs_model_set_default_convection(
-    mhs_model_t* m, mhs_index_t domain, const char* coefficient, const char* ambient_temperature);
+MHS_API mhs_status_t mhs_model_add_thermal_boundary(mhs_model_t* m, mhs_index_t component,
+    const mhs_surface_region_t* regions, size_t count, const mhs_thermal_bc_t* condition);
+MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(
+    mhs_model_t* m, mhs_index_t component, const mhs_thermal_bc_t* condition);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  function library                            */
@@ -349,12 +353,10 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
 
-/** Named point probe, with three finite SI coordinates copied into the model. */
-MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3]);
 /* Same region layout as thermal boundaries. inlet_temperature also supplies
  * pressure-outlet backflow temperature. NULL is allowed only when the boundary
  * does not admit fluid during the solve. value is Pa or kg/s. */
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t domain,
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t component,
     const mhs_surface_region_t* regions, size_t n_regions, mhs_fluid_bc_t kind, double value,
     const double* inlet_temperature);
 
@@ -377,19 +379,21 @@ enum { MHS_FIELD_TEMPERATURE = 0, MHS_FIELD_PRESSURE = 1, MHS_FIELD_VELOCITY = 2
 typedef int32_t mhs_entity_support_t;
 enum { MHS_SUPPORT_CELL = 0, MHS_SUPPORT_FACE = 1, MHS_SUPPORT_REDUCED = 2 };
 typedef struct {
+    mhs_component_kind_t kind;
     size_t cell_count, face_count, field_count;
-} mhs_domain_info_t;
+} mhs_component_info_t;
 typedef struct {
-    mhs_index_t domain;
+    mhs_index_t component;
     mhs_field_quantity_t quantity;
     mhs_entity_support_t support;
     mhs_index_t dof_offset;
     size_t dof_count;
 } mhs_field_info_t;
 
-MHS_API mhs_status_t mhs_compiled_get_domain_info(const mhs_compiled_t* c, mhs_index_t domain, mhs_domain_info_t* out);
+MHS_API mhs_status_t mhs_compiled_get_component_info(
+    const mhs_compiled_t* c, mhs_index_t component, mhs_component_info_t* out);
 MHS_API mhs_status_t mhs_compiled_get_field_info(const mhs_compiled_t* c, mhs_index_t field, mhs_field_info_t* out);
-/** Exact-size map from local field entry to its domain-local support entity.
+/** Exact-size map from local field entry to its component-local support entity.
  * Global DOF is dof_offset + local entry. */
 MHS_API mhs_status_t mhs_compiled_copy_field_entities(
     const mhs_compiled_t* c, mhs_index_t field, mhs_index_t* entities, size_t count);
@@ -400,16 +404,16 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
 MHS_API mhs_status_t mhs_compiled_default_state(
     const mhs_compiled_t* c, double initial_temperature, double* state, size_t state_count);
 MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields);
-MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
-    size_t temperature_count, double time, mhs_material_values_t* values);
+MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* state,
+    size_t state_count, double time, mhs_material_values_t* values);
 
 /* ------------------------------------------------------------------ */
 /*  Assembly                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Evaluate K, C, f at *temperature* (state_count values) and return an owned snapshot. */
+/** Evaluate K, C, f at the complete algebraic state. */
 MHS_API mhs_status_t mhs_compiled_assemble(
-    const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t** out);
+    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_operators_t** out);
 
 MHS_API void mhs_operators_destroy(mhs_operators_t* operators);
 MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mhs_operators_info_t* out);
