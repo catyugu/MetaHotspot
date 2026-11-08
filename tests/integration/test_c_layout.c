@@ -89,7 +89,7 @@ static int stokes_client(void)
     mhs_model_destroy(m);
     mhs_compiled_info_t info;
     OK(mhs_compiled_get_info(c, &info));
-    CHECK(info.state_count == 7 && info.field_count == 5 && info.cell_count == 2);
+    CHECK(info.state_count == 7 && info.field_count == 3 && info.cell_count == 2);
     mhs_field_info_t velocity;
     OK(mhs_compiled_get_field_info(c, 2, &velocity));
     CHECK(velocity.quantity == MHS_FIELD_VELOCITY);
@@ -160,12 +160,13 @@ int main(void)
     OK(mhs_compiled_get_field_info(c, 0, &field));
     CHECK(field.domain == 0 && field.quantity == MHS_FIELD_TEMPERATURE && field.support == MHS_SUPPORT_CELL
         && field.dof_count == 960);
-    mhs_index_t entities[960], dofs[960];
-    OK(mhs_compiled_copy_field_mapping(c, 0, entities, dofs, 960));
+    CHECK(field.dof_offset == 0);
+    mhs_index_t entities[960];
+    OK(mhs_compiled_copy_field_entities(c, 0, entities, 960));
     for (size_t i = 0; i < 960; ++i)
-        CHECK(entities[i] == i && dofs[i] == i);
+        CHECK(entities[i] == i);
     CHECK(mhs_compiled_get_field_info(c, 99, &field) == MHS_ERROR);
-    CHECK(mhs_compiled_copy_field_mapping(c, 0, NULL, NULL, 960) == MHS_ERROR);
+    CHECK(mhs_compiled_copy_field_entities(c, 0, NULL, 960) == MHS_ERROR);
     OK(mhs_compiled_solve(c, NULL, NULL, 0, NULL, &steady));
     mhs_study_t study;
     mhs_study_default(&study);

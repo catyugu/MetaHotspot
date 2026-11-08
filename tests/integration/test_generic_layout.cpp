@@ -61,26 +61,6 @@ TEST(GenericLayout, MissingActualInflowTemperatureFailsAtRuntime)
     EXPECT_THROW(mhs::solver::solve(reversed), std::invalid_argument);
 }
 
-TEST(GenericLayout, PermutedTemperatureDofsPreserveOperatorsAndPhysicalSolution)
-{
-    auto a = mhs::compiler::build_model(channel());
-    auto b = a;
-    b.layout.fields[0].dofs = {1, 0};
-    const auto original = mhs::solver::assemble_thermal(a, mhs::core::Vector<double> {300, 400}, 0);
-    const auto permuted = mhs::solver::assemble_thermal(b, mhs::core::Vector<double> {400, 300}, 0);
-    for (std::size_t i = 0; i < 2; ++i) {
-        EXPECT_DOUBLE_EQ(original.f[i], permuted.f[1 - i]);
-        for (std::size_t j = 0; j < 2; ++j) {
-            EXPECT_DOUBLE_EQ(original.K.coeff(i, j), permuted.K.coeff(1 - i, 1 - j));
-            EXPECT_DOUBLE_EQ(original.C.coeff(i, j), permuted.C.coeff(1 - i, 1 - j));
-        }
-    }
-    const auto sa = mhs::solver::solve(a);
-    const auto sb = mhs::solver::solve(b);
-    EXPECT_NEAR(sa.state[0], sb.state[1], 1e-10);
-    EXPECT_NEAR(sa.state[1], sb.state[0], 1e-10);
-}
-
 TEST(GenericLayout, NonuniformInitialDensityPreservesFrozenMassBalance)
 {
     auto d = channel();
@@ -148,9 +128,9 @@ TEST(GenericLayout, NonmatchingConnectionCorrectsLinearTangentialOffsetAndConser
     mhs::core::Vector<double> exact(compiled.layout.state_count);
     for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
         const auto& f = compiled.layout.fields[d];
-        for (std::size_t i = 0; i < f.dofs.size(); ++i) {
-            const auto p = compiled.domains[d].discrete.cells[f.entities[i]].center();
-            exact[f.dofs[i]] = 300 + p[0] + 2 * p[1] + 3 * p[2];
+        for (std::size_t i = 0; i < f.count; ++i) {
+            const auto p = compiled.domains[d].discrete.cells[i].center();
+            exact[f.dof(i)] = 300 + p[0] + 2 * p[1] + 3 * p[2];
         }
     }
     const auto corrected = mhs::solver::assemble_thermal(compiled, exact, 0);
@@ -181,21 +161,6 @@ TEST(GenericLayout, NonmatchingConnectionCorrectsLinearTangentialOffsetAndConser
     for (std::size_t i = 0; i < original_flux.size(); ++i) {
         EXPECT_NEAR(original_flux[i].outward_a, -reversed_flux[i].outward_a, 1e-12);
         EXPECT_NEAR(original_flux[i].interface_temperature, reversed_flux[i].interface_temperature, 1e-12);
-    }
-    // Permute DOFs across both domain blocks, independently of local CellIds.
-    auto permuted = compiled;
-    for (auto& field : permuted.layout.fields)
-        for (auto& dof : field.dofs)
-            dof = static_cast<mhs::model::DofId>(exact.size() - 1 - dof);
-    auto reverse_state = exact;
-    std::reverse(reverse_state.begin(), reverse_state.end());
-    const auto mapped = mhs::solver::assemble_thermal(permuted, reverse_state, 0);
-    for (std::size_t i = 0; i < exact.size(); ++i) {
-        EXPECT_NEAR(corrected.f[i], mapped.f[exact.size() - 1 - i], 1e-12);
-        for (std::size_t j = 0; j < exact.size(); ++j) {
-            EXPECT_DOUBLE_EQ(corrected.K.coeff(i, j), mapped.K.coeff(exact.size() - 1 - i, exact.size() - 1 - j));
-            EXPECT_DOUBLE_EQ(corrected.C.coeff(i, j), mapped.C.coeff(exact.size() - 1 - i, exact.size() - 1 - j));
-        }
     }
     const auto solution = mhs::solver::solve(compiled);
     EXPECT_TRUE(solution.converged);
@@ -248,7 +213,7 @@ TEST(GenericLayout, NccManufacturedQuadraticConvergesAgainstIndependentSolution)
                     const auto& cell = compiled.domains[d].discrete.cells[c];
                     const auto x = cell.center();
                     const double exact = 300 + x[0] * x[0] + x[1] * x[1] + x[2] * x[2];
-                    const double difference = solution.state[compiled.layout.fields[d].dofs[c]] - exact;
+                    const double difference = solution.state[compiled.layout.fields[d].dof(c)] - exact;
                     sum += cell.volume() * difference * difference;
                 }
             return std::sqrt(sum);
@@ -289,18 +254,20 @@ TEST(GenericLayout, StaggeredStokesPressureAndVelocitySatisfyConservativeContinu
     d.domains[0].fluid_boundaries[0].condition = PressureInlet {1.0, 300};
     d.domains[0].fluid_boundaries[1].condition = PressureOutlet {0.0, 300};
     const auto compiled = mhs::compiler::build_model(d);
-    ASSERT_EQ(compiled.layout.fields.size(), 5u);
+    ASSERT_EQ(compiled.layout.fields.size(), 3u);
     ASSERT_EQ(compiled.layout.fields[1].quantity, FieldQuantity::Pressure);
-    ASSERT_EQ(compiled.layout.fields[2].support, EntitySupport::Face);
-    ASSERT_EQ(compiled.layout.fields[1].dofs.size(), 2u);
+    ASSERT_EQ(compiled.layout.fields[2].support(), EntitySupport::Face);
+    ASSERT_EQ(compiled.layout.fields[1].count, 2u);
     const auto solution = mhs::solver::solve(compiled);
     ASSERT_TRUE(solution.converged);
     const auto& velocity = compiled.layout.fields[2];
-    ASSERT_EQ(velocity.dofs.size(), 3u);
-    for (const auto dof : velocity.dofs)
-        EXPECT_GT(solution.state[dof], 0);
+    ASSERT_EQ(velocity.count, 3u);
+    for (std::size_t i = 0; i < velocity.count; ++i)
+        EXPECT_GT(solution.state[velocity.dof(i)], 0);
     const auto ops = mhs::solver::assemble_thermal(compiled, solution.state, 0.0);
-    for (const auto dof : compiled.layout.fields[1].dofs) {
+    const auto& pressure = compiled.layout.fields[1];
+    for (std::size_t i = 0; i < pressure.count; ++i) {
+        const auto dof = pressure.dof(i);
         double residual = -ops.f[dof];
         for (auto p = ops.K.row_ptr()[dof]; p < ops.K.row_ptr()[dof + 1]; ++p)
             residual += ops.K.values()[p] * solution.state[ops.K.col_idx()[p]];
@@ -325,16 +292,16 @@ TEST(GenericLayout, StaggeredStokesThermalFeedbackUpdatesViscosityAndMassFlux)
     const auto second = mhs::solver::solve(heated);
     ASSERT_TRUE(second.converged);
     const auto& face = heated.layout.fields[2];
-    ASSERT_EQ(face.dofs.size(), 3u);
-    const double cold_flow = first.state[face.dofs[1]];
-    const double hot_flow = second.state[face.dofs[1]];
-    EXPECT_GT(second.state[heated.layout.fields[0].dofs[0]], first.state[cold.layout.fields[0].dofs[0]]);
+    ASSERT_EQ(face.count, 3u);
+    const double cold_flow = first.state[face.dof(1)];
+    const double hot_flow = second.state[face.dof(1)];
+    EXPECT_GT(second.state[heated.layout.fields[0].dof(0)], first.state[cold.layout.fields[0].dof(0)]);
     EXPECT_LT(hot_flow, cold_flow);
     // Neither nonlinear solve may write its changing material properties
     // or velocity/pressure state into the immutable compiled model.
     const auto repeated = mhs::solver::solve(cold);
     ASSERT_TRUE(repeated.converged);
-    EXPECT_NEAR(repeated.state[face.dofs[1]], cold_flow, 1e-9);
+    EXPECT_NEAR(repeated.state[face.dof(1)], cold_flow, 1e-9);
 }
 
 TEST(GenericLayout, TransientStokesKeepsPressureAlgebraicAndConservesMass)
@@ -358,7 +325,9 @@ TEST(GenericLayout, TransientStokesKeepsPressureAlgebraicAndConservesMass)
         const auto time = solution.snapshot_times[step];
         const std::span<const double> state(solution.snapshot_states.data() + step * n, n);
         const auto ops = mhs::solver::assemble_thermal(compiled, state, time);
-        for (const auto dof : compiled.layout.fields[1].dofs) {
+        const auto& pressure = compiled.layout.fields[1];
+        for (std::size_t i = 0; i < pressure.count; ++i) {
+            const auto dof = pressure.dof(i);
             EXPECT_DOUBLE_EQ(ops.C.coeff(dof, dof), 0);
             double continuity = -ops.f[dof];
             for (auto entry = ops.K.row_ptr()[dof]; entry < ops.K.row_ptr()[dof + 1]; ++entry)
@@ -394,8 +363,8 @@ TEST(GenericLayout, StaggeredStokesRectangularPoiseuilleConvergesToAnalyticDuctF
         const auto& velocity = compiled.layout.fields[2];
         double squared_error = 0;
         std::size_t samples = 0;
-        for (std::size_t k = 0; k < velocity.dofs.size(); ++k) {
-            const auto& face = mesh.faces[velocity.entities[k]];
+        for (std::size_t k = 0; k < velocity.count; ++k) {
+            const auto& face = mesh.faces[compiled.domains[0].fluid.velocity_faces[k]];
             if (face.exterior())
                 continue;
             const double y = (face.bounds[0] + face.bounds[1]) / 2;
@@ -408,7 +377,7 @@ TEST(GenericLayout, StaggeredStokesRectangularPoiseuilleConvergesToAnalyticDuctF
                 const double transverse = 1 - std::cosh(kappa * (z - 0.5)) / std::cosh(kappa / 2);
                 reference += 4 * std::sin(kappa * y) * transverse / (kappa * kappa * kappa);
             }
-            const double difference = solved.state[velocity.dofs[k]] - reference;
+            const double difference = solved.state[velocity.dof(k)] - reference;
             squared_error += difference * difference / (n * n);
             ++samples;
         }

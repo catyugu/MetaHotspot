@@ -14,22 +14,23 @@ thermal boundary patches, fluid membership and fluid boundary projections.
 Projection records retain subdivisions rather than collapsing them into mesh faces.
 No mutable definition references survive compilation.
 
-Each `FieldLayout` identifies a domain, quantity, support kind and component.
-Its equally sized `entities` and `dofs` arrays map local entries independently to
-support entities and global state entries. Cell, face and state indices are
-separate contracts. Assembly and observation translate between local cell
-fields and global DOFs; permutations can cross domain blocks without changing
-physical results. The frozen-flow solver allocates temperature unknowns only,
-including solid and fluid cells. Pressure/velocity unknowns and ROM domains
-belong to subsequent stages.
+Each `FieldLayout` identifies a domain and physical quantity and owns one
+contiguous global DOF range `[offset, offset + count)`. Support kind is derived
+from the quantity. Physical support identity remains in the compiled domain:
+temperature uses all FOM cells in CellId order, pressure uses
+`fluid_to_global`, velocity uses `velocity_faces`, and ROM coordinates use
+their natural modal order. The layout therefore does not duplicate entity and
+DOF arrays or support arbitrary post-compilation DOF permutations. A Stokes FOM
+has one temperature field, one pressure field and one normal-face velocity
+field; face orientation comes from the mesh face itself.
 
 C clients query `state_count`, `domain_count`, `field_count`, domain/field
-metadata and mappings on the compiled handle. Python exposes copied snapshots
+metadata, contiguous DOF ranges and support entities on the compiled handle. Python exposes copied snapshots
 as `Compiled.info`, `Compiled.domains`, `Compiled.field_layouts`.
 Geometry, evaluated materials and source projections concatenate domains in
 DomainId order. Exported geometry cell references include that domain's cell
-offset; FieldLayout entity IDs remain domain-local. State and operators use
-global DOFs. Source IDs retain their model-global identity.
+offset; field support-entity IDs remain domain-local. State and operators use
+the canonical contiguous global DOF ranges. Source IDs retain their model-global identity.
 
 ## Thermal connections
 

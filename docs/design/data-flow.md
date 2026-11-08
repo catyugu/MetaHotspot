@@ -43,7 +43,7 @@
 - C++ 的 `ModelDefinition::domains[id].mesh`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Model.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
 - C/Python 网格导出使用 `face_minus`、`face_plus`、`face_axis` 和 `face_bounds`。前三者为 `(face_count,)`，bounds 为 `(face_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量沿 axis 从 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
 - 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 minus 的 max 或 plus 的 min 得到。外法向由缺失的一侧确定。一个 cell side 可有多个积分 patch，支持轴对齐的非匹配界面。cell→faces 仅保留一套 CSR 索引，编译器直接构建。
-- 几何与材料按 DomainId 拼接，各域内部按 CellId 排列，导出的几何 Cell 引用包含域偏移；FieldLayout 的实体 ID 保持域内索引。`K/C/f`、`state` 和 `state_history` 按全局 DofId 排列，通过 FieldLayout 映射。Python `Solution.state` 和 `state_history` 返回对应数组。
+- 几何与材料按 DomainId 拼接，各域内部按 CellId 排列，导出的几何 Cell 引用包含域偏移；FieldLayout 只保存连续全局 DOF 区间，物理实体顺序由 Domain 拓扑定义。`K/C/f`、`state` 和 `state_history` 按该 canonical DofId 顺序排列。Python `Solution.state` 和 `state_history` 返回对应数组。
 - `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
 - `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FaceId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
 

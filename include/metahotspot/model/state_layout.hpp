@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/vector.hpp"
 #include "model/types.hpp"
 #include <stdexcept>
 
