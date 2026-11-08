@@ -920,7 +920,7 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
         for (size_t d = 0; d < c->model.domains.size(); ++d) {
             const auto& model = c->model.domains[d];
             const auto& field = c->model.layout.field(
-                c->model.layout.find(static_cast<mhs_index_t>(d), mhs::model::FieldQuantity::Temperature));
+                c->model.layout.find(c->model.registry.fom_id(d), mhs::model::FieldQuantity::Temperature));
             mhs::core::Vector<mhs::model::DofId> dofs(model.discrete.cells.size());
             for (size_t i = 0; i < field.dofs.size(); ++i)
                 dofs[field.entities[i]] = field.dofs[i];
@@ -956,7 +956,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
             const auto& model = c->model.domains[d];
             const auto& mesh = model.discrete;
             const auto& field = c->model.layout.field(
-                c->model.layout.find(static_cast<mhs_index_t>(d), mhs::model::FieldQuantity::Temperature));
+                c->model.layout.find(c->model.registry.fom_id(d), mhs::model::FieldQuantity::Temperature));
             mhs::core::Vector<mhs::model::DofId> dofs(mesh.cells.size());
             for (size_t i = 0; i < field.dofs.size(); ++i)
                 dofs[field.entities[i]] = field.dofs[i];
