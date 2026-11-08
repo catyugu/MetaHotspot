@@ -80,6 +80,7 @@ namespace mhs::model {
         Axis axis = Axis::X;
         bool nonmatching = false;
         core::Vector<ConnectionPatch> patches;
+        std::int8_t sign_a = 1; // Geometric outward normal on side A.
     };
 
     // Published as a const snapshot by the API; solve workspaces own all flow state.
