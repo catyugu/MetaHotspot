@@ -91,11 +91,13 @@ namespace mhs::compiler {
                         if (rom.affine_terms[previous].name == term.name)
                             throw std::invalid_argument("ROM parameter names must be unique within a domain");
                 }
-                for (const auto& obs : component.observations)
+                for (const auto& obs : component.observations) {
+                    const auto& point = obs.point;
                     if (obs.weights.size() != n || !std::all_of(obs.weights.begin(), obs.weights.end(), finite)
-                        || !finite(obs.offset) || obs.point.name.empty() || !finite(obs.point.x)
-                        || !finite(obs.point.y) || !finite(obs.point.z))
+                        || !finite(obs.offset) || point.name.empty() || !finite(point.x) || !finite(point.y)
+                        || !finite(point.z))
                         throw std::invalid_argument("reduced observation has invalid dimension or values");
+                }
                 append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::ReducedCoordinate, n);
                 compiled.components.push_back({std::move(rom), component.ports, component.observations});
                 continue;

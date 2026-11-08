@@ -41,8 +41,8 @@ static int connection_client(void)
         OK(mhs_model_set_cartesian_mesh(m, d, 2, xy, 2, xy, 2, d ? upper_z : lower_z));
         OK(mhs_model_add_volume(m, d, material, MHS_INVALID_INDEX, &volume_id));
         OK(mhs_model_volume_add_box(m, d, volume_id, MHS_GEOM_ADD, lo, hi));
-        OK(mhs_model_set_default_thermal_boundary(
-            m, d, &(mhs_thermal_bc_t) {MHS_THERMAL_DIRICHLET, "300+10*z", NULL}));
+        const mhs_thermal_bc_t fixed = {MHS_THERMAL_DIRICHLET, "300+10*z", NULL};
+        OK(mhs_model_set_default_thermal_boundary(m, d, &fixed));
     }
     OK(mhs_model_add_port(m, 0, "top", &region, 0, NULL, 0, &a));
     OK(mhs_model_add_port(m, upper, "bottom", &region, 0, NULL, 0, &b));
@@ -151,8 +151,8 @@ int main(void)
     const mhs_surface_region_t inlet = {MHS_AXIS_X, 0, {0.003, 0.005, 0.0025, 0.0035}};
     const mhs_surface_region_t outlet = {MHS_AXIS_X, 0.012, {0.003, 0.005, 0.0025, 0.0035}};
     const double temperature = 300;
-    OK(mhs_model_add_thermal_boundary(
-        m, 0, &top, 1, &(mhs_thermal_bc_t) {MHS_THERMAL_CONVECTION, "400", "300"}));
+    const mhs_thermal_bc_t convection = {MHS_THERMAL_CONVECTION, "400", "300"};
+    OK(mhs_model_add_thermal_boundary(m, 0, &top, 1, &convection));
     OK(mhs_model_add_fluid_boundary(m, 0, &inlet, 1, MHS_FLUID_MASS_FLOW_INLET, 2e-4, &temperature));
     OK(mhs_model_add_fluid_boundary(m, 0, &outlet, 1, MHS_FLUID_OUTLET, 0, NULL));
     OK(mhs_model_add_observation(m, 0, "hotspot", (double[]) {0.006, 0.004, 0.00025}, NULL, 0));

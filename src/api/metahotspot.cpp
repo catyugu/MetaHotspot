@@ -332,8 +332,8 @@ MHS_API mhs_status_t mhs_model_add_port(mhs_model_t* m, mhs_index_t component, c
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_observation(mhs_model_t* m, mhs_index_t component, const char* name,
-    const double xyz[3], const double* weights, double offset)
+MHS_API mhs_status_t mhs_model_add_observation(
+    mhs_model_t* m, mhs_index_t component, const char* name, const double xyz[3], const double* weights, double offset)
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
@@ -357,8 +357,8 @@ MHS_API mhs_status_t mhs_model_add_observation(mhs_model_t* m, mhs_index_t compo
     });
 }
 
-MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t component_a, mhs_index_t port_a, mhs_index_t component_b,
-    mhs_index_t port_b, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t component_a, mhs_index_t port_a,
+    mhs_index_t component_b, mhs_index_t port_b, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(out_id);
@@ -675,7 +675,8 @@ MHS_API void mhs_compiled_destroy(mhs_compiled_t* c) { delete c; }
 /*  Compiled metadata                                                  */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_get_component_info(const mhs_compiled_t* c, mhs_index_t component, mhs_component_info_t* out)
+MHS_API mhs_status_t mhs_compiled_get_component_info(
+    const mhs_compiled_t* c, mhs_index_t component, mhs_component_info_t* out)
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
@@ -909,8 +910,8 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
     });
 }
 
-MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
-    size_t state_count, double time, mhs_material_values_t* values)
+MHS_API mhs_status_t mhs_compiled_eval_materials(
+    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_material_values_t* values)
 {
     CHECK_NULL(c);
     CHECK_NULL(state);
@@ -961,15 +962,13 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     CHECK_NULL(c);
     CHECK_NULL(state);
     MHS_TRY({
-        const auto state_count = c->model.layout.state_count;
-        if (state_count != state_count) {
-            SET_ERR("state_count must equal state_count");
+        if (state_count != c->model.layout.state_count) {
+            SET_ERR("state_count must equal compiled state_count");
             return MHS_ERROR;
         }
 
         auto result = std::make_unique<mhs_operators_t>();
-        result->operators
-            = mhs::solver::assemble_thermal(c->model, std::span<const double>(state, state_count), time);
+        result->operators = mhs::solver::assemble_thermal(c->model, std::span<const double>(state, state_count), time);
         *out = result.release();
     });
 }

@@ -272,11 +272,11 @@ MHS_API mhs_status_t mhs_model_add_port(mhs_model_t* m, mhs_index_t component, c
 
 /** Physical temperature observation. Cartesian: weights=NULL, offset=0.
  * Reduced: weights has one entry per reduced coordinate. */
-MHS_API mhs_status_t mhs_model_add_observation(mhs_model_t* m, mhs_index_t component, const char* name,
-    const double xyz[3], const double* weights, double offset);
+MHS_API mhs_status_t mhs_model_add_observation(
+    mhs_model_t* m, mhs_index_t component, const char* name, const double xyz[3], const double* weights, double offset);
 
-MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t component_a, mhs_index_t port_a, mhs_index_t component_b,
-    mhs_index_t port_b, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_connect(mhs_model_t* m, mhs_index_t component_a, mhs_index_t port_a,
+    mhs_index_t component_b, mhs_index_t port_b, mhs_index_t* out_id);
 /** Number of common integration patches; positive flux is outward from side A. */
 MHS_API mhs_status_t mhs_compiled_connection_patch_count(const mhs_compiled_t* c, mhs_index_t connection, size_t* out);
 MHS_API mhs_status_t mhs_compiled_eval_connection_flux(const mhs_compiled_t* c, mhs_index_t connection,
@@ -404,8 +404,8 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
 MHS_API mhs_status_t mhs_compiled_default_state(
     const mhs_compiled_t* c, double initial_temperature, double* state, size_t state_count);
 MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields);
-MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* state,
-    size_t state_count, double time, mhs_material_values_t* values);
+MHS_API mhs_status_t mhs_compiled_eval_materials(
+    const mhs_compiled_t* c, const double* state, size_t state_count, double time, mhs_material_values_t* values);
 
 /* ------------------------------------------------------------------ */
 /*  Assembly                                                            */
