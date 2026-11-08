@@ -239,6 +239,11 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
 // A facet's trace maps modal coordinates to its adjacent physical temperature;
 // half_resistance is distance/k (m^2 K/W). Tangential gradient rows are
 // optional for matching ports and required for nonmatching NCC.
+/** Add an affine parameter term mu*(K_i z - f_i) to a ROM.
+ * A new compiled snapshot fixes mu; the reduced basis/port maps are unchanged.
+ * K_i is a dense row-major (order,order) array; f_i has order entries. */
+MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t domain, const char* name,
+    double coefficient, const double* stiffness, const double* rhs);
 MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
     const mhs_surface_region_t* region, int32_t outward_sign, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_rom_port_add_patch(mhs_model_t* m, mhs_index_t domain, mhs_index_t port,
