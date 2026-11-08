@@ -11,11 +11,12 @@
 
 namespace mhs::solver {
     mhs::solver::FrozenFlow initialize_frozen_flow(const mhs::model::FomDomain& model,
-        const mhs::core::Vector<mhs::model::MaterialProps>& materials,
-        const mhs::core::Vector<mhs::model::FluidBoundaryCondition>& conditions, std::span<const double> temperature, double time)
+        std::span<const double> temperature, double time)
     {
         using namespace mhs::core;
         using namespace mhs::model;
+        const auto& materials = model.library->material_table;
+        const auto& conditions = model.library->fluid_conditions;
         const auto& fluid = model.fluid;
         const auto& mesh = model.discrete;
         if (temperature.size() != mesh.cells.size())
