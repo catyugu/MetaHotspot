@@ -163,7 +163,7 @@ namespace mhs::solver {
                 },
                 condition);
             if (mass < 0) {
-                const double temperature = std::visit(
+                const double incoming_temperature = std::visit(
                     [&](const auto& bc) {
                         if (!bc.temperature)
                             throw std::invalid_argument(
@@ -171,7 +171,7 @@ namespace mhs::solver {
                         return *bc.temperature;
                     },
                     condition);
-                flow.boundary_terms.push_back({term.cell, FluidInflow {-mass, temperature}});
+                flow.boundary_terms.push_back({term.cell, FluidInflow {-mass, incoming_temperature}});
             }
             else {
                 flow.boundary_terms.push_back({term.cell, FluidOutflow {mass}});

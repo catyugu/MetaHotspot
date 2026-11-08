@@ -16,7 +16,10 @@ gtest_discover_tests(mhs_integration_tests
 if(MHS_BUILD_C_API)
     enable_language(C)
     add_executable(mhs_c_layout_test test_c_layout.c)
-    set_target_properties(mhs_c_layout_test PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+    # Keep the client compiled as C; the C++ driver supplies the shared library's
+    # C++ UBSan runtime (including vptr checks) in sanitizer builds.
+    set_target_properties(mhs_c_layout_test PROPERTIES
+        C_STANDARD 11 C_STANDARD_REQUIRED ON LINKER_LANGUAGE CXX)
     target_link_libraries(mhs_c_layout_test PRIVATE mhs_c_api)
     mhs_stage_runtime(mhs_c_layout_test)
     add_test(NAME mhs.integration.c_layout COMMAND mhs_c_layout_test)
