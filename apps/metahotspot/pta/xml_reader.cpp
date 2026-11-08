@@ -136,6 +136,7 @@ namespace mhs::app::pta {
         }
 
         Definition def;
+        auto& library = *def.model.components.front().library;
         mhs::model::Study study;
         mhs::model::ThermalBoundary default_thermal_boundary = mhs::model::NeumannBoundary {};
 
@@ -217,7 +218,7 @@ namespace mhs::app::pta {
                     var.value = get_text(val);
                 }
                 if (!var.name.empty()) {
-                    def.model.library().variables.push_back(std::move(var));
+                    library.variables.push_back(std::move(var));
                 }
             }
         }
@@ -288,7 +289,7 @@ namespace mhs::app::pta {
                     }
                 }
                 if (!name.empty()) {
-                    def.model.library().materials.push_back({std::move(name), std::move(mat)});
+                    library.materials.push_back({std::move(name), std::move(mat)});
                 }
             }
         }
@@ -362,7 +363,7 @@ namespace mhs::app::pta {
                     }
                 }
                 if (!name.empty()) {
-                    def.model.library().functions.push_back({std::move(name), std::move(fn)});
+                    library.functions.push_back({std::move(name), std::move(fn)});
                 }
             }
         }
@@ -470,7 +471,7 @@ namespace mhs::app::pta {
                             "fluid boundary fields do not match ThermalBoundary i:type: " + type_str);
                     if (fluid_boundary.regions.empty())
                         throw std::runtime_error("fluid boundary has no FaceKeys regions");
-                    fluid_boundary.condition = append(def.model.library().fluid_boundaries, std::move(condition));
+                    fluid_boundary.condition = append(library.fluid_boundaries, std::move(condition));
                     def.model.fom(0).fluid_boundaries.push_back(std::move(fluid_boundary));
                     continue;
                 }
@@ -483,14 +484,14 @@ namespace mhs::app::pta {
                         if (const XMLElement* t = child_by_local_name(thermal, "Temperature")) {
                             bc.temperature = get_text(t);
                         }
-                        boundary.condition = append(def.model.library().thermal_boundaries, std::move(bc));
+                        boundary.condition = append(library.thermal_boundaries, std::move(bc));
                     }
                     else if (type_str.find("SecondType") != std::string::npos) {
                         mhs::model::NeumannBoundary bc;
                         if (const XMLElement* q = child_by_local_name(thermal, "HeatFlux")) {
                             bc.heat_flux = get_text(q);
                         }
-                        boundary.condition = append(def.model.library().thermal_boundaries, std::move(bc));
+                        boundary.condition = append(library.thermal_boundaries, std::move(bc));
                     }
                     else if (type_str.find("ThirdType") != std::string::npos) {
                         mhs::model::ConvectionBoundary bc;
@@ -500,7 +501,7 @@ namespace mhs::app::pta {
                         if (const XMLElement* t = child_by_local_name(thermal, "EnvironmentTemperature")) {
                             bc.ambient_temperature = get_text(t);
                         }
-                        boundary.condition = append(def.model.library().thermal_boundaries, std::move(bc));
+                        boundary.condition = append(library.thermal_boundaries, std::move(bc));
                     }
                     else {
                         throw std::runtime_error("unknown Boundary ThermalBoundary i:type: " + type_str);
@@ -581,7 +582,7 @@ namespace mhs::app::pta {
         }
 
         def.model.fom(0).default_thermal_boundary
-            = append(def.model.library().thermal_boundaries, std::move(default_thermal_boundary));
+            = append(library.thermal_boundaries, std::move(default_thermal_boundary));
         return {study, normalize(std::move(def))};
     }
 
