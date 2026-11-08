@@ -38,6 +38,9 @@ namespace mhs::solver {
         double temperature = 0.0;
     };
 
+    std::optional<double> boundary_value_at(const mhs::model::FomDomain& model, std::span<const double> temperature,
+        double time, mhs::model::CellId cell, const mhs::model::Vec3& point);
+
     // Temperature at an arbitrary point: the boundary trace on an external
     // patch, otherwise a Green-Gauss gradient extrapolation from the center.
     double sample_point(const mhs::model::FomDomain& model, std::span<const double> temperature, double time,
