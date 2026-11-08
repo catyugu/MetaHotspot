@@ -42,7 +42,7 @@ namespace mhs::solver {
         for (std::size_t i = 0; i < fluid.velocity_faces.size(); ++i)
             face_dof_[fluid.velocity_faces[i]] = velocity.dof(i);
 
-        boundary_area_.assign(compiled_library_.fluid_conditions.size(), 0.0);
+        boundary_area_.assign(domain.fluid_assignments.size(), 0.0);
         for (const auto& boundary : domain.fluid_boundaries)
             boundary_area_.at(boundary.condition) += patch_area(boundary.bounds);
 
