@@ -85,21 +85,18 @@ namespace mhs::compiler {
                     throw std::invalid_argument("ROM outward port sign must be +1 or -1");
                 double total = 0;
                 const auto order = rom->order;
+                const auto finite = [](double x) { return std::isfinite(x); };
                 for (std::size_t j = 0; j < port.patches.size(); ++j) {
                     const auto& patch = port.patches[j];
                     const auto rect = bounds(patch.rectangle);
                     const auto common = overlap(rect, bounds(r));
                     if (!positive(rect) || !same_bounds(rect, common) || !std::isfinite(patch.half_resistance)
                         || patch.half_resistance <= 0 || !std::isfinite(patch.offset) || patch.trace.size() != order
-                        || !std::all_of(
-                            patch.trace.begin(), patch.trace.end(), [](double x) { return std::isfinite(x); })
-                        || !std::all_of(
-                            patch.center.begin(), patch.center.end(), [](double x) { return std::isfinite(x); }))
+                        || !std::all_of(patch.trace.begin(), patch.trace.end(), finite)
+                        || !std::all_of(patch.center.begin(), patch.center.end(), finite))
                         throw std::invalid_argument("invalid ROM port patch geometry or trace");
                     for (const auto& row : patch.tangential_gradient)
-                        if (!row.empty()
-                            && (row.size() != order
-                                || !std::all_of(row.begin(), row.end(), [](double x) { return std::isfinite(x); })))
+                        if (!row.empty() && (row.size() != order || !std::all_of(row.begin(), row.end(), finite)))
                             throw std::invalid_argument("ROM tangential gradient has invalid dimensions");
                     for (std::size_t prev = 0; prev < j; ++prev)
                         if (positive(overlap(rect, bounds(port.patches[prev].rectangle))))
