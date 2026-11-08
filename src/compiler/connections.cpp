@@ -47,7 +47,7 @@ namespace mhs::compiler {
         // reduced ports instead carry explicit trace facets.
         for (std::size_t d = 0; d < ndom; ++d) {
             const auto& component = definition.component(static_cast<DomainId>(d));
-            const auto* rom = std::get_if<CompiledRomDomain>(&compiled.components[d].physics);
+            const auto* rom = std::get_if<RomDomain>(&compiled.components[d].physics);
             auto* fom = rom ? nullptr : &compiled.fom(static_cast<DomainId>(d));
             used[d].resize(component.ports.size(), false);
             ports[d].resize(component.ports.size());
@@ -176,7 +176,7 @@ namespace mhs::compiler {
                 continue;
             for (std::size_t side = 0; side < 2; ++side) {
                 const auto ref = side == 0 ? conn.a : conn.b;
-                const auto* rom = std::get_if<CompiledRomDomain>(&compiled.components.at(ref.domain).physics);
+                const auto* rom = std::get_if<RomDomain>(&compiled.components.at(ref.domain).physics);
                 if (!rom)
                     continue;
                 const auto& port = compiled.components[ref.domain].ports.at(ref.port);
