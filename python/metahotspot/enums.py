@@ -5,18 +5,9 @@ from __future__ import annotations
 import enum
 
 
-class Study(enum.IntEnum):
+class StudyType(enum.IntEnum):
     STEADY = 0
     TRANSIENT = 1
-
-
-class LengthUnit(enum.IntEnum):
-    METER = 0
-    MILLIMETER = 1
-    MICROMETER = 2
-    NANOMETER = 3
-    INCH = 4
-    MIL = 5
 
 
 class Axis(enum.IntEnum):
@@ -45,7 +36,6 @@ class SolverType(enum.IntEnum):
 
 
 class FluidBC(enum.IntEnum):
-    NONE = 0
     PRESSURE_INLET = 1
     MASS_FLOW_INLET = 2
     OUTLET = 3

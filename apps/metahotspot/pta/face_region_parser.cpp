@@ -1,10 +1,10 @@
-#include "io/face_region_parser.hpp"
+#include "face_region_parser.hpp"
 
 #include "core/vector.hpp"
 #include <stdexcept>
 #include <string>
 
-namespace mhs::io::detail {
+namespace mhs::app::pta::detail {
     namespace {
         mhs::core::Vector<std::string> split(const std::string& value, char delimiter)
         {
@@ -36,10 +36,11 @@ namespace mhs::io::detail {
         }
     } // namespace
 
-    mhs::model::FaceRegion parse_face_region(const std::string& encoded)
+    mhs::core::Vector<mhs::model::SurfaceRegion> parse_face_region(const std::string& encoded)
     {
         const auto parts = split(encoded, '|');
-        mhs::model::FaceRegion region;
+        mhs::model::SurfaceRegion region;
+        mhs::core::Vector<mhs::model::SurfaceRegion> regions;
         if (parts.size() < 3)
             throw std::invalid_argument("malformed face region: " + encoded);
 
@@ -51,19 +52,19 @@ namespace mhs::io::detail {
                 const auto values = split(encoded_rectangle, ',');
                 if (values.size() != 4)
                     throw std::invalid_argument("malformed face region rectangle: " + encoded);
-                region.rectangles.push_back(
-                    {std::stod(values[0]), std::stod(values[1]), std::stod(values[2]), std::stod(values[3])});
+                regions.push_back({region.axis, region.coordinate,
+                    {std::stod(values[0]), std::stod(values[1]), std::stod(values[2]), std::stod(values[3])}});
             }
         }
         else if ((region.axis == mhs::model::Axis::X || region.axis == mhs::model::Axis::Y) && parts.size() == 7) {
-            region.rectangles.push_back(
-                {std::stod(parts[3]), std::stod(parts[4]), std::stod(parts[5]), std::stod(parts[6])});
+            regions.push_back({region.axis, region.coordinate,
+                {std::stod(parts[3]), std::stod(parts[4]), std::stod(parts[5]), std::stod(parts[6])}});
         }
         else {
             throw std::invalid_argument("malformed face region: " + encoded);
         }
 
-        return region;
+        return regions;
     }
 
-} // namespace mhs::io::detail
+} // namespace mhs::app::pta::detail

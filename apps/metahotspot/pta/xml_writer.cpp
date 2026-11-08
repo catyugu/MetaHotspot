@@ -1,5 +1,7 @@
 #include "core/vector.hpp"
-#include "io/result_io.hpp"
+#include "io.hpp"
+
+#include "xml_helpers.hpp"
 #include <tinyxml2.h>
 
 #include <cmath>
@@ -9,7 +11,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace mhs::io {
+namespace mhs::app::pta {
 
     namespace {
 
@@ -52,70 +54,63 @@ namespace mhs::io {
 
     } // namespace
 
-    void write_xml(const std::string& input_path, const std::string& output_path, const mhs::model::Model& model,
-        std::span<const double> node_temperature, const mhs::core::Vector<mhs::solver::ProbeTrace>& observation_traces,
-        std::span<const double> observation_times)
+    void write_xml(const std::string& input_path, const std::string& output_path,
+        const std::array<std::size_t, 3>& shape, std::span<const double> node_temperature,
+        const mhs::core::Vector<mhs::solver::ProbeTrace>& observation_traces, std::span<const double> observation_times)
     {
         using namespace tinyxml2;
 
-        const auto shape = model.output.cartesian_shape;
         if (shape[0] == 0 || shape[1] == 0 || shape[2] == 0)
             throw std::invalid_argument("XML output requires a Cartesian sampling grid; use VTU for imported meshes");
         if (node_temperature.size() != shape[0] * shape[1] * shape[2])
             throw std::invalid_argument("XML node values do not match sampling-grid shape");
 
         XMLDocument doc;
-        const XMLError err = doc.LoadFile(input_path.c_str());
-        if (err != XML_SUCCESS) {
-            return;
-        }
-
-        XMLElement* results_elem = doc.FirstChildElement("Structure")->FirstChildElement("Results");
-        if (!results_elem) {
-            return;
-        }
-
-        XMLElement* any_type = results_elem->FirstChildElement("a:anyType");
-        if (!any_type) {
-            return;
-        }
-
-        XMLElement* values_elem = any_type->FirstChildElement("Values");
-        if (!values_elem) {
-            return;
-        }
-
-        XMLElement* data_elem = values_elem->FirstChildElement("Data");
-        if (!data_elem) {
-            return;
-        }
-
-        while (XMLElement* child = data_elem->FirstChildElement("a:double")) {
-            data_elem->DeleteChild(child);
-        }
-
-        const std::size_t node_nx = model.output.cartesian_shape[0];
-        const std::size_t node_ny = model.output.cartesian_shape[1];
-        const std::size_t node_nz = model.output.cartesian_shape[2];
-
-        for (std::size_t vx = 0; vx < node_nx; vx++) {
-            for (std::size_t vy = 0; vy < node_ny; vy++) {
-                for (std::size_t vz = 0; vz < node_nz; vz++) {
-                    const double val = node_temperature[vx * node_ny * node_nz + vy * node_nz + vz];
-
-                    XMLElement* double_elem = doc.NewElement("a:double");
-                    if (std::isnan(val)) {
-                        double_elem->SetText("NaN");
-                    }
-                    else {
-                        char buf[64];
-                        std::snprintf(buf, sizeof(buf), "%.6f", val);
-                        double_elem->SetText(buf);
-                    }
-                    data_elem->InsertEndChild(double_elem);
+        if (doc.LoadFile(input_path.c_str()) != XML_SUCCESS)
+            throw std::runtime_error("failed to load XML output template: " + input_path);
+        auto* root = doc.FirstChildElement("Structure");
+        if (!root)
+            throw std::runtime_error("XML output template has no Structure");
+        auto ensure = [&](XMLElement* parent, const char* name) {
+            auto* child = parent->FirstChildElement(name);
+            if (!child) {
+                child = doc.NewElement(name);
+                parent->InsertEndChild(child);
+            }
+            return child;
+        };
+        auto* results_elem = ensure(root, "Results");
+        results_elem->SetAttribute("xmlns:a", "http://schemas.microsoft.com/2003/10/Serialization/Arrays");
+        auto* any_type = ensure(results_elem, "a:anyType");
+        any_type->SetAttribute("i:type", "Result3D");
+        any_type->SetAttribute("xmlns:i", "http://www.w3.org/2001/XMLSchema-instance");
+        if (!any_type->FirstChildElement("Mesh")) {
+            const auto* generated = root->FirstChildElement("GeneratedMesh");
+            if (!generated)
+                throw std::runtime_error("XML output template has no sampling mesh");
+            auto* mesh = ensure(any_type, "Mesh");
+            mesh->SetAttribute("xmlns:b", "http://schemas.datacontract.org/2004/07/ThermalSim.Models.Mesh");
+            for (const auto* axis : {"XArray", "YArray", "ZArray"}) {
+                auto* values = detail::child_by_local_name(generated, axis);
+                if (!values)
+                    throw std::runtime_error("GeneratedMesh is missing an axis");
+                auto* array = ensure(mesh, (std::string("b:") + axis).c_str());
+                for (auto* v = values->FirstChildElement(); v; v = v->NextSiblingElement()) {
+                    auto* value = doc.NewElement("a:double");
+                    value->SetText(v->GetText());
+                    array->InsertEndChild(value);
                 }
             }
+            ensure(any_type, "PhysicsName")->SetText("温度");
+            ensure(any_type, "UnitName")->SetText("K");
         }
+        auto* values_elem = ensure(any_type, "Values");
+        auto* data_elem = ensure(values_elem, "Data");
+        for (const auto* name : {"SizeX", "SizeY", "SizeZ"})
+            ensure(values_elem, name);
+
+        refill_double_list(doc, data_elem, node_temperature, true);
+        const auto [node_nx, node_ny, node_nz] = shape;
 
         XMLElement* sx = values_elem->FirstChildElement("SizeX");
         if (sx)
@@ -173,7 +168,8 @@ namespace mhs::io {
         if (!dir_path.parent_path().empty()) {
             std::filesystem::create_directories(dir_path.parent_path());
         }
-        doc.SaveFile(output_path.c_str());
+        if (doc.SaveFile(output_path.c_str()) != XML_SUCCESS)
+            throw std::runtime_error("failed to write XML: " + output_path);
     }
 
-} // namespace mhs::io
+} // namespace mhs::app::pta

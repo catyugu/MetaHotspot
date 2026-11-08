@@ -2,6 +2,7 @@
 
 #include "core/vector.hpp"
 #include "model/types.hpp"
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -11,16 +12,7 @@ namespace mhs::model {
 
     using Expression = std::string;
 
-    enum class LengthUnit { Meter, Millimeter, Micrometer, Nanometer, Inch, Mil };
     enum class GeometryOperation : uint8_t { Add, Subtract };
-
-    struct ModelSettings {
-        StudyType study_type = StudyType::Steady;
-        LengthUnit length_unit = LengthUnit::Meter;
-        double initial_temperature = 300.0;
-        double transient_duration = 0.0;
-        double transient_output_interval = 1.0;
-    };
 
     struct MeshSpec {
         mhs::core::Vector<double> x_vertices;
@@ -33,32 +25,16 @@ namespace mhs::model {
         Expression value;
     };
 
-    struct RectSpec {
-        Expression x;
-        Expression y;
-        Expression width;
-        Expression height;
-    };
-
-    struct RectOperation {
+    // SI geometry. Later volumes override earlier volumes; operations are ordered.
+    struct BoxOperation {
         GeometryOperation operation = GeometryOperation::Add;
-        RectSpec rect;
+        std::array<double, 3> min {};
+        std::array<double, 3> max {};
     };
-
-    struct BlockSpec {
-        std::string material;
-        Expression volumetric_heat_source;
-        Expression x_offset;
-        Expression y_offset;
-        std::optional<Expression> thickness;
-        mhs::core::Vector<RectOperation> geometry;
-    };
-
-    struct LayerSpec {
-        Expression thickness;
-        Expression x_offset;
-        Expression y_offset;
-        mhs::core::Vector<BlockSpec> blocks;
+    struct VolumeSpec {
+        MaterialId material = mhs::core::invalid_id;
+        SourceId source = mhs::core::invalid_id;
+        mhs::core::Vector<BoxOperation> geometry;
     };
 
     struct DirichletBoundary {
@@ -83,16 +59,18 @@ namespace mhs::model {
         double b_max = 0.0;
     };
 
-    struct FaceRegion {
+    struct SurfaceRegion {
         Axis axis = Axis::Z;
         double coordinate = 0.0;
-        mhs::core::Vector<RegionRect> rectangles;
+        RegionRect rectangle;
     };
 
-    struct BoundaryPatch {
-        mhs::core::Vector<FaceRegion> regions;
-        ThermalBoundary condition;
+    template <typename Condition> struct SurfaceConditionSpec {
+        mhs::core::Vector<SurfaceRegion> regions;
+        Condition condition;
     };
+
+    using ThermalBoundarySpec = SurfaceConditionSpec<ThermalBoundary>;
 
     struct MaterialSpec {
         Expression conductivity_x = "0.0";
@@ -101,7 +79,6 @@ namespace mhs::model {
         Expression density = "0.0";
         Expression specific_heat = "0.0";
         std::optional<Expression> dynamic_viscosity;
-        bool is_fluid = false;
     };
 
     struct NamedMaterial {
@@ -152,14 +129,14 @@ namespace mhs::model {
         FunctionSpec value;
     };
 
-    struct ObservationPointSpec {
+    struct PointProbeSpec {
         std::string name;
-        Expression x;
-        Expression y;
-        Expression z;
+        double x = 0.0;
+        double y = 0.0;
+        double z = 0.0;
     };
 
-    // Omitted incoming temperature uses the model's initial temperature.
+    // Omitted incoming temperature uses the model reference temperature.
     struct PressureInlet {
         double pressure = 0.0;
         std::optional<double> temperature;
@@ -172,21 +149,19 @@ namespace mhs::model {
         double pressure = 0.0;
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
-    struct FluidBoundarySpec {
-        mhs::core::Vector<FaceRegion> regions;
-        FluidBoundaryCondition condition;
-    };
+    using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryCondition>;
 
     struct ModelDefinition {
-        ModelSettings settings;
+        double reference_temperature = 300.0;
         MeshSpec mesh;
         mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;
-        mhs::core::Vector<LayerSpec> layers;
-        mhs::core::Vector<BoundaryPatch> boundaries;
-        ThermalBoundary default_boundary = NeumannBoundary {};
-        mhs::core::Vector<ObservationPointSpec> observation_points;
+        mhs::core::Vector<Expression> sources;
+        mhs::core::Vector<VolumeSpec> volumes;
+        mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
+        ThermalBoundary default_thermal_boundary = NeumannBoundary {};
+        mhs::core::Vector<PointProbeSpec> point_probes;
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
     };
 

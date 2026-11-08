@@ -1,9 +1,8 @@
-#include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
 #include "core/vector_ops.hpp"
-#include "io/model_io.hpp"
+#include "pta/io.hpp"
+#include "pta_test_utils.hpp"
 #include "solver/assembler.hpp"
-#include <numeric>
 
 #include <algorithm>
 #include <cmath>
@@ -18,24 +17,23 @@ namespace {
         const std::string root = MHS_SOURCE_DIR;
         const std::string input = root + "/cases/microfluid_cases/steady_case1.xml";
         EXPECT_TRUE(std::filesystem::exists(input));
-        return mhs::compiler::build_model(mhs::io::read_xml(input));
+        return test_pta::build_model(mhs::app::pta::read_xml(input));
     }
 
-    mhs::model::ModelDefinition single_fluid_cell()
+    mhs::app::pta::Definition single_fluid_cell()
     {
         using namespace mhs::model;
-        ModelDefinition d;
-        d.settings.length_unit = LengthUnit::Meter;
-        d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
+        mhs::app::pta::Definition d;
+        d.length_unit = mhs::app::pta::LengthUnit::Meter;
+        d.model.mesh.x_vertices = d.model.mesh.y_vertices = d.model.mesh.z_vertices = {0, 1};
         MaterialSpec mat;
         mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
         mat.density = mat.specific_heat = "1";
-        mat.is_fluid = true;
         mat.dynamic_viscosity = "1";
-        d.materials.push_back({"fluid", mat});
-        LayerSpec layer;
+        d.model.materials.push_back({"fluid", mat});
+        mhs::app::pta::LayerSpec layer;
         layer.thickness = "1";
-        BlockSpec block;
+        mhs::app::pta::BlockSpec block;
         block.material = "fluid";
         block.volumetric_heat_source = "0";
         block.geometry.push_back({GeometryOperation::Add, {"0", "0", "1", "1"}});
@@ -49,7 +47,7 @@ namespace {
 TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 {
     const std::string input = std::string(MHS_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
-    auto model = mhs::compiler::build_model(mhs::io::read_xml(input));
+    auto model = test_pta::build_model(mhs::app::pta::read_xml(input));
 
     EXPECT_TRUE(model.fluid.fluid_to_global.empty());
     EXPECT_TRUE(model.fluid.global_to_fluid.empty());
@@ -66,7 +64,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     auto density = [&](mhs::model::CellId cell) {
         const auto p = model.discrete.cells[cell].center();
         return model.material_table[model.cell_material[cell]].rho.eval(
-            {p[0], p[1], p[2], model.initial_temperature, 0});
+            {p[0], p[1], p[2], model.reference_temperature, 0});
     };
     bool nonzero = false;
     for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
@@ -134,21 +132,21 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
 {
     using namespace mhs::model;
     auto d = single_fluid_cell();
-    d.fluid_boundaries = {{{{Axis::X, 0, {{0, 0.2, 0, 1}, {0.1, 0.2, 0, 1}}}}, MassFlowInlet {2, 280}},
-        {{{Axis::X, 0, {{0.8, 1, 0, 1}}}}, MassFlowInlet {3, 320}},
-        {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {0}}};
+    d.model.fluid_boundaries = {
+        {{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}}, MassFlowInlet {2, 280}},
+        {{{Axis::X, 0, {0.8, 1, 0, 1}}}, MassFlowInlet {3, 320}}, {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}}};
     auto verify = [&](const mhs::model::Model& model) {
         const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
         EXPECT_NEAR(diagonal, 5, 1e-12);
         EXPECT_NEAR(inc.f[0], 2 * 280 + 3 * 320, 1e-10);
     };
-    verify(mhs::compiler::build_model(d));
-    BoundaryPatch thermal;
+    verify(test_pta::build_model(d));
+    ThermalBoundarySpec thermal;
     thermal.condition = NeumannBoundary {"0"};
-    thermal.regions.push_back({Axis::X, 0, {{0, 0.15, 0, 1}}});
-    d.boundaries.push_back(thermal);
-    verify(mhs::compiler::build_model(d));
+    thermal.regions.push_back({Axis::X, 0, {0, 0.15, 0, 1}});
+    d.model.thermal_boundaries.push_back(thermal);
+    verify(test_pta::build_model(d));
 }
 
 TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
@@ -157,9 +155,9 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     auto d = single_fluid_cell();
     // Pressure labels do not determine thermal flow direction: the nominal
     // outlet supplies fluid when its pressure is higher than the inlet's.
-    d.fluid_boundaries = {
-        {{{Axis::X, 0, {{0, 1, 0, 1}}}}, PressureInlet {0, 280}}, {{{Axis::X, 1, {{0, 1, 0, 1}}}}, PressureOutlet {1}}};
-    auto reverse = mhs::compiler::build_model(d);
+    d.model.fluid_boundaries
+        = {{{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {0, 280}}, {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {1}}};
+    auto reverse = test_pta::build_model(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {
         if (const auto* inflow = std::get_if<mhs::model::FluidInflow>(&term.condition))
@@ -176,8 +174,8 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     };
     verify_reverse(reverse, 300);
 
-    std::get<PressureOutlet>(d.fluid_boundaries.back().condition).pressure = 0;
-    const auto stagnant = mhs::compiler::build_model(d);
+    std::get<PressureOutlet>(d.model.fluid_boundaries.back().condition).pressure = 0;
+    const auto stagnant = test_pta::build_model(d);
     const auto zero = mhs::solver::assemble_thermal(stagnant, mhs::core::Vector<double> {300}, 0);
     EXPECT_DOUBLE_EQ(zero.f[0], 0);
     EXPECT_DOUBLE_EQ(mhs::core::norm_inf(zero.K.values()), 0);

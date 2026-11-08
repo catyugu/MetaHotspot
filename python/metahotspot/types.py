@@ -45,7 +45,7 @@ class Point2D(ctypes.Structure):
     ]
 
 
-class MhsFaceRegion(ctypes.Structure):
+class MhsSurfaceRegion(ctypes.Structure):
     _fields_ = [
         ("axis", ctypes.c_int32),
         ("coordinate", ctypes.c_double),
@@ -53,16 +53,12 @@ class MhsFaceRegion(ctypes.Structure):
     ]
 
 
-class MhsMesh(ctypes.Structure):
+class MhsStudy(ctypes.Structure):
     _fields_ = [
-        ("cell_count", ctypes.c_size_t),
-        ("face_count", ctypes.c_size_t),
-        ("cell_min", ctypes.POINTER(ctypes.c_double)),
-        ("cell_max", ctypes.POINTER(ctypes.c_double)),
-        ("face_minus", ctypes.POINTER(ctypes.c_uint32)),
-        ("face_plus", ctypes.POINTER(ctypes.c_uint32)),
-        ("face_axis", ctypes.POINTER(ctypes.c_int32)),
-        ("face_bounds", ctypes.POINTER(ctypes.c_double)),
+        ("type", ctypes.c_int32),
+        ("initial_temperature", ctypes.c_double),
+        ("duration", ctypes.c_double),
+        ("output_interval", ctypes.c_double),
     ]
 
 
@@ -72,8 +68,7 @@ class MhsCompiledInfo(ctypes.Structure):
         ("face_count", ctypes.c_size_t),
         ("projection_count", ctypes.c_size_t),
         ("source_count", ctypes.c_size_t),
-        ("study_type", ctypes.c_int32),
-        ("initial_temperature", ctypes.c_double),
+        ("reference_temperature", ctypes.c_double),
     ]
 
 
@@ -121,6 +116,7 @@ class MhsSolutionInfo(ctypes.Structure):
         ("record_count", ctypes.c_size_t),
         ("probe_count", ctypes.c_size_t),
         ("time", ctypes.c_double),
+        ("converged", ctypes.c_int32),
     ]
 
 

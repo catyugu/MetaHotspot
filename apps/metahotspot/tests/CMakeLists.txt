@@ -1,0 +1,8 @@
+include(GoogleTest)
+file(GLOB app_test_sources CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp)
+add_executable(metahotspot_frontend_tests ${app_test_sources})
+target_link_libraries(metahotspot_frontend_tests PRIVATE metahotspot_frontend GTest::gtest_main)
+target_include_directories(metahotspot_frontend_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_definitions(metahotspot_frontend_tests PRIVATE MHS_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+mhs_stage_runtime(metahotspot_frontend_tests)
+gtest_discover_tests(metahotspot_frontend_tests TEST_PREFIX "mhs.app." DISCOVERY_TIMEOUT 60)

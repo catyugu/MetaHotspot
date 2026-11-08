@@ -1,7 +1,9 @@
 """Build, test, install and package MetaHotspot."""
 
 import argparse
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -79,6 +81,12 @@ def main():
     run("cmake", "--build", build, "--config", args.config, "--parallel", "4")
     run("ctest", "--test-dir", build, "-C", args.config, "--output-on-failure")
     if args.config == "Release":
+        executable = build / "apps/metahotspot/metahotspot"
+        if sys.platform == "win32":
+            executable = executable.with_suffix(".exe")
+        os.environ["MHS_EXECUTABLE"] = str(executable)
+        os.environ["PYTHONIOENCODING"] = "utf-8"
+        run(sys.executable, root / "run_cases.py")
         run("cmake", "--install", build, "--config", args.config, "--prefix", prefix)
         check_sdk(prefix, build, args.config, args.generator)
         run(

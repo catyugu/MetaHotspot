@@ -1,5 +1,4 @@
 #include "compiler/model_compiler.hpp"
-#include "model_test_utils.hpp"
 #include "solver/solver.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -9,43 +8,25 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
     // Cube with heat source + Dirichlet on bottom + convective BC on top
     mhs::model::ModelDefinition io;
-    io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
-    io.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 0.005, 0.01};
+    io.mesh.y_vertices = {0.0, 0.005, 0.01};
+    io.mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    mhs::model::LayerSpec layer;
-    layer.thickness = "10";
-
-    mhs::model::BlockSpec block;
-    block.material = "copper";
-    block.volumetric_heat_source = "1e6"; // heat source
-
-    mhs::model::RectOperation rect;
-    rect.operation = mhs::model::GeometryOperation::Add;
-    rect.rect.x = "0";
-    rect.rect.y = "0";
-    rect.rect.width = "10";
-    rect.rect.height = "10";
-    block.geometry.push_back(rect);
-
-    layer.blocks.push_back(block);
-    io.layers.push_back(layer);
+    io.sources = {"1e6"};
+    io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
     io.materials.push_back({"copper", mat});
 
     // Dirichlet 300K on bottom face (Z=0)
-    mhs::model::BoundaryPatch boundary1;
+    mhs::model::ThermalBoundarySpec boundary1;
     boundary1.condition = mhs::model::DirichletBoundary {"300"};
-    boundary1.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    io.boundaries.push_back(boundary1);
+    boundary1.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
+    io.thermal_boundaries.push_back(boundary1);
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = mhs::compiler::build_model(io);
 
@@ -65,29 +46,13 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
     mhs::model::ModelDefinition io;
-    io.settings.study_type = mhs::model::StudyType::Transient;
-    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
-    io.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 0.005, 0.01};
+    io.mesh.y_vertices = {0.0, 0.005, 0.01};
+    io.mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    mhs::model::LayerSpec layer;
-    layer.thickness = "10";
-    mhs::model::BlockSpec block;
-    block.material = "copper";
-    block.volumetric_heat_source = "1e8";
-
-    mhs::model::RectOperation rect;
-    rect.operation = mhs::model::GeometryOperation::Add;
-    rect.rect.x = "0";
-    rect.rect.y = "0";
-    rect.rect.width = "10";
-    rect.rect.height = "10";
-    block.geometry.push_back(rect);
-    layer.blocks.push_back(block);
-    io.layers.push_back(layer);
+    io.sources = {"1e8"};
+    io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
@@ -95,32 +60,30 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     mat.specific_heat = "385";
     io.materials.push_back({"copper", mat});
 
-    io.settings.transient_duration = 5.0;
-    io.settings.transient_output_interval = 1.0;
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
-
-    mhs::model::ObservationPointSpec op1;
+    mhs::model::PointProbeSpec op1;
     op1.name = "center";
-    op1.x = "5";
-    op1.y = "5";
-    op1.z = "5";
-    io.observation_points.push_back(op1);
-    mhs::model::ObservationPointSpec op2;
+    op1.x = 0.005;
+    op1.y = 0.005;
+    op1.z = 0.005;
+    io.point_probes.push_back(op1);
+    mhs::model::PointProbeSpec op2;
     op2.name = "z0";
-    op2.x = "5";
-    op2.y = "5";
-    op2.z = "0";
-    io.observation_points.push_back(op2);
+    op2.x = 0.005;
+    op2.y = 0.005;
+    op2.z = 0;
+    io.point_probes.push_back(op2);
 
-    mhs::model::BoundaryPatch boundary;
+    mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500"};
-    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    io.boundaries.push_back(boundary);
+    boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
+    io.thermal_boundaries.push_back(boundary);
 
     auto model = mhs::compiler::build_model(io);
 
-    auto result = mhs::solver::solve(model);
+    mhs::model::Study study {mhs::model::StudyType::Transient, 300.0, 5.0, 1.0};
+    auto result = mhs::solver::solve(model, study);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 2u);
@@ -150,54 +113,36 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 {
     mhs::model::ModelDefinition io;
-    io.settings.study_type = mhs::model::StudyType::Transient;
-    io.settings.length_unit = mhs::model::LengthUnit::Millimeter;
-    io.settings.initial_temperature = 300.0;
 
-    io.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 0.005, 0.01};
+    io.mesh.y_vertices = {0.0, 0.005, 0.01};
+    io.mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    mhs::model::LayerSpec layer;
-    layer.thickness = "10";
-    mhs::model::BlockSpec block;
-    block.material = "copper";
-    block.volumetric_heat_source = "0";
-
-    mhs::model::RectOperation rect;
-    rect.operation = mhs::model::GeometryOperation::Add;
-    rect.rect.x = "0";
-    rect.rect.y = "0";
-    rect.rect.width = "10";
-    rect.rect.height = "10";
-    block.geometry.push_back(rect);
-    layer.blocks.push_back(block);
-    io.layers.push_back(layer);
+    io.sources = {"0"};
+    io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
     io.materials.push_back({"copper", mat});
 
-    io.settings.transient_duration = 5.0;
-    io.settings.transient_output_interval = 1.0;
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
-
-    mhs::model::ObservationPointSpec op;
+    mhs::model::PointProbeSpec op;
     op.name = "z0_dirichlet";
-    op.x = "5";
-    op.y = "5";
-    op.z = "0";
-    io.observation_points.push_back(op);
+    op.x = 0.005;
+    op.y = 0.005;
+    op.z = 0;
+    io.point_probes.push_back(op);
 
-    mhs::model::BoundaryPatch boundary;
+    mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
-    boundary.regions.push_back(mhs::test::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
-    io.boundaries.push_back(boundary);
+    boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
+    io.thermal_boundaries.push_back(boundary);
 
     auto model = mhs::compiler::build_model(io);
 
-    auto result = mhs::solver::solve(model);
+    mhs::model::Study study {mhs::model::StudyType::Transient, 300.0, 5.0, 1.0};
+    auto result = mhs::solver::solve(model, study);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 1u);

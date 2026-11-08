@@ -39,7 +39,6 @@ import numpy as np
 import scipy.sparse as sp
 
 from metahotspot._compiled_data import Operators
-from metahotspot.enums import Study
 from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
 from metahotspot.macromodel.utils import (
     normalized_operators,
@@ -168,7 +167,7 @@ class AffineParametricModel:
 
     # ------------------------------------------------- geometry hooks (required)
 
-    def build_geometry(self, study, *, detail, macro):
+    def build_geometry(self, *, detail, macro):
         """Assemble a metahotspot ``Model`` for the given study/domain split."""
         raise NotImplementedError
 
@@ -192,7 +191,7 @@ class AffineParametricModel:
 
     @cached_property
     def _full(self):
-        return self.build_geometry(Study.STEADY, detail=True, macro=True).compile()
+        return self.build_geometry(detail=True, macro=True).compile()
 
     @cached_property
     def geometry(self) -> CellGeometry:

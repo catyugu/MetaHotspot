@@ -20,11 +20,7 @@ namespace {
         fns.push_back({"test_gaussian", mhs::model::GaussFunctionSpec {5.0, 10.0, 20.0}});
         register_all_functions(sym, fns);
 
-        // 字面替换：用户写 test_gaussian(x)，preprocessor 在材料槽里替换为 test_gaussian(T)
-        auto out = substitute_function_args("test_gaussian(x)", "T");
-        EXPECT_EQ(out, "test_gaussian(T)");
-
-        auto compiled = mhs::expression::parse(out, sym);
+        auto compiled = mhs::expression::parse("test_gaussian(T)", sym);
         EXPECT_TRUE(compiled.depends_on_temperature());
         // Native 接收 muparser 绑定的参数向量 args 与当前 TLS 物理 ctx；
         // 现有 natives 读 ctx.t，所以测试时把值放在 ctx.T 上。
@@ -166,50 +162,6 @@ namespace {
             ctx.t = t;
             EXPECT_DOUBLE_EQ(compiled.eval(ctx), 42.0);
         }
-    }
-
-    // ---- 字面替换 --------------------------------------------------------
-
-    TEST(Substitute, BasicCallReplacesXForT)
-    {
-        auto out = substitute_function_args("test_gaussian(x)", "T");
-        EXPECT_EQ(out, "test_gaussian(T)");
-    }
-
-    TEST(Substitute, MultipleXReplaced)
-    {
-        auto out = substitute_function_args("test_gaussian(x)/(x*0.01+1)", "t");
-        EXPECT_EQ(out, "test_gaussian(t)/(t*0.01+1)");
-    }
-
-    TEST(Substitute, XFollowedByUnderscoreNotReplaced)
-    {
-        auto out = substitute_function_args("2*x + x_next", "t");
-        EXPECT_EQ(out, "2*t + x_next");
-    }
-
-    TEST(Substitute, XBetweenLettersNotReplaced)
-    {
-        auto out = substitute_function_args("xx + axb", "t");
-        EXPECT_EQ(out, "xx + axb");
-    }
-
-    TEST(Substitute, NoFunctionsNoChange)
-    {
-        auto out = substitute_function_args("x+1", "T");
-        EXPECT_EQ(out, "T+1");
-    }
-
-    TEST(Substitute, BareFunctionCallNotRewritten)
-    {
-        auto out = substitute_function_args("foo(x)", "T");
-        EXPECT_EQ(out, "foo(T)");
-    }
-
-    TEST(Substitute, NestedWithOtherVariables)
-    {
-        auto out = substitute_function_args("y + z + T + t + pi", "T");
-        EXPECT_EQ(out, "y + z + T + t + pi");
     }
 
 } // namespace

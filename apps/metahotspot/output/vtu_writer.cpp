@@ -1,4 +1,5 @@
-#include "io/result_io.hpp"
+#include "vtu.hpp"
+#include <map>
 
 #include <tinyxml2.h>
 
@@ -8,45 +9,40 @@
 #include <stdexcept>
 #include <string>
 
-namespace mhs::io {
+namespace mhs::app::output {
 
-    void write_vtu(const std::string& path, const mhs::model::Model& model, std::span<const double> cell_temperature)
+    void write_vtu(
+        const std::string& path, const mhs::model::DiscreteMesh& mesh, std::span<const double> cell_temperature)
     {
         using namespace tinyxml2;
-        if (cell_temperature.size() != model.discrete.cells.size())
+        if (cell_temperature.size() != mesh.cells.size())
             throw std::invalid_argument("VTU state size mismatch");
-        const auto& output = model.output;
-        mhs::core::Vector<mhs::model::PointId> node_remap(output.points.size(), mhs::core::invalid_id);
-        for (const auto& cell : output.cell_vertices)
-            for (auto v : cell)
-                node_remap[v] = static_cast<mhs::model::PointId>(0);
-        std::size_t compact = 0;
-        for (auto& v : node_remap)
-            if (v != mhs::core::invalid_id)
-                v = static_cast<mhs::model::PointId>(compact++);
-        const auto num_points = static_cast<uint64_t>(compact);
+        std::map<mhs::model::Vec3, std::size_t> points;
         char buf[256];
         std::string coords_str, conn_str, off_str, type_str, cell_temp_str;
-        for (size_t v = 0; v < output.points.size(); ++v) {
-            if (node_remap[v] == mhs::core::invalid_id)
-                continue;
-            const auto p = output.points[v];
-            std::snprintf(buf, sizeof(buf), "%.17g %.17g %.17g\n", p[0], p[1], p[2]);
-            coords_str += buf;
-        }
+        constexpr int corners[8][3]
+            = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}};
         uint64_t cell_num = 0;
-        for (size_t c = 0; c < output.cell_vertices.size(); ++c) {
-            for (auto v : output.cell_vertices[c]) {
-                conn_str += std::to_string(node_remap[v]);
-                conn_str += ' ';
+        for (size_t c = 0; c < mesh.cells.size(); ++c) {
+            const auto& cell = mesh.cells[c];
+            for (const auto& corner : corners) {
+                mhs::model::Vec3 p;
+                for (int a = 0; a < 3; ++a)
+                    p[a] = corner[a] ? cell.max[a] : cell.min[a];
+                const auto [it, inserted] = points.try_emplace(p, points.size());
+                if (inserted) {
+                    std::snprintf(buf, sizeof(buf), "%.17g %.17g %.17g\n", p[0], p[1], p[2]);
+                    coords_str += buf;
+                }
+                conn_str += std::to_string(it->second) + ' ';
             }
             conn_str += '\n';
-            ++cell_num;
-            off_str += std::to_string(cell_num * 8) + "\n";
+            off_str += std::to_string(++cell_num * 8) + "\n";
             type_str += "12\n";
             std::snprintf(buf, sizeof(buf), "%.17g\n", cell_temperature[c]);
             cell_temp_str += buf;
         }
+        const auto num_points = static_cast<uint64_t>(points.size());
 
         XMLDocument doc;
         XMLElement* vtk_elem = doc.NewElement("VTKFile");
@@ -114,7 +110,8 @@ namespace mhs::io {
             std::filesystem::create_directories(dir_path.parent_path());
         }
 
-        doc.SaveFile(path.c_str());
+        if (doc.SaveFile(path.c_str()) != XML_SUCCESS)
+            throw std::runtime_error("failed to write VTU: " + path);
     }
 
-} // namespace mhs::io
+} // namespace mhs::app::output

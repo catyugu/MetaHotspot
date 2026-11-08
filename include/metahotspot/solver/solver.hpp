@@ -7,6 +7,12 @@
 
 namespace mhs::solver {
 
+    // Reconstruct the local boundary temperature at a point on the specified
+    // cell. Coincident patches use Dirichlet precedence. Interior points have
+    // no boundary value. State size and cell ID must match the compiled model.
+    std::optional<double> boundary_value_at(const mhs::model::Model& model, std::span<const double> temperature,
+        double time, mhs::model::CellId cell, const mhs::model::Vec3& point);
+
     /// Flattened user-facing solver configuration.
     /// Defaults are defined here — C API and Python convert from this struct.
     struct SolveOptions {
@@ -22,7 +28,7 @@ namespace mhs::solver {
         double nonlinear_relative_tolerance = 1e-6;
         double nonlinear_absolute_tolerance = 1e-12;
 
-        // Adaptive BDF1/2 time integration. Output sampling is set by the model.
+        // Adaptive BDF1/2 time integration. Output sampling is set by Study.
         double time_tolerance = 1e-4;
         std::optional<double> max_time_step; // seconds; unset selects automatic
     };
@@ -33,7 +39,7 @@ namespace mhs::solver {
     /// Validates initial_state size when provided.
     /// Internally assembles the thermal system, runs nonlinear iteration
     /// and time integration, and records probes.
-    mhs::solver::Solution solve(
-        const mhs::model::Model& model, std::span<const double> initial_state = {}, const SolveOptions& options = {});
+    mhs::solver::Solution solve(const mhs::model::Model& model, const mhs::model::Study& study = {},
+        std::span<const double> initial_state = {}, const SolveOptions& options = {});
 
 } // namespace mhs::solver

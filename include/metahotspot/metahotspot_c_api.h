@@ -4,14 +4,21 @@
 /*
  * MetaHotspot C API — opaque-pointer model construction, compilation, and solve.
  *
- * Three opaque handles, three life-cycle phases:
- *   mhs_model_t     — mutable construction (add layers, blocks, BCs, materials)
+ * Four independently owned opaque handles:
+ *   mhs_model_t     — mutable construction (add volumes, sources, BCs, materials)
  *   mhs_compiled_t  — read-only compiled runtime model (reusable for repeated solves)
  *   mhs_solution_t  — read-only result (temperature field + probe traces)
+ *   mhs_operators_t — owned K/C/f snapshot
  *
  * All functions that can fail return mhs_status_t; detailed error messages
  * are available via mhs_last_error(), which is thread-local and reset on
- * every API call.  Destroy functions are void and NULL-safe.
+ * each successful status-returning call. Other calls preserve the error.
+ * Destroy functions are void and NULL-safe. Create/compile/assemble/solve
+ * initialize a non-NULL output handle address to NULL before validation.
+ * Input arrays/strings are copied; outputs use caller-owned exact-size buffers.
+ * Zero-size output arrays may be NULL. Handles are independent; destroying a
+ * model or compiled handle does not invalidate its existing snapshots.
+ * Concurrent use of a mutable handle requires caller synchronization.
  */
 
 #include <stddef.h>
@@ -53,7 +60,7 @@ extern "C" {
 /* ------------------------------------------------------------------ */
 /*  Opaque handle forward declarations                                 */
 /* ------------------------------------------------------------------ */
-/** Fixed-width entity references and signed CSR/CSC storage indices. */
+/** Fixed-width entity references and signed CSR storage indices. */
 typedef uint32_t mhs_index_t;
 typedef int32_t mhs_sparse_index_t;
 #define MHS_INVALID_INDEX UINT32_MAX
@@ -66,11 +73,8 @@ typedef struct mhs_operators_t mhs_operators_t;
 /* ------------------------------------------------------------------ */
 /*  Enumerations                                                       */
 /* ------------------------------------------------------------------ */
-typedef int32_t mhs_study_t;
+typedef int32_t mhs_study_type_t;
 enum { MHS_STUDY_STEADY = 0, MHS_STUDY_TRANSIENT = 1 };
-
-typedef int32_t mhs_length_unit_t;
-enum { MHS_UNIT_METER = 0, MHS_UNIT_MILLIMETER, MHS_UNIT_MICROMETER, MHS_UNIT_NANOMETER, MHS_UNIT_INCH, MHS_UNIT_MIL };
 
 typedef int32_t mhs_axis_t;
 enum { MHS_AXIS_X = 0, MHS_AXIS_Y = 1, MHS_AXIS_Z = 2 };
@@ -82,7 +86,7 @@ typedef int32_t mhs_solver_type_t;
 enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
 
 typedef int32_t mhs_fluid_bc_t;
-enum { MHS_FLUID_NONE = 0, MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
+enum { MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
 
 typedef int32_t mhs_status_t;
 enum {
@@ -114,12 +118,20 @@ typedef struct {
     double x, y;
 } mhs_point2d_t;
 
-/** One face region for use with atomic boundary functions. */
+/** One continuous SI rectangle; tangential axes are X:(y,z), Y:(x,z), Z:(x,y). */
 typedef struct {
     mhs_axis_t axis;
     double coordinate;
     mhs_rect2d_t rectangle;
-} mhs_face_region_t;
+} mhs_surface_region_t;
+
+/** Study/run configuration. Populate with mhs_study_default(). */
+typedef struct {
+    mhs_study_type_t type;
+    double initial_temperature;
+    double duration;
+    double output_interval;
+} mhs_study_t;
 
 /** Solver options.  Populate with mhs_solve_options_default(). */
 typedef struct {
@@ -137,8 +149,7 @@ typedef struct {
 /** Explicit compiled geometry sizes. State order is CellId order. */
 typedef struct {
     size_t cell_count, face_count, projection_count, source_count;
-    mhs_study_t study_type;
-    double initial_temperature;
+    double reference_temperature;
 } mhs_compiled_info_t;
 
 /** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
@@ -165,19 +176,6 @@ typedef struct {
 MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, const double* state, size_t state_count,
     double time, double* powers, size_t projection_count);
 
-/** Caller-owned external mesh, all coordinates in SI metres. No connectivity
- * discovery is performed. Cell references and face axes are checked. The caller
- * guarantees positive cells, complete nonoverlapping faces, valid indices, domain/material alignment
- * and orthogonal TPFA geometry. Exterior patches have one missing cell, MHS_INVALID_INDEX.
- * Face topology and tangential bounds use the layout of mhs_cell_fields_t. */
-typedef struct {
-    size_t cell_count, face_count;
-    const double *cell_min, *cell_max;
-    const mhs_index_t *face_minus, *face_plus;
-    const mhs_axis_t* face_axis;
-    const double* face_bounds;
-} mhs_mesh_t;
-
 /** Caller-owned buffers for material values evaluated at a supplied state/time. */
 typedef struct {
     double* conductivity_x;
@@ -201,11 +199,15 @@ typedef struct {
     size_t record_count;
     size_t probe_count;
     double time;
+    int32_t converged; /**< 1 on convergence, 0 otherwise. */
 } mhs_solution_info_t;
 
 /* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
+
+/** Fill study with steady/300 K defaults. */
+MHS_API void mhs_study_default(mhs_study_t* study);
 
 /** Fill opts with sensible defaults (AMG, 1e-8, 1e-6, …). */
 MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts);
@@ -216,7 +218,7 @@ MHS_API mhs_log_level_t mhs_log_get_level(void);
 /** Library version, e.g. "1.0.0". */
 MHS_API const char* mhs_version_string(void);
 
-/** Thread-local last error message. Reset on every API call. */
+/** Thread-local error; valid until the next status-returning call on this thread. */
 MHS_API const char* mhs_last_error(void);
 
 /* ------------------------------------------------------------------ */
@@ -225,49 +227,51 @@ MHS_API const char* mhs_last_error(void);
 
 MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
-MHS_API mhs_status_t mhs_model_read_xml(mhs_model_t* m, const char* path);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  settings, mesh, variables                   */
+/*  Model construction  —  reference state, mesh, variables         */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_settings(mhs_model_t* m, mhs_study_t study, mhs_length_unit_t length_unit,
-    double initial_temperature_K, double duration, double output_interval);
+/** Reference temperature used only by compile-time frozen-flow preprocessing
+ * and by fluid inlets whose temperature is omitted. */
+MHS_API mhs_status_t mhs_model_set_reference_temperature(mhs_model_t* m, double temperature_K);
 
-MHS_API mhs_status_t mhs_model_set_mesh(
+/** Cartesian vertex arrays in SI metres; each axis must be finite, strictly
+ * increasing and contain at least two entries. All axes are replaced atomically. */
+MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
-
-MHS_API mhs_status_t mhs_model_set_discrete_mesh(mhs_model_t* m, const mhs_mesh_t* mesh);
 
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  materials, layers, blocks, rects           */
+/*  Model construction  —  materials, sources, volumes           */
 /* ------------------------------------------------------------------ */
 
+/** NULL dynamic_viscosity selects a solid; a non-NULL expression selects a fluid. */
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
-    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity);
+    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id);
 
-MHS_API mhs_status_t mhs_model_add_layer(
-    mhs_model_t* m, const char* thickness, const char* x_offset, const char* y_offset, mhs_index_t* out_id);
-
-MHS_API mhs_status_t mhs_model_add_block(mhs_model_t* m, mhs_index_t layer, const char* material_name,
-    const char* heat_source, const char* x_offset, const char* y_offset, const char* thickness, mhs_index_t* out_id);
-
-MHS_API mhs_status_t mhs_model_add_rect(mhs_model_t* m, mhs_index_t block, mhs_geometry_op_t op, const char* x,
-    const char* y, const char* width, const char* height);
+/** Geometry, mesh coordinates and probes use SI metres. Expressions use canonical x/y/z/T/t.
+ * Later volumes override earlier volumes. MHS_INVALID_INDEX omits the heat source. */
+MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_add_volume(
+    mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_volume_add_box(
+    mhs_model_t* m, mhs_index_t volume, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3]);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
+/** Surface conditions require a nonempty array of SI rectangles. Later regions
+ * override earlier ones; uncovered exterior faces use the default thermal BC. */
 MHS_API mhs_status_t mhs_model_add_dirichlet(
-    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* temperature);
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature);
 
 MHS_API mhs_status_t mhs_model_add_neumann(
-    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* heat_flux);
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux);
 
-MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
+MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
     const char* coefficient, const char* ambient_temperature);
 
 MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char* temperature);
@@ -295,10 +299,12 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z);
-/* inlet_temperature applies only to inlets and is ignored for MHS_FLUID_OUTLET. */
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_axis_t axis, double coordinate,
-    mhs_rect2d_t region, mhs_fluid_bc_t kind, double value, double inlet_temperature);
+/** Named point probe, with three finite SI coordinates copied into the model. */
+MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3]);
+/* Same region layout as thermal boundaries. NULL inlet_temperature selects the
+ * model reference temperature; outlets ignore it. value is pressure (Pa), or mass flow (kg/s). */
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
+    mhs_fluid_bc_t kind, double value, const double* inlet_temperature);
 
 /* ------------------------------------------------------------------ */
 /*  Compilation                                                        */
@@ -320,32 +326,30 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
 /*  Assembly                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Evaluate K, C, f at *temperature* and return a new owned operator handle. */
+/** Evaluate K, C, f at *temperature* (cell_count values) and return an owned snapshot. */
 MHS_API mhs_status_t mhs_compiled_assemble(
     const mhs_compiled_t* c, const double* temperature, size_t temperature_count, double time, mhs_operators_t** out);
 
 MHS_API void mhs_operators_destroy(mhs_operators_t* operators);
 MHS_API mhs_status_t mhs_operators_get_info(const mhs_operators_t* operators, mhs_operators_info_t* out);
-MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, mhs_sparse_index_t* outer,
-    size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count);
-MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, mhs_sparse_index_t* outer,
-    size_t outer_count, mhs_sparse_index_t* inner, size_t inner_count, double* values, size_t value_count);
+/** Export native CSR: row_ptr[state_count+1], col_idx[nnz], values[nnz]. */
+MHS_API mhs_status_t mhs_operators_copy_k(const mhs_operators_t* operators, mhs_sparse_index_t* row_ptr,
+    size_t row_ptr_count, mhs_sparse_index_t* col_idx, size_t col_idx_count, double* values, size_t value_count);
+MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, mhs_sparse_index_t* row_ptr,
+    size_t row_ptr_count, mhs_sparse_index_t* col_idx, size_t col_idx_count, double* values, size_t value_count);
 MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count);
 
 /* ------------------------------------------------------------------ */
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
-    const mhs_solve_options_t* opts, mhs_solution_t** out);
+/** study may be NULL for a steady 300 K default. state is NULL/0 to build a
+ * uniform initial state from study->initial_temperature, otherwise it must have
+ * exactly cell_count entries. opts may be NULL to select defaults. */
+MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study_t* study, const double* state,
+    size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out);
 
 MHS_API void mhs_solution_destroy(mhs_solution_t* s);
-
-/* ------------------------------------------------------------------ */
-/*  VTU export                                                         */
-/* ------------------------------------------------------------------ */
-
-MHS_API mhs_status_t mhs_solution_write_vtu(const mhs_solution_t* s, const char* path);
 
 /* ------------------------------------------------------------------ */
 /*  Solution copy-out accessors                                        */

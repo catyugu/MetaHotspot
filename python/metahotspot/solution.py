@@ -10,7 +10,12 @@ import numpy as np
 
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
-from metahotspot.types import MhsSolution, MhsSolutionInfo, _SolveOptionsCStruct
+from metahotspot.types import (
+    MhsSolution,
+    MhsSolutionInfo,
+    MhsStudy,
+    _SolveOptionsCStruct,
+)
 
 # ---- read-only result snapshots -----------------------------------------
 
@@ -24,6 +29,7 @@ class ProbeSnapshot:
 @dataclass(frozen=True)
 class SolutionSnapshot:
     time: float
+    converged: bool
     state: np.ndarray
     history_times: np.ndarray
     state_history: np.ndarray
@@ -31,10 +37,6 @@ class SolutionSnapshot:
 
 
 # ---- low-level ctypes marshalling helpers --------------------------------
-
-
-def _text(value: str | None) -> bytes | None:
-    return None if value is None else value.encode("utf-8")
 
 
 def _double_ptr(array: np.ndarray):
@@ -54,16 +56,21 @@ def _solve_options(dll, overrides: dict):
     return opts
 
 
-def _solve(dll, compiled_handle, state, opts_overrides: dict):
+def _solve(dll, compiled_handle, study, state, opts_overrides: dict):
     if state is not None:
         state = np.ascontiguousarray(state, dtype=np.float64)
     opts = _solve_options(dll, opts_overrides)
+    native_study = MhsStudy()
+    dll.mhs_study_default(ctypes.byref(native_study))
+    if study is not None:
+        native_study = study._native()
     state_ptr = _double_ptr(state) if state is not None else None
     state_count = state.size if state is not None else 0
     out = ctypes.POINTER(MhsSolution)()
     check(
         dll.mhs_compiled_solve(
             compiled_handle,
+            ctypes.byref(native_study),
             state_ptr,
             state_count,
             ctypes.byref(opts),
@@ -128,6 +135,7 @@ def _solution_snapshot(dll, handle) -> SolutionSnapshot:
 
     return SolutionSnapshot(
         time=float(info.time),
+        converged=bool(info.converged),
         state=state,
         history_times=history_times,
         state_history=history_states.reshape(
@@ -155,17 +163,23 @@ class Solution(OwnedHandle):
     def _solve_compiled(
         cls,
         compiled,
+        study=None,
         state: np.ndarray | None = None,
         opts=None,
     ) -> Solution:
         overrides = opts._overrides() if opts is not None else {}
-        handle = _solve(compiled._dll, compiled._handle, state, overrides)
+        handle = _solve(compiled._dll, compiled._handle, study, state, overrides)
         return cls(compiled._dll, handle)
 
     @cached_property
     def data(self) -> SolutionSnapshot:
         """Snapshot native results into independent Python-owned arrays."""
         return _solution_snapshot(self._dll, self._handle)
+
+    @property
+    def converged(self) -> bool:
+        """Whether the native solve converged."""
+        return self.data.converged
 
     @property
     def time(self) -> float:
@@ -191,7 +205,3 @@ class Solution(OwnedHandle):
     def probes(self) -> list[ProbeSnapshot]:
         """Return all probe traces as Python-owned snapshots."""
         return self.data.probes
-
-    def write_vtu(self, path: str) -> None:
-        """Export the final FVM temperature field to a VTU file."""
-        self._call("mhs_solution_write_vtu", _text(str(path)), ctx="write_vtu")

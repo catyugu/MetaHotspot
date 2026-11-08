@@ -1,117 +1,63 @@
-# Authoring Model
+# ModelDefinition 与 PTA 适配
 
-`include/metahotspot/model/model_definition.hpp` 是唯一建模数据契约，位于 `mhs::model`，为 header-only 轻量类型。它不镜像 XML schema，也不依赖 tinyxml2、muparser、Eigen、TBB 或 spdlog。
+`model/model_definition.hpp` 是库的建模契约。所有几何、网格坐标和探针坐标使用 SI 米；材料及边界表达式使用规范变量 `x/y/z/T/t`，编译器原样解析。材料中的 `T` 表示单元温度，热边界中的 `T` 表示表面迹温度。
 
-XML reader 和外部代码都直接填充 `ModelDefinition` 结构，随后调用 `mhs::compiler::build_model()` 编译为运行期 `mhs::model::Model`。
+`ModelDefinition` 保存 settings、mesh、variables、functions、materials、sources、volumes、thermal_boundaries、default_thermal_boundary、point_probes 和 fluid_boundaries。材料和热源采用有序表，`VolumeSpec` 使用表内 ID 引用；`core::invalid_id` 表示无热源。
 
-## 顶层结构
+## 体几何
 
-```cpp
-struct ModelDefinition {
-    ModelSettings settings;
-    MeshSpec mesh;
-    mhs::core::Vector<VariableSpec> variables;
-    mhs::core::Vector<NamedFunction> functions;
-    mhs::core::Vector<NamedMaterial> materials;
-    mhs::core::Vector<LayerSpec> layers;
-    mhs::core::Vector<BoundaryPatch> boundaries;
-    ThermalBoundary default_boundary;
-    mhs::core::Vector<ObservationPointSpec> observation_points;
-    mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
-};
+`VolumeSpec { material, source, geometry }` 的 geometry 为三维轴对齐 `BoxOperation { operation, min, max }` 序列。每个 box 的 min/max 是绝对 SI 坐标，必须有限且严格递增。操作按顺序执行：最后命中的 Add/Subtract 决定点是否属于体；后添加的体覆盖前面的体。当前网格离散保持笛卡尔六面体，不引入 CAD 对象树。
+
+编译器消费 `ModelDefinition::mesh` 中显式给定、严格递增的 Cartesian 网格轴，构造内部 `DiscreteMesh`。热源按实际几何交叠体积积分，不要求源区域边界与单元边界重合。
+
+`SurfaceRegion { axis, coordinate, rectangle }` 描述 SI 平面区域。ThermalBoundarySpec 按添加顺序覆盖，default_thermal_boundary 覆盖未命中的外表面。流体边界共用 SurfaceRegion，并采用 PressureInlet、MassFlowInlet、PressureOutlet variant；入口缺省温度采用模型初温。
+
+## 应用层
+
+PTA 的 XML、LengthUnit、Layer、Block、Rect、FaceKey 和表达式形式参数规则全部位于 `apps/metahotspot`。`pta::normalize` 将层厚度/偏移/矩形展开成绝对三维 SI box，解析材料名，换算边界、网格和探针坐标，并完成 PTA 的 `x→T/t` 重写。随后才调用 `compiler::build_model`。
+
+CLI 兼容 PTA 时保留从 XML 的 `Results/Mesh` 或 `GeneratedMesh` 读取网格坐标轴的行为。读取与单位换算属于应用层，转换后通过通用的 `ModelDefinition::mesh` 传入编译器；内核与公开 API 不包含 PTA 网格导入逻辑或外部 `DiscreteMesh` 输入入口。
+
+PTA `VolumetricHeatSource` 使用 W/m³；引用裸函数名时，适配器转换为 `function(t)`。PTA 的周期分段常数函数 Interval 为每段时长，周期为 Interval × Values.Count。
+
+`OutputMesh`、节点插值、PTA XML 结果回写和 VTU 写出均属于应用私有实现。运行期 Model 只保存计算数据。SDK 不依赖 tinyxml2，不安装应用层头文件。
+
+## C ABI / Python
+
+使用 add_material 返回的 ID、add_source 返回的 ID、add_volume 和 volume_add_box（Python 为 add_box）构造模型。所有坐标直接使用 SI。调用方通过编译网格与 raw Solution 接口取得几何和场数据。
+
+C ABI 使用
+`mhs_surface_region_t`、`mhs_model_set_cartesian_mesh`、`mhs_model_set_study`
+和 `mhs_model_add_point_probe`。点探针传入 `const double xyz[3]`。
+
+Python 的 `set_cartesian_mesh`、`set_study` 和 `add_point_probe(name, position)`
+对应这些入口。热边界与流体边界统一接受非空 `Sequence[SurfaceRegion]`。
+以下示例创建一个可编译、可求解的模型：
+
+```python
+from metahotspot import Model, SurfaceRegion
+from metahotspot.enums import Axis
+
+with Model() as model:
+    model.set_study()
+    model.set_cartesian_mesh([0, 0.001], [0, 0.001], [0, 0.001])
+    material = model.add_material("solid", "1", "1", "1", "1000", "500")
+    volume = model.add_volume(material)
+    model.add_box(volume, (0, 0, 0), (0.001, 0.001, 0.001))
+    bottom = [SurfaceRegion(Axis.Z, 0, 0, 0.001, 0, 0.001)]
+    model.add_dirichlet(bottom, temperature="300")
+    model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
+    compiled = model.compile()
+    solution = compiled.solve()
 ```
 
-材料库与函数库使用有序 vector 作为事实存储。Compiler 可以临时建立名称索引，但不得用无序容器取代输入顺序。
+`SurfaceRegion` 表示一个连续矩形，切向坐标顺序为 X→(y,z)、Y→(x,z)、Z→(x,y)。
+多个矩形直接组成区域序列。默认热边界通过 `set_default_*` 指定；空区域调用报错。
+流体边界同样使用 `add_fluid_boundary(regions, kind, value, inlet_temperature=None)`。
 
-## 几何
+`mhs_model_t` 是可变建模入口，持有 study 设置与点探针。`compile` 创建独立、
+不可变的 compiled handle。内核中的材料以 `dynamic_viscosity` 是否存在区分固体/流体，
+不维护额外布尔标记。PTA 适配器在 app 侧校验 `FluidMaterial`，展开多矩形 FaceKey。
 
-```cpp
-struct RectOperation {
-    GeometryOperation operation; // Add / Subtract
-    RectSpec rect;
-};
-
-struct BlockSpec {
-    std::string material;
-    Expression volumetric_heat_source;
-    Expression x_offset;
-    Expression y_offset;
-    std::optional<Expression> thickness;
-    mhs::core::Vector<RectOperation> geometry;
-};
-
-struct LayerSpec {
-    Expression thickness;
-    Expression x_offset;
-    Expression y_offset;
-    mhs::core::Vector<BlockSpec> blocks;
-};
-```
-
-顺序是模型契约：
-
-- RectOperation 按 append 顺序执行；一个点最后命中的 Add/Subtract 决定其是否属于 Block。
-- 同一 Layer 中后出现的 Block 覆盖前者，并同时提供材料和体热源。
-- `layers[0]` 保持为最上层，后续层依次向下堆叠。
-
-## 材料与函数
-
-`MaterialSpec` 使用领域名 `conductivity_x/y/z`、`density`、`specific_heat` 和可选 `dynamic_viscosity`。XML 标签名只用于 `src/io/xml_model_reader.cpp` 的 tag 解析中。
-
-函数以 `NamedFunction {name, value}` 有序保存。`ExpressionFunctionSpec`、`DoubleExponentialFunctionSpec`、`GaussFunctionSpec`、`SineFunctionSpec`、`PiecewiseFunctionSpec` 和 `PeriodicPiecewiseConstantFunctionSpec` 组成 `FunctionSpec` variant。
-
-## 结构化边界
-
-```cpp
-struct FaceRegion {
-    Axis axis;
-    double coordinate;
-    mhs::core::Vector<RegionRect> rectangles;
-};
-
-struct BoundaryPatch {
-    mhs::core::Vector<FaceRegion> regions;
-    ThermalBoundary condition;
-};
-```
-
-BoundaryPatch 按 append 顺序覆盖，后出现者获胜；`default_boundary` 仅在没有显式区域命中时生效。热边界和流体边界共享 `FaceRegion`，模型编译器不解析外部格式字符串。
-
-编译后每个互不重叠的外边界积分片具有一个温度迹。热边界表达式中的 `T` 在求解时表示该迹温度；材料表达式中的 `T` 仍表示单元中心温度。
-
-XML 的 FaceKey 编码仅由 `src/io/face_region_parser.cpp` 转换为 `FaceRegion`，不会传播到建模层和数值层。
-
-## 流体输入
-
-材料 XML 仅接受 `ThermalConductivity`、`Density`、`SpecificHeatCapacity`、
-`DynamicViscosity` 和 `FluidMaterial`。每条材料记录都必须显式给出
-`FluidMaterial`；流体材料还必须提供非空的 `DynamicViscosity`。通过 C API 添加
-材料时，非空的动态黏度参数会将材料标记为流体。
-
-主输入文件是流体材料、流体块、函数和流体边界的唯一输入来源。流体边界类型由字段组合决定：
-`InletTemperature` 与 `Pressure` 对应 `PressureInletBoundary`，
-`InletTemperature` 与 `MassFlowRate` 对应 `MassFlowInletBoundary`，仅有
-`Pressure` 对应 `OutletBoundary`。一个边界可包含多个 `FaceKeys/string` 面区域。
-`MassFlowRate` 表示该边界所有匹配面的总流量
-(kg/s)，并按投影面积在匹配片之间分配；正值表示质量流入计算域。压力按输入值使用。
-冻结流模型按单元采用恒定密度且视为不可压缩，入口与出口之间的压力差驱动流动。
-
-温度条件按实际流向生效：流入使用指定温度，流出使用单元温度。未指定流入温度时
-使用模型初始温度；出口回流固定使用模型初始温度。C++ 建模层使用 `PressureInlet`、
-`MassFlowInlet`、`PressureOutlet` 的 `variant`，入口温度缺省用 `std::optional` 表达，
-`PressureOutlet` 仅保存压力。C ABI 接受枚举与数值字段，出口忽略温度参数，
-`MHS_FLUID_NONE` 不添加边界，入口的 NaN 温度映射为缺省；
-Python 使用 `None` 表达缺省。流热装配仅跳过精确零通量，不使用绝对流量阈值。
-
-`VolumetricHeatSource` 是单位为 W/m3 的体热源。积分功率等于热源值乘以材料块占据的
-体积 (m3)。该字段引用的表达式函数使用热源时间变量。
-`PeriodicPiecewiseConstantFunction.Interval` 表示一个分段的时长；各值按左闭右开区间
-取值，并以 `Interval * Values.Count` 为周期重复。
-
-C API 和 Python 的流体边界枚举按 `None`、`PressureInlet`、`MassFlowInlet`、`Outlet`
-定义。
-
-## 附录：ModelDefinition 构造
-
-`ModelDefinition` 目前由 C API 的直接 Handle 函数（如 `mhs_model_add_material`、`mhs_model_add_block`）和 XML reader (`mhs::io::read_xml`) 共同填充。两者操作同一套数据结构，不经过中间 Builder。
-`BlockSpec`、`LayerSpec`、`BoundaryPatch` 等类型定义见前文。C API 的 `mhs_model_t` 封装这份可变定义。
+几何投影只处理区域与网格的交叠，返回 cell、axis、sign、bounds 和不透明 tag。
+热与流体编译器分别解释 tag；投影算法不依赖热边界 ID 或条件类型。

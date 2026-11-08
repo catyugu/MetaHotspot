@@ -1,5 +1,4 @@
 #include "solver/assembler.hpp"
-#include "core/csr_ops.hpp"
 #include "core/vector.hpp"
 #include "thermal_reconstruction.hpp"
 #include <numeric>

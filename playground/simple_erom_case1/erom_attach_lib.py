@@ -33,7 +33,7 @@ import numpy as np
 
 import metahotspot
 from metahotspot.compiled import CompiledFields
-from metahotspot.enums import Face, GeometryOp, LengthUnit, Study
+from metahotspot.enums import Face
 from metahotspot.macromodel.geometry import CellGeometry
 from metahotspot.macromodel.affine import (
     AffineParametricModel,
@@ -109,19 +109,6 @@ def _z_full_mm(cfg: AttachConfig) -> np.ndarray:
     return np.unique(np.r_[ext, cube])
 
 
-def _add_solid(model, layer, material, xlo, xhi, ylo, yhi):
-    block = model.add_block(layer, material)
-    model.add_rect(
-        block,
-        GeometryOp.ADD,
-        f"{xlo:.17g}",
-        f"{ylo:.17g}",
-        f"{xhi - xlo:.17g}",
-        f"{yhi - ylo:.17g}",
-    )
-    return block
-
-
 def _ext_material_bands(cfg: AttachConfig):
     """Normalise the external body's z-layered materials.
 
@@ -153,51 +140,41 @@ def _band_for_z(bands, z_mm: float):
     return min(range(len(bands)), key=lambda i: abs(bands[i][0] - z_mm))
 
 
-def build_geometry(cfg: AttachConfig, study: Study, *, detail: bool, macro: bool):
+def build_geometry(cfg: AttachConfig, *, detail: bool, macro: bool):
     """Assemble the full stacked model (no BC; default Neumann)."""
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
     model = metahotspot.Model()
-    model.set_settings(
-        study=study,
-        length_unit=LengthUnit.MILLIMETER,
-        initial_temperature_K=cfg.ambient_K,
-        duration=cfg.duration_s if study == Study.TRANSIENT else 0.0,
-        output_interval=cfg.dt_s if study == Study.TRANSIENT else 0.0,
-    )
-    model.set_mesh(cube_axis_mm(), cube_axis_mm(), _z_full_mm(cfg))
-    model.add_material("Copper (Pure)", *COPPER)
-    ext_bands = _ext_material_bands(cfg)
-    for _lo, _hi, name, k, rho, c in ext_bands:
-        model.add_material(
+    model.set_reference_temperature(cfg.ambient_K)
+    model.set_cartesian_mesh(cube_axis_mm() * 1e-3, cube_axis_mm() * 1e-3, _z_full_mm(cfg) * 1e-3)
+    copper = model.add_material("Copper (Pure)", *COPPER)
+    H = cfg.ext_thickness_mm
+
+    def add_box(material, lo, hi, power_density=None):
+        source = (
+            model.add_source(f"{power_density:.17g}")
+            if power_density is not None
+            else 0xFFFFFFFF
+        )
+        volume = model.add_volume(material, source)
+        model.add_box(volume, np.array(lo) * 1e-3, np.array(hi) * 1e-3)
+
+    add_box(copper, [0, 0, H], [CUBE_MM, CUBE_MM, H + CUBE_MM])
+    add_box(copper, [25, 25, H + 25], [75, 75, H + 75], CUBE_SOURCE_W / SOURCE_VOL_M3)
+    for lo, hi, name, k, rho, c in _ext_material_bands(cfg):
+        material = model.add_material(
             name, f"{k:.17g}", f"{k:.17g}", f"{k:.17g}", f"{rho:.17g}", f"{c:.17g}"
         )
-
-    H = cfg.ext_thickness_mm  # external cube height (mm); ROM cube sits above it
-    cube_src_density = CUBE_SOURCE_W / SOURCE_VOL_M3
-    ext_src_density = (
-        (cfg.ext_source_w / SOURCE_VOL_M3) if cfg.ext_source_w > 0 else 0.0
-    )
-
-    z_full = _z_full_mm(cfg)
-    for i in range(z_full.size - 2, -1, -1):  # add top layer first (top-down stacking)
-        z = 0.5 * (z_full[i] + z_full[i + 1])
-        layer = model.add_layer(f"{z_full[i + 1] - z_full[i]:.17g}")
-        if z >= H:  # upper cube = the EROM side
-            _add_solid(model, layer, "Copper (Pure)", 0.0, CUBE_MM, 0.0, CUBE_MM)
-            if (H + 25.0) < z < (H + 75.0):
-                block = model.add_block(
-                    layer, "Copper (Pure)", heat_source=f"{cube_src_density:.17g}"
+        add_box(material, [0, 0, lo], [CUBE_MM, CUBE_MM, hi])
+        if cfg.ext_source_w > 0:
+            zlo, zhi = max(lo, H / 2 - 25), min(hi, H / 2 + 25)
+            if zlo < zhi:
+                add_box(
+                    material,
+                    [25, 25, zlo],
+                    [75, 75, zhi],
+                    cfg.ext_source_w / SOURCE_VOL_M3,
                 )
-                model.add_rect(block, GeometryOp.ADD, "25", "25", "50", "50")
-        else:  # lower cube = the external body (full 100x100x100, centre source)
-            mat = ext_bands[_band_for_z(ext_bands, z)][2]
-            _add_solid(model, layer, mat, 0.0, CUBE_MM, 0.0, CUBE_MM)
-            if cfg.ext_source_w > 0 and (H / 2.0 - 25.0) < z < (H / 2.0 + 25.0):
-                block = model.add_block(
-                    layer, mat, heat_source=f"{ext_src_density:.17g}"
-                )
-                model.add_rect(block, GeometryOp.ADD, "25", "25", "50", "50")
     model.set_default_neumann("0")
     return model
 
@@ -212,8 +189,8 @@ class AttachModel(AffineParametricModel):
     def name(self) -> str:
         return "erom_cube_attach"
 
-    def build_geometry(self, study, *, detail, macro):
-        return build_geometry(self.config, study, detail=detail, macro=macro)
+    def build_geometry(self, *, detail, macro):
+        return build_geometry(self.config, detail=detail, macro=macro)
 
     def source_ports(self) -> list[SourcePort]:
         f = np.asarray(self.core.f, dtype=np.float64)

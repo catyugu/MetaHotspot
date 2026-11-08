@@ -33,17 +33,15 @@ else:
     import metahotspot
 
 from metahotspot import SolveOptions
-from metahotspot.enums import GeometryOp, LengthUnit
 
 # 15,625 cells select multiple OpenMP threads in the AMG solver. A constant
 # source with fixed-temperature boundaries gives a finite, positive rise.
 model = metahotspot.Model()
-model.set_settings(length_unit=LengthUnit.METER)
-model.set_mesh(*(np.linspace(0, 0.01, 26) for _ in range(3)))
-model.add_material("solid", "1", "1", "1", "1000", "500")
-layer = model.add_layer("0.01")
-block = model.add_block(layer, "solid", heat_source="1e6")
-model.add_rect(block, GeometryOp.ADD, "0", "0", "0.01", "0.01")
+model.set_cartesian_mesh(*(np.linspace(0, 0.01, 26) for _ in range(3)))
+material = model.add_material("solid", "1", "1", "1", "1000", "500")
+source = model.add_source("1e6")
+volume = model.add_volume(material, source)
+model.add_box(volume, [0, 0, 0], [0.01, 0.01, 0.01])
 model.set_default_dirichlet("300")
 solution = model.compile().solve(opts=SolveOptions(linear_solver="Amg"))
 assert solution.state.size == 15625, solution.state.size

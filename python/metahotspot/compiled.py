@@ -5,8 +5,12 @@ from __future__ import annotations
 import ctypes
 from dataclasses import dataclass, fields
 from functools import cached_property
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from metahotspot.model import Study
 
 from metahotspot._compiled_data import CompiledFields, Operators
 from metahotspot._error import check
@@ -94,8 +98,7 @@ class CompiledInfo:
     face_count: int
     projection_count: int
     source_count: int
-    study_type: int
-    initial_temperature: float
+    reference_temperature: float
 
 
 def _double_ptr(array: np.ndarray):
@@ -137,8 +140,7 @@ def _compiled_info(dll, handle) -> CompiledInfo:
         face_count=int(info.face_count),
         projection_count=int(info.projection_count),
         source_count=int(info.source_count),
-        study_type=int(info.study_type),
-        initial_temperature=float(info.initial_temperature),
+        reference_temperature=float(info.reference_temperature),
     )
 
 
@@ -209,22 +211,22 @@ def _assembled_operators(dll, handle, state: np.ndarray, time: float):
         n = int(info.state_count)
 
         def copy_matrix(function, nnz: int):
-            outer = np.empty(n + 1, dtype=np.int32)
-            inner = np.empty(nnz, dtype=np.int32)
+            row_ptr = np.empty(n + 1, dtype=np.int32)
+            col_idx = np.empty(nnz, dtype=np.int32)
             values = np.empty(nnz, dtype=np.float64)
             check(
                 function(
                     out,
-                    _int32_ptr(outer),
-                    outer.size,
-                    _int32_ptr(inner),
-                    inner.size,
+                    _int32_ptr(row_ptr),
+                    row_ptr.size,
+                    _int32_ptr(col_idx),
+                    col_idx.size,
                     _double_ptr(values),
                     values.size,
                 ),
                 "operators_copy",
             )
-            return scipy.sparse.csc_matrix((values, inner, outer), shape=(n, n))
+            return scipy.sparse.csr_matrix((values, col_idx, row_ptr), shape=(n, n))
 
         rhs = np.empty(n, dtype=np.float64)
         check(
@@ -307,8 +309,8 @@ class Compiled(OwnedHandle):
         state = np.ascontiguousarray(state, dtype=np.float64)
         return _eval_materials(self._dll, self._handle, state, time)
 
-    def default_state(self) -> np.ndarray:
-        return np.full(self.cell_count, self.info.initial_temperature, dtype=np.float64)
+    def default_state(self, temperature: float = 300.0) -> np.ndarray:
+        return np.full(self.cell_count, temperature, dtype=np.float64)
 
     def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
         """Assemble K, C, f at a state and time."""
@@ -319,9 +321,10 @@ class Compiled(OwnedHandle):
 
     def solve(
         self,
+        study: Study | None = None,
         state: np.ndarray | None = None,
         opts: SolveOptions | None = None,
     ):
         from metahotspot.solution import Solution
 
-        return Solution._solve_compiled(self, state, opts)
+        return Solution._solve_compiled(self, study, state, opts)

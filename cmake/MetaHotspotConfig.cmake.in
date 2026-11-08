@@ -6,7 +6,6 @@ include(CMakeFindDependencyMacro)
 # there: every one of them is linked into an installed library, so a consumer
 # has to be able to find it.
 find_dependency(spdlog @MHS_SPDLOG_VERSION@ CONFIG)
-find_dependency(tinyxml2 @MHS_TINYXML2_VERSION@ CONFIG)
 find_dependency(muparser @MHS_MUPARSER_VERSION@ CONFIG)
 find_dependency(TBB @MHS_TBB_VERSION@ CONFIG)
 find_dependency(OpenMP COMPONENTS CXX)

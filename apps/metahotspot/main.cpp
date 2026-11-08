@@ -1,25 +1,25 @@
 #include "cli.hpp"
 #include "compiler/model_compiler.hpp"
-#include "solver/solver.hpp"
-#include "io/model_io.hpp"
-#include "io/result_io.hpp"
 #include "logging/logger.hpp"
-#include "solver/postprocessor.hpp"
+#include "output/vtu.hpp"
+#include "postprocess.hpp"
+#include "pta/io.hpp"
+#include "solver/solver.hpp"
+#include <array>
 #include <iostream>
 #include <string>
-#include <vector>
 
 int main(int argc, char* argv[])
 {
-    auto cli = mhs::cli::parse(argc, argv);
+    auto cli = mhs::app::cli::parse(argc, argv);
 
-    if (cli.status == mhs::cli::ParseStatus::HelpRequested) {
+    if (cli.status == mhs::app::cli::ParseStatus::HelpRequested) {
         std::cout << cli.message;
         return 0;
     }
-    if (cli.status == mhs::cli::ParseStatus::Error || !cli.options.has_value()) {
+    if (cli.status == mhs::app::cli::ParseStatus::Error || !cli.options.has_value()) {
         std::cerr << cli.message << std::endl;
-        std::cerr << "\n" << mhs::cli::usage_text(cli.program_name);
+        std::cerr << "\n" << mhs::app::cli::usage_text(cli.program_name);
         return 1;
     }
 
@@ -36,39 +36,42 @@ int main(int argc, char* argv[])
 
     try {
         // Read input XML
-        auto definition = mhs::io::read_xml(input_path);
+        auto definition = mhs::app::pta::read_xml(input_path);
 
-        MHS_LOG_INFO("Loaded {} layers, {} materials, {} boundaries", definition.layers.size(),
-            definition.materials.size(), definition.boundaries.size());
+        MHS_LOG_INFO("Loaded {} volumes, {} materials, {} boundaries", definition.model.volumes.size(),
+            definition.model.materials.size(), definition.model.thermal_boundaries.size());
 
-        auto model = mhs::compiler::build_model(definition);
+        auto model = mhs::compiler::build_model(definition.model);
 
         MHS_LOG_INFO("Compiled {} cells and {} face patches", model.discrete.cells.size(), model.discrete.faces.size());
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
-        auto result = mhs::solver::solve(model);
+        auto result = mhs::solver::solve(model, definition.study);
 
         MHS_LOG_INFO("Simulation complete.");
         const auto& solution = result.state;
 
+        const auto& grid = definition.model.mesh;
+        const std::array<std::size_t, 3> shape {grid.x_vertices.size(), grid.y_vertices.size(), grid.z_vertices.size()};
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)
-        mhs::io::write_vtu(output_vtu, model, solution);
+        mhs::app::output::write_vtu(output_vtu, model.discrete, solution);
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
         // XML output uses node-centered data (interpolated from cell centers)
-        auto node_temperature = mhs::solver::interpolate_cell_to_node(model, solution, result.time);
-        mhs::io::write_xml(input_path, output_xml, model, node_temperature, result.probe_traces, result.snapshot_times);
+        auto node_temperature = mhs::app::postprocess::interpolate_cell_to_node(model, grid, solution, result.time);
+        mhs::app::pta::write_xml(
+            input_path, output_xml, shape, node_temperature, result.probe_traces, result.snapshot_times);
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
         // Print statistics
-        double max_T = mhs::solver::max_temperature(solution);
-        double min_T = mhs::solver::min_temperature(solution);
+        double max_T = mhs::app::postprocess::max_temperature(solution);
+        double min_T = mhs::app::postprocess::min_temperature(solution);
         MHS_LOG_INFO("Temperature range: {:.2f}K to {:.2f}K", min_T, max_T);
     }
     catch (const std::exception& e) {
-        printf("Simulation failed: %s", e.what());
+        std::cerr << "Simulation failed: " << e.what() << '\n';
         return 1;
     }
 

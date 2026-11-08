@@ -3,7 +3,6 @@
 #include "expression/expression.hpp"
 #include "model/discrete_mesh.hpp"
 #include "model/fluid_model.hpp"
-#include "model/output_mesh.hpp"
 #include "model/types.hpp"
 
 #include "core/vector.hpp"
@@ -53,7 +52,7 @@ namespace mhs::model {
         Vec3 point;
     };
 
-    struct ProbePoint {
+    struct PointProbe {
         std::string name;
         double x = 0.0;
         double y = 0.0;
@@ -62,7 +61,6 @@ namespace mhs::model {
 
     struct Model {
         DiscreteMesh discrete;
-        OutputMesh output;
 
         mhs::core::Vector<MaterialId> cell_material;
         mhs::core::Vector<MaterialProps> material_table;
@@ -72,12 +70,9 @@ namespace mhs::model {
         mhs::core::Vector<BoundaryFace> boundary_faces; // sorted by CellId
         FluidModel fluid;
 
-        double initial_temperature = 300.0;
-        StudyType study_type = StudyType::Steady;
-        double transient_duration = 0.0;
-        double transient_output_interval = 1.0;
+        double reference_temperature = 300.0;
 
-        mhs::core::Vector<ProbePoint> observation_points;
+        mhs::core::Vector<PointProbe> point_probes;
     };
 
 } // namespace mhs::model

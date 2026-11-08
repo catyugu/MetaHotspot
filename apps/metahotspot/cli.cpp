@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace mhs::cli {
+namespace mhs::app::cli {
 
     std::string usage_text(std::string_view program_name)
     {
@@ -134,4 +134,4 @@ namespace mhs::cli {
         return result;
     }
 
-} // namespace mhs::cli
+} // namespace mhs::app::cli

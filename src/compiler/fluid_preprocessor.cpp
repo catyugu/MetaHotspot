@@ -11,7 +11,7 @@
 
 namespace mhs::compiler::fluid {
     void build_domain(mhs::model::Model& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
-        double scale, const FluidMaterialData& materials)
+        const FluidMaterialData& materials)
     {
         using namespace mhs::core;
         using namespace mhs::model;
@@ -76,28 +76,20 @@ namespace mhs::compiler::fluid {
             const auto c = fluid.fluid_to_global[i];
             const auto p = mesh.cells[c].center();
             rho[i] = model.material_table[model.cell_material[c]].rho.eval(
-                {p[0], p[1], p[2], model.initial_temperature, 0});
+                {p[0], p[1], p[2], model.reference_temperature, 0});
         }
         // Use the same rectangle intersection algorithm as thermal projection,
         // against the original mesh and an independent set of regions.
-        mhs::core::Vector<CompiledBoundaryRegion> regions;
+        mhs::core::Vector<TaggedSurfaceRegion> regions;
         for (std::size_t id = 0; id < boundaries.size(); ++id)
-            for (const auto& r : boundaries[id].regions) {
-                CompiledBoundaryRegion region;
-                region.axis = r.axis;
-                region.coordinate = r.coordinate * scale;
-                region.condition_index = static_cast<BoundaryConditionId>(id);
-                for (const auto& rect : r.rectangles)
-                    region.rectangles.push_back(
-                        {rect.a_min * scale, rect.a_max * scale, rect.b_min * scale, rect.b_max * scale});
-                regions.push_back(std::move(region));
-            }
-        auto projected = project_surface_regions(mesh, regions);
+            for (const auto& region : boundaries[id].regions)
+                regions.push_back({region, id});
+        auto projected = project_exterior_surface_regions(mesh, regions);
         std::erase_if(
             projected, [&](const auto& term) { return fluid.global_to_fluid[term.cell] == mhs::core::invalid_id; });
         mhs::core::Vector<double> total_area(boundaries.size(), 0);
         for (const auto& term : projected)
-            total_area[term.condition] += ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]));
+            total_area[term.tag] += ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]));
         mhs::core::Vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];
@@ -127,7 +119,7 @@ namespace mhs::compiler::fluid {
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
                         rhs[i] += bc.mass_flow_rate
                             * ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
-                            / total_area[term.condition] / rho[i];
+                            / total_area[term.tag] / rho[i];
                     else {
                         reference = true;
                         const double g = ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
@@ -137,7 +129,7 @@ namespace mhs::compiler::fluid {
                         rhs[i] += g * bc.pressure;
                     }
                 },
-                boundaries[term.condition].condition);
+                boundaries[term.tag].condition);
         }
         if (!reference)
             throw std::runtime_error(
@@ -161,14 +153,14 @@ namespace mhs::compiler::fluid {
         for (std::size_t t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
             const auto i = fluid.global_to_fluid[term.cell];
-            const auto& condition = boundaries[term.condition].condition;
+            const auto& condition = boundaries[term.tag].condition;
             const double mass = std::visit(
                 [&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
                         return -bc.mass_flow_rate
                             * ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
-                            / total_area[term.condition];
+                            / total_area[term.tag];
                     else
                         return rho[i] * boundary_conductance[t] * (pressure[i] - bc.pressure);
                 },
@@ -178,9 +170,9 @@ namespace mhs::compiler::fluid {
                     [&](const auto& bc) {
                         using T = std::decay_t<decltype(bc)>;
                         if constexpr (std::is_same_v<T, mhs::model::PressureOutlet>)
-                            return model.initial_temperature;
+                            return model.reference_temperature;
                         else
-                            return bc.temperature.value_or(model.initial_temperature);
+                            return bc.temperature.value_or(model.reference_temperature);
                     },
                     condition);
                 fluid.boundary_terms.push_back({term.cell, FluidInflow {-mass, temperature}});
