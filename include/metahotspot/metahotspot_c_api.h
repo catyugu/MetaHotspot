@@ -262,7 +262,7 @@ MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t d
 /** Create a complete ROM port atomically; invalid patches leave the model unchanged. */
 MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
     const mhs_surface_region_t* region, int32_t outward_sign, const mhs_rom_port_patch_t* patches, size_t patch_count,
-    mhs_index_t* out_id);;
+    mhs_index_t* out_id);
 // A ROM output map can satisfy an existing named point probe without a FOM mesh.
 MHS_API mhs_status_t mhs_model_add_rom_observation(
     mhs_model_t* m, mhs_index_t domain, const char* name, const double xyz[3], const double* weights, double offset);
