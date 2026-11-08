@@ -117,7 +117,7 @@ namespace mhs::solver {
             const auto row = static_cast<SparseIndex>(c);
             const auto center = model.discrete.cells[c].center();
             const FieldContext ctx {center[0], center[1], center[2], temperature[row], time};
-            const auto& mat = model_.library->material_table[model.cell_material[c]];
+            const auto& mat = model_.library().material_table[model.cell_material[c]];
             conductivity_[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto volume = model.discrete.cells[c].volume();
             const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
@@ -133,7 +133,7 @@ namespace mhs::solver {
             const auto row = term.cell;
             const auto& p = term.point;
             rhs[row]
-                += term.weight * model_.library->heat_source_table[term.source].eval({p[0], p[1], p[2], temperature[row], time});
+                += term.weight * model_.library().heat_source_table[term.source].eval({p[0], p[1], p[2], temperature[row], time});
         }
         auto fluid_index = [&](CellId c) {
             return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
@@ -183,7 +183,7 @@ namespace mhs::solver {
             const auto row = static_cast<SparseIndex>(term.cell);
             if (term.condition == core::invalid_id)
                 continue; // Implicit adiabatic face has zero flux.
-            const auto trace = evaluate_boundary(model_.library->boundary_conditions[term.condition],
+            const auto trace = evaluate_boundary(model_.library().boundary_conditions[term.condition],
                 boundary_center(model.discrete.cells[term.cell], term), area,
                 (model.discrete.cells[term.cell].size()[axis] / 2), temperature[row], conductivity_[term.cell][axis],
                 time);
@@ -300,7 +300,7 @@ namespace mhs::solver {
                     center[d] = (term.bounds[2 * tangent] + term.bounds[2 * tangent + 1]) / 2;
                     ++tangent;
                 }
-            const auto& condition = model_.library->boundary_conditions.at(term.condition);
+            const auto& condition = model_.library().boundary_conditions.at(term.condition);
             const auto trace
                 = evaluate_boundary(condition, center, area, facet.half_resistance, temperature, 1.0, time);
             core::Vector<WeightedDof> weights;
