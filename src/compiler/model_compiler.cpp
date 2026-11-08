@@ -62,11 +62,9 @@ namespace mhs::compiler {
             compiled.layout.state_count += count;
         };
         if (definition.components.empty())
-            throw std::invalid_argument("model must contain a FOM or ROM domain");
+            throw std::invalid_argument("model must contain at least one component");
 
         auto symbols = build_symbol_table(definition);
-        compiled.point_probes = definition.point_probes;
-
         for (std::size_t domain_id = 0; domain_id < definition.components.size(); ++domain_id) {
             const auto& component = definition.components[domain_id];
             if (const auto* value = std::get_if<model::RomDomainDefinition>(&component.physics)) {
@@ -93,18 +91,22 @@ namespace mhs::compiler {
                         if (rom.affine_terms[previous].name == term.name)
                             throw std::invalid_argument("ROM parameter names must be unique within a domain");
                 }
-                for (const auto& obs : rom.observations) {
+                for (const auto& obs : component.observations)
                     if (obs.weights.size() != n || !std::all_of(obs.weights.begin(), obs.weights.end(), finite)
-                        || !finite(obs.offset) || !finite(obs.point.x) || !finite(obs.point.y) || !finite(obs.point.z))
-                        throw std::invalid_argument("ROM observation has invalid dimension or values");
-                }
+                        || !finite(obs.offset) || obs.point.name.empty() || !finite(obs.point.x)
+                        || !finite(obs.point.y) || !finite(obs.point.z))
+                        throw std::invalid_argument("reduced observation has invalid dimension or values");
                 append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::ReducedCoordinate, n);
-                compiled.components.push_back({std::move(rom), component.ports});
+                compiled.components.push_back({std::move(rom), component.ports, component.observations});
                 continue;
             }
 
             const auto& domain = std::get<model::FomDomainDefinition>(component.physics);
-            compiled.components.push_back({model::FomDomain {}, component.ports});
+            for (const auto& obs : component.observations)
+                if (!obs.weights.empty() || obs.offset != 0.0 || obs.point.name.empty() || !std::isfinite(obs.point.x)
+                    || !std::isfinite(obs.point.y) || !std::isfinite(obs.point.z))
+                    throw std::invalid_argument("Cartesian observation requires only a finite physical point");
+            compiled.components.push_back({model::FomDomain {}, component.ports, component.observations});
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
             model.flow_mode = domain.flow_mode;
             // Compile material properties in ModelDefinition::materials order.
