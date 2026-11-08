@@ -4,8 +4,8 @@
 
 | 对象 | 职责 | 生命周期 |
 | --- | --- | --- |
-| `ModelDefinition` | 几何、材料、热源、边界和探针 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
-| `mhs::model::CompiledModel` | 按创建顺序保存 FOM/ROM 的 Domain 表、Connection、Field/StateLayout、Probe；FOM 域内保存网格、材料、投影及物性表达式 | `build_model` 的独立结果；供重复装配和求解使用 |
+| `ModelDefinition` | Component 数值表示及其端口、边界、观测，外加全局材料、热源和函数 | 可变输入；由 PTA 适配器或 C/Python 构造 |
+| `mhs::model::CompiledModel` | 按创建顺序保存 Component、Connection、StateLayout 与物理观测；笛卡尔 Component 内保存网格及物性表达式 | 独立编译快照；可重复装配和求解 |
 | `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；域内重复装配刷新数值，多域路径汇总 CSR，单次导出独立拥有 |
 | `Solution` | 最终全局状态、状态历史和探针记录 | 独立拥有求解结果 |
 
@@ -36,7 +36,7 @@
 
 公开 C++ 入口 `mhs::solver::solve(model, study, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 仅暴露 `time_tolerance` 与可选 `max_time_step`。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
 
-探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。重建使用域内 CellId 并补入连接界面温度迹，历史快照保存全局状态。跨域共享点需明确选择一个域内位置。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
+观测由其所属 Component 明确定位。笛卡尔观测在初始化时定位控制体，并在输出时由邻域重建温度；重建使用局部 CellId 和连接界面温度迹。Reduced 观测使用模态温度迹映射。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
 
 ## 输入与数组约定
 
@@ -58,13 +58,6 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 - `core::SparseIndex = int32_t` 用于 CSR 存储，`Triplet` 是聚合类型。第三方索引类型留在实现文件中。
 - C ABI 对应 `mhs_index_t`、`mhs_sparse_index_t` 和 `size_t`；Python 索引数组对应 `np.uint32` 和 `np.int32`。
 
-## C API 契约
+## 公开接口边界
 
-- 删除外部离散网格输入及 `build_model(definition, mesh)` 重载，模型编译统一通过 `ModelDefinition`。
-- PTA XML 的网格读取保留在 CLI 应用侧，适配为 `ModelDefinition::fom(id).mesh`；PTA 文件格式与导入逻辑不进入内核或公开 API。
-- `mhs_operators_copy_k/c` 直接复制 CSR，布局为 `row_ptr[state_count+1]`、`col_idx[nnz]`、`values[nnz]`；Python `assemble()` 返回 SciPy CSR，需要 CSC 的算法自行转换。
-- `mhs_solution_info_t.converged` 和 Python `Solution.converged` 暴露求解收敛结果。API 成功表示调用完成，收敛状态由该字段判断。
-- 流体边界与热边界使用相同的区域数组；入口／回流温度用可空指针表示，实际入流时 NULL 报错。Python 使用区域数组和显式温度值。删除无操作的流体边界类型；空区域条件报错。
-- 输入数组和字符串由库复制；输出数组由调用者分配。四类句柄独立拥有对象，析构允许 NULL。创建句柄的调用在验证参数前将有效的输出地址清零。
-- 成功的 status 调用清空当前线程错误；失败调用替换错误，查询和析构保留错误。初始状态仅允许 NULL/0 或完整的全局状态数组。
-- 网格规格原子替换，任何坐标轴校验失败均保留先前规格；Python 同时接受数组与可转换为 float64 的一维序列。
+C ABI/Python 的 Component、Port、观测、初值、数组所有权及形状契约统一在 [API 使用说明](../api.md) 中维护。此设计文档只记录数值数据流；PTA 文件导入和网格坐标轴转换属于应用侧，不进入公开内核接口。
