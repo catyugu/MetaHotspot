@@ -91,7 +91,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
     for (size_t kind = 0; kind < conditions.size(); ++kind) {
         SCOPED_TRACE(kind);
         d.component(0).thermal_boundaries = {
-            {{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, d.library().add_thermal_boundary(conditions[kind])}};
+            {{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, test_pta::append(d.library().thermal_boundaries,conditions[kind])}};
         const auto model = test_pta::build_model(d);
         // All other faces use the implicit adiabatic fallback.
         ASSERT_EQ(model.library->boundary_conditions.size(), 1u);
