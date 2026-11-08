@@ -12,22 +12,22 @@ using namespace mhs::compiler;
 static mhs::model::ModelDefinition make_simple_cube_io()
 {
     mhs::model::ModelDefinition io;
-    io.components.emplace_back();
+    io.components.emplace_back().library = std::make_shared<mhs::model::LibraryDefinition>();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.library->sources = {"0"};
+    io.library().sources = {"0"};
     io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
     mat.density = "8920";
     mat.specific_heat = "385";
-    io.library->materials.push_back({"copper", mat});
+    io.library().materials.push_back({"copper", mat});
 
-    io.fom(0).default_thermal_boundary = io.library->add_thermal_boundary(mhs::model::NeumannBoundary {});
+    io.fom(0).default_thermal_boundary = io.library().add_thermal_boundary(mhs::model::NeumannBoundary {});
 
     return io;
 }
@@ -58,20 +58,20 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     // Material k is T-dependent in this case ("100 + T"). Different T should
     // produce different K.
     mhs::model::ModelDefinition io;
-    io.components.emplace_back();
+    io.components.emplace_back().library = std::make_shared<mhs::model::LibraryDefinition>();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.library->sources = {"0"};
+    io.library().sources = {"0"};
     io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "100 + T";
-    io.library->materials.push_back({"mat", mat});
+    io.library().materials.push_back({"mat", mat});
 
-    io.fom(0).default_thermal_boundary = io.library->add_thermal_boundary(mhs::model::NeumannBoundary {});
+    io.fom(0).default_thermal_boundary = io.library().add_thermal_boundary(mhs::model::NeumannBoundary {});
 
     auto model = mhs::compiler::build_model(io);
 
