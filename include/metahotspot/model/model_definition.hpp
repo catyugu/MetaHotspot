@@ -227,7 +227,6 @@ namespace mhs::model {
     };
 
     struct ModelDefinition {
-        Study study;
         mhs::core::Vector<FomDomainDefinition> domains {1};
         // Global DomainId order: all FOM domains followed by ROM domains.
         mhs::core::Vector<RomDomainDefinition> rom_domains;

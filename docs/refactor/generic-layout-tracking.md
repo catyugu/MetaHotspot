@@ -17,7 +17,7 @@
 2. **ROM Domain 与 FOM Domain 是两类内部表示。** ROM 拥有约化状态、动力学及接口映射，不要求伪造内部逐 Cell 网格。可将 ROM 作为部件嵌入 FOM/ROM 组合系统。
 3. **内部与外部耦合分开。** FOM 内的固液共轭传热/流动耦合由 FOM 内部离散装配负责；仅独立 Domain 间的连接使用 `Connection`。内部交错求解也不创建隐式的用户级 Connection。
 4. **网格限制与非匹配处理边界保持明确。** 全阶内部控制体全部是轴对齐六面体。本轮 FOM 仍采用单组笛卡尔坐标轴产生的共形网格，**不开发局部笛卡尔八叉加细或域内非共形网格输入**；独立 Domain 的网格允许彼此非匹配。保留未来支持域内非匹配时直接采用 TPFA 的离散规则；不同 Domain 之间的非匹配热界面必须使用 NCC（non-orthogonal correction）校正热流。
-5. **现有用户抽象继续清晰。** `Study` 和命名 `Probe` 归属于可变模型定义；已编译模型保持与定义分离的不可变快照。保留 C ABI 的模型、编译结果、算子、解四种独立拥有型 opaque handle，优先使用整数 Domain/Field/Port/Connection ID，不为每个概念引入生命周期 handle。
+5. **现有用户抽象继续清晰。** 命名 `Probe` 归属于可变模型定义；`Study` 是单次 solve 的运行配置，不进入 ModelDefinition 或 CompiledModel。保留 C ABI 的模型、编译结果、算子、解四种独立拥有型 opaque handle，优先使用整数 Domain/Field/Port/Connection ID，不为每个概念引入生命周期 handle。
 6. **允许破坏接口兼容性。** 不增加兼容别名、`MHS_ABI_VERSION` 或 ABI 版本查询。PTA 外部网格兼容逻辑只在 app 层，不能重新进入内核公共建模契约。
 7. **不保留模型级参考温度。** 最终删除 `ModelDefinition::reference_temperature`、编译后 `Model::reference_temperature`，连同 C ABI / Python 中对应的模型设置与编译信息接口；物性评价和流体边界不能再依赖隐式的全局 `300 K`。
 
@@ -27,7 +27,7 @@
 
 ### 2.1 声明式 ModelDefinition
 
-- 保存材料、参数/函数、体积几何、表面区域、热/流体边界、Domain 定义、域间 Connection、Study 和 Probe。
+- 保存材料、参数/函数、体积几何、表面区域、热/流体边界、Domain 定义、域间 Connection 和 Probe。
 - 普通使用路径可隐式拥有一个默认 FOM Domain；单体含流体模型无需调用“添加流体域”接口。
 - 材料表达物理属性；是否冻结流场、是否联立压力—速度—温度等属于 FOM 的物理求解配置。温度初值由 `Study` 或显式状态提供，模型定义不存储运行参考温度。
 
@@ -167,7 +167,7 @@ GL-03 的理论参考必须明确入口发展段的处理与壁面条件，不�
 用 GL-01/GL-09 端到端检查：
 
 - 创建模型→添加材料/体积/边界/Probe→编译→获取各 Field 布局→求解→读取物理场及 Probe，不调用私有 C++ 结构。
-- 模型定义销毁或后续修改不影响已有 CompiledModel 与 Solution；同一编译模型在不同 Study、初值和允许变化的求解参数下重复求解，无状态污染。
+- 模型定义销毁或后续修改不影响已有 CompiledModel 与 Solution；Study 从不进入模型快照，同一编译模型可在不同 Study、初值和允许变化的求解参数下重复求解，无状态污染。
 - C 数组与 Python NumPy 数组 shape、索引顺序、数据类型和生命周期一致，错误的 Domain/Field ID、重复/缺失连接和非法压力参考能清楚报错，失败后不暴露半编译的模型。
 - 物理场视图可表达单元温度、交错速度、流体压力及 ROM 模态；Probe 对 ROM 使用物理输出映射而非把模态坐标误当作温度。
 

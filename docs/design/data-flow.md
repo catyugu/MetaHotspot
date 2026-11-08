@@ -4,7 +4,7 @@
 
 | 对象 | 职责 | 生命周期 |
 | --- | --- | --- |
-| `ModelDefinition` | 几何、材料、热源、边界、探针和 study 设置 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
+| `ModelDefinition` | 几何、材料、热源、边界和探针 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
 | `mhs::model::CompiledModel` | FOM 域表、Connection、Field/StateLayout、Probe；域内保存网格、材料、投影及物性表达式 | `build_model` 的独立结果；供重复装配和求解使用 |
 | `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；域内重复装配刷新数值，多域路径汇总 CSR，单次导出独立拥有 |
 | `Solution` | 最终全局状态、状态历史和探针记录 | 独立拥有求解结果 |

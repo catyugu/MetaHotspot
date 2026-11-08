@@ -146,11 +146,6 @@ class Model(OwnedHandle):
 
     # ---- Model construction helpers ----
 
-    def set_study(self, study: Study) -> None:
-        """Set the default study for subsequent compiled snapshots."""
-        native = study._native()
-        self._call("mhs_model_set_study", ctypes.byref(native), ctx="set_study")
-
     def set_cartesian_mesh(
         self,
         x: Sequence[float] | np.ndarray,

@@ -131,17 +131,17 @@ def test_package_layout_recompile_and_snapshot_lifetime(fluid):
     assert transient.state.max() > 300
 
 
-def test_default_study_belongs_to_definition_and_compiled_snapshot():
+def test_study_is_solve_time_configuration():
     with package(fluid=False) as m:
-        m.set_study(Study(StudyType.TRANSIENT, 310, 0.1, 0.05))
         compiled = m.compile()
-        m.set_study(Study())
-    solution = compiled.solve()
-    assert solution.time == pytest.approx(0.1)
-    assert solution.state_history.shape == (3, 960)
-    np.testing.assert_array_equal(solution.state_history[0], 310)
-    override = compiled.solve(Study())
-    assert override.time == 0
+    steady = compiled.solve()
+    assert steady.time == 0
+    transient = compiled.solve(Study(StudyType.TRANSIENT, 310, 0.1, 0.05))
+    assert transient.time == pytest.approx(0.1)
+    assert transient.state_history.shape == (3, 960)
+    np.testing.assert_array_equal(transient.state_history[0], 310)
+    repeated = compiled.solve()
+    np.testing.assert_allclose(repeated.state, steady.state, rtol=1e-12, atol=1e-10)
     compiled.close()
 
 

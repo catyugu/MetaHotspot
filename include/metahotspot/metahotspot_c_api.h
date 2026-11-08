@@ -277,9 +277,6 @@ MHS_API mhs_status_t mhs_compiled_connection_patch_count(const mhs_compiled_t* c
 MHS_API mhs_status_t mhs_compiled_eval_connection_flux(const mhs_compiled_t* c, mhs_index_t connection,
     const double* state, size_t state_count, double time, double* outward_a, size_t patch_count);
 
-/** Set the default study copied into subsequent compiled snapshots. */
-MHS_API mhs_status_t mhs_model_set_study(mhs_model_t* m, const mhs_study_t* study);
-
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  reference state, mesh, variables         */
 /* ------------------------------------------------------------------ */
@@ -427,7 +424,7 @@ MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, do
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-/** study may be NULL to use the compiled study snapshot. state is NULL/0 to build a
+/** study may be NULL to use the default steady 300 K study. state is NULL/0 to build a
  * FOM initial temperature and each ROM's modal initial state, otherwise it must have
  * exactly state_count entries. opts may be NULL to select defaults. */
 MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study_t* study, const double* state,

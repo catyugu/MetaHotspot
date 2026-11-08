@@ -104,7 +104,6 @@ _CORE_FUNC_SIGS = [
     ),
     ("mhs_model_create", I32, [P(P(MhsModel))]),
     ("mhs_model_destroy", None, [P(MhsModel)]),
-    ("mhs_model_set_study", I32, [P(MhsModel), P(MhsStudy)]),
     (
         "mhs_model_set_cartesian_mesh",
         I32,

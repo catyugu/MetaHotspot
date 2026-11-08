@@ -1,6 +1,6 @@
 # Compiled model, state layout and domain connections
 
-`ModelDefinition` owns global symbols, materials, sources, a default Study and named probes.
+`ModelDefinition` owns global symbols, materials, sources and named probes. Study is solve-time configuration.
 Its `domains` table contains `FomDomainDefinition` objects, each owning Cartesian
 mesh specifications, volume geometry, thermal/fluid boundaries and named ports.
 Domain 0 exists on creation. Additional FOMs are independent computational
@@ -8,7 +8,7 @@ components. A fluid region remains part of its FOM, selected by the material's
 `dynamic_viscosity` expression.
 
 `build_model()` returns an independent `CompiledModel` containing FOM domains,
-`StateLayout`, a Study snapshot, probes and compiled thermal connections.
+`StateLayout`, probes and compiled thermal connections.
 `FomDomain` owns immutable geometry, material expressions, source quadrature,
 thermal boundary patches, fluid membership and fluid boundary projections.
 Projection records retain subdivisions rather than collapsing them into mesh faces.
@@ -114,6 +114,6 @@ import keeps pressure-only outlets valid for outflow; actual reversal without
 temperature reports an error.
 
 All four C opaque handles remain independently owned. Destroying or changing a
-model definition cannot change compiled snapshots; destroying a compiled handle
+model definition cannot change compiled snapshots; solve-time Study values are never stored in them. Destroying a compiled handle
 cannot change a solution or operator snapshot. No ABI version mechanisms are
 introduced.
