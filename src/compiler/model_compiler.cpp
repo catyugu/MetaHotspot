@@ -56,7 +56,6 @@ namespace mhs::compiler {
     {
         mhs::model::CompiledModel compiled;
         auto compiled_library = std::make_shared<mhs::model::CompiledLibrary>();
-        compiled.library = compiled_library;
         const auto& library = *definition.library;
         auto append_field = [&](model::DomainId domain, model::FieldQuantity quantity, std::size_t count) {
             core::detail::checked_sparse_size(compiled.layout.state_count + count);
@@ -66,6 +65,11 @@ namespace mhs::compiler {
         };
         if (definition.components.empty())
             throw std::invalid_argument("model must contain at least one component");
+        if (!definition.library)
+            throw std::invalid_argument("model requires a Library");
+        for (const auto& component : definition.components)
+            if (component.library && component.library != definition.library)
+                throw std::invalid_argument("all model components must share one Library");
 
         auto symbols = build_symbol_table(definition);
         compiled_library->material_table.resize(library.materials.size());
@@ -95,7 +99,7 @@ namespace mhs::compiler {
             if (const auto* value = std::get_if<model::RomDomainDefinition>(&component.physics)) {
                 model::CompiledRomDomain rom;
                 static_cast<model::RomDomain&>(rom) = *value;
-                rom.library = compiled.library;
+                rom.library = compiled_library;
                 const auto n = rom.order;
                 if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n || rom.K.size() != n * n
                     || rom.C.size() != n * n || rom.f.size() != n
@@ -137,7 +141,7 @@ namespace mhs::compiler {
                     throw std::invalid_argument("Cartesian observation requires only a finite physical point");
             compiled.components.push_back({model::FomDomain {}, component.ports, component.observations});
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
-            model.library = compiled.library;
+            model.library = compiled_library;
             model.flow_mode = domain.flow_mode;
             for (const auto& volume : domain.volumes) {
                 if (volume.material >= library.materials.size())
