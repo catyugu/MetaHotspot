@@ -72,7 +72,7 @@ in one C ABI call, so failures cannot leave a partially constructed port. Connec
 the existing model/compiled/solution opaque handles.
 
 Cartesian and reduced components share one creation-ordered component table.
-`DomainId` is the stable index in that table, and the two formulations may be
+The component ID is the stable index in that table, and the two formulations may be
 interleaved. Models start empty; the first component, regardless of formulation,
 receives ID 0. A reduced-only assembly therefore needs no placeholder Cartesian
 component.
@@ -88,5 +88,5 @@ distinguish adaptive time-step error from ROM algebraic error.
 
 A reduced model must be supplied by an extractor or external source.
 Automatic ROM basis extraction, full pressure–velocity coupling and
-time-dependent affine parameter controls are outside PR3. Those capabilities
-must not be inferred from the existence of a ROM Domain.
+time-dependent affine parameter controls are outside the present contract. Those capabilities
+must not be inferred from the existence of a reduced Component.
