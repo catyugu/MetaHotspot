@@ -23,7 +23,6 @@ from metahotspot.types import (
     MhsStudy,
     MhsSurfaceRegion,
     Point2D,
-    Rect2D,
     _SolveOptionsCStruct,
 )
 

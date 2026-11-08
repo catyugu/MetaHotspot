@@ -13,7 +13,14 @@ from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
 from metahotspot.enums import Axis, FluidBC, GeometryOp, StudyType
-from metahotspot.types import MhsModel, MhsRomPortPatch, MhsStudy, MhsSurfaceRegion, Point2D, Rect2D
+from metahotspot.types import (
+    MhsModel,
+    MhsRomPortPatch,
+    MhsStudy,
+    MhsSurfaceRegion,
+    Point2D,
+    Rect2D,
+)
 
 if TYPE_CHECKING:
     from metahotspot.compiled import Compiled
