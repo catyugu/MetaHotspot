@@ -276,6 +276,26 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
     });
 }
 
+MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t domain, const char* name,
+    double coefficient, const double* stiffness, const double* rhs)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    CHECK_NULL(stiffness);
+    CHECK_NULL(rhs);
+    MHS_TRY({
+        auto& rom = m->def.rom_domains.at(static_cast<std::size_t>(domain) - m->def.domains.size());
+        if (!std::isfinite(coefficient))
+            throw std::invalid_argument("ROM parameter must have a finite value");
+        mhs::model::RomAffineTerm term;
+        term.name = name;
+        term.value = coefficient;
+        term.K.assign(stiffness, stiffness + rom.order * rom.order);
+        term.f.assign(rhs, rhs + rom.order);
+        rom.affine_terms.push_back(std::move(term));
+    });
+}
+
 MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
     const mhs_surface_region_t* region, int32_t outward_sign, mhs_index_t* out_id)
 {
