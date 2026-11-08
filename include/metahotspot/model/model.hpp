@@ -18,7 +18,7 @@ namespace mhs::model {
         CellId cell = mhs::core::invalid_id;
         Axis axis = Axis::X;
         std::int8_t sign = 1;
-        BoundaryConditionId condition = mhs::core::invalid_id; // index in the condition table used for this projection
+        ThermalBoundaryId condition = mhs::core::invalid_id; // index in the condition table used for this projection
         std::array<double, 4> bounds; // tangential min/max pairs
     };
 
@@ -93,7 +93,7 @@ namespace mhs::model {
         DomainId domain = core::invalid_id;
         PortId port = core::invalid_id;
         std::size_t patch = 0;
-        BoundaryConditionId condition = core::invalid_id;
+        ThermalBoundaryId condition = core::invalid_id;
         std::array<double, 4> bounds {};
     };
 
