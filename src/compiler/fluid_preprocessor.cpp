@@ -84,7 +84,7 @@ namespace mhs::compiler::fluid {
         for (std::size_t id = 0; id < boundaries.size(); ++id)
             for (const auto& region : boundaries[id].regions)
                 regions.push_back({region, id});
-        auto projected = project_surface_regions(mesh, regions);
+        auto projected = project_exterior_surface_regions(mesh, regions);
         std::erase_if(
             projected, [&](const auto& term) { return fluid.global_to_fluid[term.cell] == mhs::core::invalid_id; });
         mhs::core::Vector<double> total_area(boundaries.size(), 0);

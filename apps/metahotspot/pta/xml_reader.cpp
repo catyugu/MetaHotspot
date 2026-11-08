@@ -132,7 +132,7 @@ namespace mhs::app::pta {
         }
 
         Definition def;
-        mhs::model::ThermalBoundary default_boundary = mhs::model::NeumannBoundary {};
+        mhs::model::ThermalBoundary default_thermal_boundary = mhs::model::NeumannBoundary {};
 
         const XMLElement* root = doc.FirstChildElement("Structure");
         if (!root) {
@@ -180,14 +180,14 @@ namespace mhs::app::pta {
                 if (const XMLElement* temp = other->FirstChildElement("a:Temperature")) {
                     bc.temperature = get_text(temp);
                 }
-                default_boundary = std::move(bc);
+                default_thermal_boundary = std::move(bc);
             }
             else if (type_str.find("SecondType") != std::string::npos) {
                 mhs::model::NeumannBoundary bc;
                 if (const XMLElement* flux = other->FirstChildElement("a:HeatFlux")) {
                     bc.heat_flux = get_text(flux);
                 }
-                default_boundary = std::move(bc);
+                default_thermal_boundary = std::move(bc);
             }
             else if (type_str.find("ThirdType") != std::string::npos) {
                 mhs::model::ConvectionBoundary bc;
@@ -197,7 +197,7 @@ namespace mhs::app::pta {
                 if (const XMLElement* t = other->FirstChildElement("a:EnvironmentTemperature")) {
                     bc.ambient_temperature = get_text(t);
                 }
-                default_boundary = std::move(bc);
+                default_thermal_boundary = std::move(bc);
             }
         }
 
@@ -503,7 +503,7 @@ namespace mhs::app::pta {
                     }
                 }
 
-                def.model.boundaries.push_back(std::move(boundary));
+                def.model.thermal_boundaries.push_back(std::move(boundary));
             }
         }
 
@@ -576,7 +576,7 @@ namespace mhs::app::pta {
             }
         }
 
-        def.model.default_boundary = std::move(default_boundary);
+        def.model.default_thermal_boundary = std::move(default_thermal_boundary);
         return normalize(std::move(def));
     }
 

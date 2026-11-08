@@ -123,9 +123,9 @@ class Model(OwnedHandle):
 
     def set_cartesian_mesh(
         self,
-        x: np.ndarray | None = None,
-        y: np.ndarray | None = None,
-        z: np.ndarray | None = None,
+        x: Sequence[float] | np.ndarray,
+        y: Sequence[float] | np.ndarray,
+        z: Sequence[float] | np.ndarray,
     ) -> None:
         """Set mesh vertices."""
         arrays = [np.ascontiguousarray(a, dtype=np.float64) for a in (x, y, z)]

@@ -90,7 +90,7 @@ namespace mhs::compiler {
         }
     }
 
-    mhs::core::Vector<ProjectedSurfacePatch> project_surface_regions(const mhs::model::DiscreteMesh& mesh,
+    mhs::core::Vector<ProjectedSurfacePatch> project_exterior_surface_regions(const mhs::model::DiscreteMesh& mesh,
         const mhs::core::Vector<TaggedSurfaceRegion>& boundaries, std::optional<std::size_t> fallback)
     {
         using namespace mhs::core;

@@ -167,8 +167,8 @@ namespace mhs::model {
         mhs::core::Vector<NamedMaterial> materials;
         mhs::core::Vector<Expression> sources;
         mhs::core::Vector<VolumeSpec> volumes;
-        mhs::core::Vector<ThermalBoundarySpec> boundaries;
-        ThermalBoundary default_boundary = NeumannBoundary {};
+        mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
+        ThermalBoundary default_thermal_boundary = NeumannBoundary {};
         mhs::core::Vector<PointProbeSpec> point_probes;
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
     };

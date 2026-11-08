@@ -145,7 +145,7 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     ThermalBoundarySpec thermal;
     thermal.condition = NeumannBoundary {"0"};
     thermal.regions.push_back({Axis::X, 0, {0, 0.15, 0, 1}});
-    d.model.boundaries.push_back(thermal);
+    d.model.thermal_boundaries.push_back(thermal);
     verify(test_pta::build_model(d));
 }
 

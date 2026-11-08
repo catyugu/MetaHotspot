@@ -2,6 +2,7 @@
 #include "metahotspot_c_api.h"
 
 #include "compiler/model_compiler.hpp"
+#include "compiler/study_validation.hpp"
 #include "logging/logger.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
@@ -151,7 +152,7 @@ template <typename Boundary> static void _add_thermal_boundary(
     bp.regions.reserve(n_regions);
     for (size_t i = 0; i < n_regions; ++i)
         bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    m->def.boundaries.push_back(std::move(bp));
+    m->def.thermal_boundaries.push_back(std::move(bp));
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -222,10 +223,10 @@ MHS_API mhs_status_t mhs_model_set_study(
 {
     CHECK_NULL(m);
     MHS_TRY({
-        m->def.settings.study_type = _to_model_study(study);
-        m->def.settings.initial_temperature = initial_temperature_K;
-        m->def.settings.transient_duration = duration;
-        m->def.settings.transient_output_interval = output_interval;
+        const mhs::model::ModelSettings settings {
+            _to_model_study(study), initial_temperature_K, duration, output_interval};
+        mhs::compiler::validate_study_settings(settings);
+        m->def.settings = settings;
     });
 }
 
@@ -371,14 +372,14 @@ MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char*
 {
     CHECK_NULL(m);
     CHECK_NULL(temperature);
-    MHS_TRY({ m->def.default_boundary = mhs::model::DirichletBoundary {temperature}; });
+    MHS_TRY({ m->def.default_thermal_boundary = mhs::model::DirichletBoundary {temperature}; });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* heat_flux)
 {
     CHECK_NULL(m);
     CHECK_NULL(heat_flux);
-    MHS_TRY({ m->def.default_boundary = mhs::model::NeumannBoundary {heat_flux}; });
+    MHS_TRY({ m->def.default_thermal_boundary = mhs::model::NeumannBoundary {heat_flux}; });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_convection(
@@ -387,7 +388,7 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
     CHECK_NULL(m);
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
-    MHS_TRY({ m->def.default_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature}; });
+    MHS_TRY({ m->def.default_thermal_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature}; });
 }
 
 /* ------------------------------------------------------------------ */

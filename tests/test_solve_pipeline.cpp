@@ -26,9 +26,9 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     mhs::model::ThermalBoundarySpec boundary1;
     boundary1.condition = mhs::model::DirichletBoundary {"300"};
     boundary1.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
-    io.boundaries.push_back(boundary1);
+    io.thermal_boundaries.push_back(boundary1);
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = mhs::compiler::build_model(io);
 
@@ -67,7 +67,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     io.settings.transient_duration = 5.0;
     io.settings.transient_output_interval = 1.0;
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     mhs::model::PointProbeSpec op1;
     op1.name = "center";
@@ -85,7 +85,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500"};
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
-    io.boundaries.push_back(boundary);
+    io.thermal_boundaries.push_back(boundary);
 
     auto model = mhs::compiler::build_model(io);
 
@@ -136,7 +136,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     io.settings.transient_duration = 5.0;
     io.settings.transient_output_interval = 1.0;
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     mhs::model::PointProbeSpec op;
     op.name = "z0_dirichlet";
@@ -148,7 +148,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
-    io.boundaries.push_back(boundary);
+    io.thermal_boundaries.push_back(boundary);
 
     auto model = mhs::compiler::build_model(io);
 

@@ -35,6 +35,6 @@ namespace mhs::compiler {
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
 
     // With no fallback tag, uncovered exterior patches are omitted.
-    mhs::core::Vector<ProjectedSurfacePatch> project_surface_regions(const mhs::model::DiscreteMesh& mesh,
+    mhs::core::Vector<ProjectedSurfacePatch> project_exterior_surface_regions(const mhs::model::DiscreteMesh& mesh,
         const mhs::core::Vector<TaggedSurfaceRegion>& boundaries, std::optional<std::size_t> fallback = std::nullopt);
 } // namespace mhs::compiler

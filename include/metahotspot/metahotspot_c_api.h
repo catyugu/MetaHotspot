@@ -222,6 +222,9 @@ MHS_API void mhs_model_destroy(mhs_model_t* m);
 /*  Model construction  —  study, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
+/** Initial temperature, duration and output interval must be finite. Transient
+ * duration must be positive; output interval must be nonnegative. Settings are
+ * updated atomically. */
 MHS_API mhs_status_t mhs_model_set_study(
     mhs_model_t* m, mhs_study_t study, double initial_temperature_K, double duration, double output_interval);
 

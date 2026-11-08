@@ -2,6 +2,7 @@
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/geometry_compiler.hpp"
 #include "compiler/model_functions.hpp"
+#include "compiler/study_validation.hpp"
 #include "core/vector.hpp"
 #include "expression/expression.hpp"
 
@@ -72,6 +73,8 @@ namespace mhs::compiler {
 
     mhs::model::Model build_model(const mhs::model::ModelDefinition& definition)
     {
+        validate_study_settings(definition.settings);
+
         mhs::model::Model model;
         copy_scalar_parameters(model, definition);
 
@@ -118,16 +121,19 @@ namespace mhs::compiler {
 
         // Compile boundary patches.
         auto& boundary_conditions = model.boundary_conditions;
-        auto compiled_boundaries = compile_thermal_boundaries(definition.boundaries, boundary_conditions, symbols);
+        auto compiled_boundaries
+            = compile_thermal_boundaries(definition.thermal_boundaries, boundary_conditions, symbols);
 
-        auto default_boundary = compile_thermal_boundary(definition.default_boundary, boundary_conditions, symbols);
+        auto default_thermal_boundary
+            = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
 
         compile_cartesian_mesh(model, definition.mesh, definition.volumes);
         project_cell_regions(model, definition.volumes);
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())
                 throw std::out_of_range("cell has no valid material assignment");
-        for (const auto& patch : project_surface_regions(model.discrete, compiled_boundaries, default_boundary))
+        for (const auto& patch :
+            project_exterior_surface_regions(model.discrete, compiled_boundaries, default_thermal_boundary))
             model.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
                 static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
 

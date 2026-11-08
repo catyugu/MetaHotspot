@@ -61,7 +61,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
              mhs::model::ThermalBoundary {mhs::model::NeumannBoundary {"1+0.001*T"}}}) {
         auto d = cube_definition();
         d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
-        d.default_boundary = condition;
+        d.default_thermal_boundary = condition;
         const auto model = mhs::compiler::build_model(d);
         ASSERT_EQ(model.boundary_faces.size(), 6u);
         // Boundary sampling looks up terms by cell.
@@ -102,7 +102,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
 TEST(DiscreteMesh, TemperatureDependentDirichletTemperatureIsRejected)
 {
     auto d = cube_definition();
-    d.boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, mhs::model::DirichletBoundary {"300 + 0.1*T"}}};
+    d.thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, mhs::model::DirichletBoundary {"300 + 0.1*T"}}};
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
 }
 
@@ -112,7 +112,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     mhs::model::ThermalBoundarySpec bc;
     bc.condition = mhs::model::NeumannBoundary {"10"};
     bc.regions.push_back({mhs::model::Axis::X, 1.0, {0.1, 0.2, 0.1, 0.2}});
-    d.boundaries.push_back(bc);
+    d.thermal_boundaries.push_back(bc);
     const auto base = mhs::compiler::build_model(cube_definition()).discrete;
     const auto model = mhs::compiler::build_model(d);
     ASSERT_EQ(model.discrete.faces.size(), base.faces.size());
@@ -154,7 +154,7 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     mhs::model::ThermalBoundarySpec bc;
     bc.condition = mhs::model::DirichletBoundary {"400"};
     bc.regions.push_back({mhs::model::Axis::X, 1, {0.1, 0.2, 0.1, 0.2}});
-    d.boundaries.push_back(bc);
+    d.thermal_boundaries.push_back(bc);
     const auto model = mhs::compiler::build_model(d);
     const mhs::core::Vector<double> state {300};
     const auto ops = mhs::solver::assemble_thermal(model, state, 0);

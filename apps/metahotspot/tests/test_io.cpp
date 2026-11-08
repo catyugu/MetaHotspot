@@ -149,9 +149,9 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
     ASSERT_EQ(definition.volumes[0].geometry.size(), 2u);
     EXPECT_EQ(definition.volumes[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
     EXPECT_EQ(definition.volumes[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
-    ASSERT_EQ(definition.boundaries.size(), 2u);
-    EXPECT_TRUE(std::holds_alternative<mhs::model::DirichletBoundary>(definition.boundaries[0].condition));
-    EXPECT_TRUE(std::holds_alternative<mhs::model::ConvectionBoundary>(definition.boundaries[1].condition));
+    ASSERT_EQ(definition.thermal_boundaries.size(), 2u);
+    EXPECT_TRUE(std::holds_alternative<mhs::model::DirichletBoundary>(definition.thermal_boundaries[0].condition));
+    EXPECT_TRUE(std::holds_alternative<mhs::model::ConvectionBoundary>(definition.thermal_boundaries[1].condition));
 }
 
 TEST(IoTest, WriteXmlEmitsResult0DTransient)

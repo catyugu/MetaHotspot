@@ -28,7 +28,7 @@ static mhs::model::ModelDefinition make_simple_cube_io()
     mat.specific_heat = "385";
     io.materials.push_back({"copper", mat});
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     return io;
 }
@@ -73,7 +73,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "100 + T";
     io.materials.push_back({"mat", mat});
 
-    io.default_boundary = mhs::model::NeumannBoundary {};
+    io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     auto model = mhs::compiler::build_model(io);
 
