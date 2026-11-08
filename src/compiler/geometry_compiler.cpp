@@ -134,7 +134,7 @@ namespace mhs::compiler {
             mhs::core::Vector<TaggedBounds> regions;
             for (const auto& tagged : boundaries)
                 if (tagged.region.axis == face.axis && std::abs(tagged.region.coordinate - coordinate) < EPS)
-                    regions.push_back({surface_bounds(tagged.region.rectangle), tagged.second});
+                    regions.push_back({surface_bounds(tagged.region.rectangle), tagged.tag});
             for (const auto& patch : partition_surface_bounds(face.bounds, regions, fallback))
                 faces.push_back({cell, face.axis, sign, patch.second, patch.first});
         }
