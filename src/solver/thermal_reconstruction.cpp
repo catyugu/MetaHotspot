@@ -82,7 +82,8 @@ namespace mhs::solver {
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
         // use the same two-point thermal-resistance law as the diffusion assembly.
         mhs::model::Vec3 reconstruct_cell_gradient(const mhs::model::FomDomain& model,
-            std::span<const mhs::model::MaterialProps> materials, std::span<const double> temperature, double time,
+            std::span<const mhs::model::MaterialProps> materials,
+            std::span<const mhs::model::BoundaryCondition> conditions, std::span<const double> temperature, double time,
             mhs::model::CellId cell, std::span<const SurfaceTrace> interfaces)
         {
             using namespace mhs::core;
@@ -214,7 +215,8 @@ namespace mhs::solver {
     }
 
     std::optional<double> boundary_value_at(const mhs::model::FomDomain& model,
-        std::span<const mhs::model::MaterialProps> materials, std::span<const double> temperature, double time,
+        std::span<const mhs::model::MaterialProps> materials,
+        std::span<const mhs::model::BoundaryCondition> conditions, std::span<const double> temperature, double time,
         mhs::model::CellId cell, const mhs::model::Vec3& p)
     {
         if (cell == mhs::core::invalid_id)
@@ -247,17 +249,17 @@ namespace mhs::solver {
     }
 
     double sample_point(const mhs::model::FomDomain& model, std::span<const mhs::model::MaterialProps> materials,
-        std::span<const double> temperature, double time, mhs::model::CellId cell, const mhs::model::Vec3& p,
+        std::span<const mhs::model::BoundaryCondition> conditions, std::span<const double> temperature, double time, mhs::model::CellId cell, const mhs::model::Vec3& p,
         std::span<const SurfaceTrace> interfaces)
     {
         if (cell == mhs::core::invalid_id)
             return std::numeric_limits<double>::quiet_NaN();
-        if (const auto trace = boundary_value_at(model, materials, temperature, time, cell, p))
+        if (const auto trace = boundary_value_at(model, materials, conditions, temperature, time, cell, p))
             return *trace;
         for (const auto& trace : interfaces)
             if (trace.face.cell == cell && boundary_contains(model.discrete.cells[cell], trace.face, p))
                 return trace.temperature;
-        const auto gradient = reconstruct_cell_gradient(model, materials, temperature, time, cell, interfaces);
+        const auto gradient = reconstruct_cell_gradient(model, materials, conditions, temperature, time, cell, interfaces);
         const auto center = model.discrete.cells[cell].center();
         return temperature[cell] + gradient[0] * (p[0] - center[0]) + gradient[1] * (p[1] - center[1])
             + gradient[2] * (p[2] - center[2]);
