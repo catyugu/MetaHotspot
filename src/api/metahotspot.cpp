@@ -304,46 +304,49 @@ MHS_API mhs_status_t mhs_model_rom_add_affine_term(mhs_model_t* m, mhs_index_t d
 }
 
 MHS_API mhs_status_t mhs_model_add_rom_port(mhs_model_t* m, mhs_index_t domain, const char* name,
-    const mhs_surface_region_t* region, int32_t outward_sign, mhs_index_t* out_id)
+    const mhs_surface_region_t* region, int32_t outward_sign, const mhs_rom_port_patch_t* patches,
+    size_t patch_count, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(region);
     CHECK_NULL(out_id);
     MHS_TRY({
+        if (!patch_count || !patches)
+            throw std::invalid_argument("ROM port must have at least one patch");
         if (outward_sign != 1 && outward_sign != -1)
             throw std::invalid_argument("ROM port normal must be +/-1");
-        const auto i = static_cast<size_t>(domain) - m->def.domains.size();
-        auto& ports = m->def.rom_domains.at(i).ports;
+        if (domain < m->def.domains.size())
+            throw std::invalid_argument("ROM port requires a ROM domain");
+        auto& rom = m->def.rom_domains.at(static_cast<std::size_t>(domain) - m->def.domains.size());
+        mhs::model::RomPort value;
+        value.name = name;
+        value.region = _make_surface_region(region->axis, region->coordinate, region->rectangle);
+        value.outward_sign = static_cast<std::int8_t>(outward_sign);
+        value.patches.reserve(patch_count);
+        for (std::size_t i = 0; i < patch_count; ++i) {
+            const auto& source = patches[i];
+            if (!source.trace)
+                throw std::invalid_argument("NULL ROM port patch trace");
+            mhs::model::RomPortPatch patch;
+            patch.rectangle = {source.rectangle.a_min, source.rectangle.a_max, source.rectangle.b_min,
+                source.rectangle.b_max};
+            patch.half_resistance = source.half_resistance;
+            patch.center = {source.center[0], source.center[1]};
+            patch.offset = source.offset;
+            patch.trace.assign(source.trace, source.trace + rom.order);
+            if (source.gradient_a)
+                patch.tangential_gradient[0].assign(source.gradient_a, source.gradient_a + rom.order);
+            if (source.gradient_b)
+                patch.tangential_gradient[1].assign(source.gradient_b, source.gradient_b + rom.order);
+            value.patches.push_back(std::move(patch));
+        }
+        auto& ports = rom.ports;
+        if (ports.size() >= std::numeric_limits<mhs_index_t>::max())
+            throw std::length_error("too many ROM ports");
         const auto id = static_cast<mhs_index_t>(ports.size());
-        ports.push_back({name, _make_surface_region(region->axis, region->coordinate, region->rectangle),
-            static_cast<std::int8_t>(outward_sign), {}});
+        ports.push_back(std::move(value));
         *out_id = id;
-    });
-}
-
-MHS_API mhs_status_t mhs_model_rom_port_add_patch(mhs_model_t* m, mhs_index_t domain, mhs_index_t port,
-    const mhs_rect2d_t* rectangle, double half_resistance, const double tangent_center[2], const double* trace,
-    double offset, const double* gradient_a, const double* gradient_b)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(rectangle);
-    CHECK_NULL(tangent_center);
-    CHECK_NULL(trace);
-    MHS_TRY({
-        auto& rom = m->def.rom_domains.at(static_cast<size_t>(domain) - m->def.domains.size());
-        auto& facets = rom.ports.at(port).patches;
-        mhs::model::RomPortPatch facet;
-        facet.rectangle = {rectangle->a_min, rectangle->a_max, rectangle->b_min, rectangle->b_max};
-        facet.half_resistance = half_resistance;
-        facet.center = {tangent_center[0], tangent_center[1]};
-        facet.offset = offset;
-        facet.trace.assign(trace, trace + rom.order);
-        if (gradient_a)
-            facet.tangential_gradient[0].assign(gradient_a, gradient_a + rom.order);
-        if (gradient_b)
-            facet.tangential_gradient[1].assign(gradient_b, gradient_b + rom.order);
-        facets.push_back(std::move(facet));
     });
 }
 
