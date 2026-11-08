@@ -1,0 +1,49 @@
+name: Temporary ROM format normalization
+on:
+  push:
+    branches: [refactor/rom-domain]
+    paths: [.github/workflows/rom-format-once.yml]
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/catyugu/metahotspot-ci:ubuntu24.04-18975036af24574f
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Format modified C++ and Python sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --group dev
+          clang-format -i \
+            include/metahotspot/model/rom_domain.hpp \
+            include/metahotspot/model/model_definition.hpp \
+            include/metahotspot/model/model.hpp \
+            include/metahotspot/metahotspot_c_api.h \
+            src/compiler/model_compiler.cpp \
+            src/compiler/connections.cpp \
+            src/solver/assembler.cpp \
+            src/solver/connection_flux.cpp \
+            src/solver/connection_flux.hpp \
+            src/solver/solve.cpp \
+            src/api/metahotspot.cpp \
+            tests/integration/test_rom_domain.cpp
+          ruff format python/metahotspot/model.py python/metahotspot/compiled.py \
+            python/metahotspot/_dll_interface.py python/tests/test_rom_domain.py
+          ruff check --fix python/metahotspot/model.py python/metahotspot/compiled.py \
+            python/metahotspot/_dll_interface.py python/tests/test_rom_domain.py
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" config user.name "github-actions[bot]"
+          git -C "$GITHUB_WORKSPACE" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add include/metahotspot/model include/metahotspot/metahotspot_c_api.h \
+            src/compiler src/solver src/api tests/integration/test_rom_domain.cpp \
+            python/metahotspot python/tests/test_rom_domain.py
+          if ! git diff --cached --quiet; then
+            git commit -m "style: format ROM integration code"
+            git push origin HEAD:refactor/rom-domain
+          fi
