@@ -96,10 +96,10 @@ namespace {
             facet.trace = {q, -q};
             port.patches.push_back(facet);
 
-            rom.observations.push_back({{"top", 2.5, 0.5, 0.5}, {q, q}, 0});
+
             model.components.push_back({rom, {port}, {}});
         }
-        model.point_probes.push_back({"top", 2.5, 0.5, 0.5});
+        model.component(1).observations.push_back({{"top", 2.5, 0.5, 0.5}, reduced ? mhs::core::Vector<double> {q, q} : mhs::core::Vector<double> {}, 0});
         model.connections.push_back({{0, 0}, {1, 0}});
         return model;
     }
