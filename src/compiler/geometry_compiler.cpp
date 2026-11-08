@@ -40,8 +40,7 @@ namespace mhs::compiler {
                 const double x = (bounds[0] + bounds[1]) / 2, y = (bounds[2] + bounds[3]) / 2;
                 auto tag = fallback;
                 for (const auto& region : regions)
-                    if (x >= region.first[0] && x <= region.first[1] && y >= region.first[2]
-                        && y <= region.first[3])
+                    if (x >= region.first[0] && x <= region.first[1] && y >= region.first[2] && y <= region.first[3])
                         tag = region.second;
                 if (tag)
                     result.emplace_back(bounds, *tag);
