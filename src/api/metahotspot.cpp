@@ -259,7 +259,8 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
         rom.f.assign(rhs, rhs + order);
         if (initial)
             rom.initial_state.assign(initial, initial + order);
-        m->def.components.push_back({std::move(rom), {}, {}});
+        auto& component = m->def.components.emplace_back();
+        component.physics.emplace<mhs::model::RomDomainDefinition>(std::move(rom));
         *out_id = id;
     });
 }

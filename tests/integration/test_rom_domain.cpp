@@ -382,7 +382,6 @@ TEST(RomDomain, NonmatchingRomPortRequiresNccGradient)
     patch.center = {0.5, 0.5};
     patch.trace = {1};
     port.patches.push_back(patch);
-    LEFT_PORT_PLACEHOLDER
 
     RomDomainDefinition right = left;
     auto right_port = port;
