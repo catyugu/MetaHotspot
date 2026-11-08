@@ -176,9 +176,44 @@ namespace mhs::model {
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
     };
 
+    // Meshless modal domain. Port patches carry physical boundary geometry,
+    // normal half-resistance and affine maps from modal state to cell traces.
+    struct RomPortPatch {
+        RegionRect rectangle;
+        double half_resistance = 0.0; // m^2 K/W
+        std::array<double, 2> center {};
+        mhs::core::Vector<double> trace;
+        double offset = 0.0;
+        // Optional for conforming ports; required by nonmatching NCC.
+        std::array<mhs::core::Vector<double>, 2> tangential_gradient;
+    };
+
+    struct RomPort {
+        std::string name;
+        SurfaceRegion region;
+        std::int8_t outward_sign = 1;
+        mhs::core::Vector<RomPortPatch> patches;
+    };
+
+    struct RomObservation {
+        PointProbe point;
+        mhs::core::Vector<double> weights;
+        double offset = 0.0;
+    };
+
+    // Dense row-major projected matrices and physical port/observation maps.
+    struct RomDomainDefinition {
+        std::size_t order = 0;
+        mhs::core::Vector<double> K, C, f, initial_state;
+        mhs::core::Vector<RomPort> ports;
+        mhs::core::Vector<RomObservation> observations;
+    };
+
     struct ModelDefinition {
         Study study;
         mhs::core::Vector<FomDomainDefinition> domains {1};
+        // Global DomainId order: all FOM domains followed by ROM domains.
+        mhs::core::Vector<RomDomainDefinition> rom_domains;
         mhs::core::Vector<ConnectionDefinition> connections;
         mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<NamedFunction> functions;
