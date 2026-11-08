@@ -278,7 +278,6 @@ MHS_API mhs_status_t mhs_compiled_connection_patch_count(const mhs_compiled_t* c
 MHS_API mhs_status_t mhs_compiled_eval_connection_flux(const mhs_compiled_t* c, mhs_index_t connection,
     const double* state, size_t state_count, double time, double* outward_a, size_t patch_count);
 
-
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  reference state, mesh, variables         */
 /* ------------------------------------------------------------------ */

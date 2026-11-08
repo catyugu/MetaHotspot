@@ -235,9 +235,7 @@ MHS_API mhs_status_t mhs_model_add_fom_domain(mhs_model_t* m, mhs_index_t* out_i
 {
     CHECK_NULL(m);
     CHECK_NULL(out_id);
-    MHS_TRY({
-        *out_id = m->def.add_fom_domain();
-    });
+    MHS_TRY({ *out_id = m->def.add_fom_domain(); });
 }
 MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, const double* stiffness,
     const double* capacity, const double* rhs, const double* initial, mhs_index_t* out_id)
@@ -259,11 +257,7 @@ MHS_API mhs_status_t mhs_model_add_rom_domain(mhs_model_t* m, size_t order, cons
         if (initial)
             rom.initial_state.assign(initial, initial + order);
         // The untouched default FOM is a convenience; ROM-only models discard it.
-        if (m->def.registry.size() == 1 && m->def.domains.size() == 1
-            && m->def.domains[0].mesh.x_vertices.empty() && m->def.domains[0].mesh.y_vertices.empty()
-            && m->def.domains[0].mesh.z_vertices.empty() && m->def.domains[0].volumes.empty()
-            && m->def.domains[0].ports.empty() && m->def.domains[0].thermal_boundaries.empty()
-            && m->def.domains[0].fluid_boundaries.empty())
+        if (m->def.has_untouched_default_fom())
             m->def.clear_domains();
         *out_id = m->def.add_rom_domain(std::move(rom));
     });
@@ -583,8 +577,8 @@ MHS_API mhs_status_t mhs_model_set_default_convection(
     CHECK_NULL(coefficient);
     CHECK_NULL(ambient_temperature);
     MHS_TRY({
-        m->def.fom(domain).default_thermal_boundary
-            = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
+        auto& boundary = m->def.fom(domain).default_thermal_boundary;
+        boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature};
     });
 }
 

@@ -110,7 +110,8 @@ namespace mhs::solver {
                     }
                 if (result.weights.empty())
                     throw std::invalid_argument("connection cell is missing its temperature DOF");
-                const auto grad = gradient(domain, temperatures[compiled.registry.fom(ref.domain)], cell, connection.axis, time);
+                const auto grad
+                    = gradient(domain, temperatures[compiled.registry.fom(ref.domain)], cell, connection.axis, time);
                 std::size_t t = 0;
                 for (std::size_t a = 0; a < 3; ++a)
                     if (a != axis) {
