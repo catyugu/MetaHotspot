@@ -84,12 +84,13 @@ namespace mhs::compiler {
                 if (port.outward_sign != 1 && port.outward_sign != -1)
                     throw std::invalid_argument("ROM outward port sign must be +1 or -1");
                 double total = 0;
+                const auto order = rom->order;
                 for (std::size_t j = 0; j < port.patches.size(); ++j) {
                     const auto& patch = port.patches[j];
                     const auto rect = bounds(patch.rectangle);
                     const auto common = overlap(rect, bounds(r));
                     if (!positive(rect) || !same_bounds(rect, common) || !std::isfinite(patch.half_resistance)
-                        || patch.half_resistance <= 0 || !std::isfinite(patch.offset) || patch.trace.size() != rom->order
+                        || patch.half_resistance <= 0 || !std::isfinite(patch.offset) || patch.trace.size() != order
                         || !std::all_of(
                             patch.trace.begin(), patch.trace.end(), [](double x) { return std::isfinite(x); })
                         || !std::all_of(
@@ -97,7 +98,7 @@ namespace mhs::compiler {
                         throw std::invalid_argument("invalid ROM port patch geometry or trace");
                     for (const auto& row : patch.tangential_gradient)
                         if (!row.empty()
-                            && (row.size() != rom->order
+                            && (row.size() != order
                                 || !std::all_of(row.begin(), row.end(), [](double x) { return std::isfinite(x); })))
                             throw std::invalid_argument("ROM tangential gradient has invalid dimensions");
                     for (std::size_t prev = 0; prev < j; ++prev)
@@ -119,8 +120,7 @@ namespace mhs::compiler {
                     continue;
                 }
                 const auto p = patch.tag - port_offset;
-                if (!fom->fluid.global_to_fluid.empty()
-                    && fom->fluid.global_to_fluid[patch.cell] != core::invalid_id)
+                if (!fom->fluid.global_to_fluid.empty() && fom->fluid.global_to_fluid[patch.cell] != core::invalid_id)
                     throw std::invalid_argument("thermal connections currently require solid interface cells");
                 ports[d][p].push_back({patch.cell, patch.bounds, patch.sign});
             }
@@ -186,7 +186,7 @@ namespace mhs::compiler {
                 for (const auto& facet : conn.patches) {
                     const auto index = side == 0 ? facet.a : facet.b;
                     for (const auto& row : port.patches.at(index).tangential_gradient)
-                        if (row.size() != rom->order)
+                        if (row.size() != order)
                             throw std::invalid_argument("nonmatching ROM port requires NCC gradient maps");
                 }
             }
