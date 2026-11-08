@@ -257,19 +257,12 @@ namespace mhs::model {
     };
 
     struct ModelDefinition {
-        // Construction context. Components bind this handle directly; the
-        // compiled model keeps no duplicate model-level Library pointer.
-        std::shared_ptr<LibraryDefinition> library = std::make_shared<LibraryDefinition>();
         mhs::core::Vector<ComponentDefinition> components;
 
-        ComponentDefinition& component(DomainId id)
-        {
-            auto& value = components.at(id);
-            if (!value.library)
-                value.library = library;
-            return value;
-        }
+        ComponentDefinition& component(DomainId id) { return components.at(id); }
         const ComponentDefinition& component(DomainId id) const { return components.at(id); }
+        LibraryDefinition& library() { return *components.front().library; }
+        const LibraryDefinition& library() const { return *components.front().library; }
         FomDomainDefinition& fom(DomainId id) { return std::get<FomDomainDefinition>(component(id).physics); }
         const auto& fom(DomainId id) const { return std::get<FomDomainDefinition>(component(id).physics); }
         RomDomainDefinition& rom(DomainId id) { return std::get<RomDomainDefinition>(component(id).physics); }
