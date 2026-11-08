@@ -214,13 +214,6 @@ static mhs::model::Study to_study(const mhs_study_t& value)
     return study;
 }
 
-MHS_API mhs_status_t mhs_model_set_study(mhs_model_t* m, const mhs_study_t* study)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(study);
-    MHS_TRY({ m->def.study = to_study(*study); });
-}
-
 MHS_API mhs_status_t mhs_model_create(mhs_model_t** out)
 {
     CHECK_NULL(out);
@@ -1112,7 +1105,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study
     CHECK_NULL(c);
     MHS_TRY({
         auto so = to_solve_options(opts);
-        const auto run = study ? to_study(*study) : c->model.study;
+        const auto run = study ? to_study(*study) : mhs::model::Study {};
 
         if ((!state && state_count != 0) || (state && state_count != c->model.layout.state_count))
             throw std::invalid_argument("initial state must be NULL/0 or have state_count entries");

@@ -42,6 +42,6 @@ namespace mhs::solver {
     mhs::solver::Solution solve(const mhs::model::CompiledModel& model, const mhs::model::Study& study,
         std::span<const double> initial_state = {}, const SolveOptions& options = {});
 
-    inline Solution solve(const mhs::model::CompiledModel& model) { return solve(model, model.study); }
+    inline Solution solve(const mhs::model::CompiledModel& model) { return solve(model, {}); }
 
 } // namespace mhs::solver

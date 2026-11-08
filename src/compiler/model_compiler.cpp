@@ -74,7 +74,6 @@ namespace mhs::compiler {
             compiled.layout.fields.push_back({domain, quantity, offset, count});
             compiled.layout.state_count += count;
         };
-        compiled.study = definition.study;
         if (definition.domains.empty() && definition.rom_domains.empty())
             throw std::invalid_argument("model must contain a FOM or ROM domain");
 
