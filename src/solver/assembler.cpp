@@ -193,8 +193,7 @@ namespace mhs::solver {
         // Nonthermal fields are independent state entries, not cell temperatures.
         // Validate the full injective map before constructing workspaces.
         for (const auto& field : model.layout.fields)
-            if (field.quantity == model::FieldQuantity::Pressure
-                || field.quantity == model::FieldQuantity::Velocity) {
+            if (field.quantity == model::FieldQuantity::Pressure || field.quantity == model::FieldQuantity::Velocity) {
                 if (field.domain >= model.domains.size() || field.entities.size() != field.dofs.size())
                     throw std::invalid_argument("invalid fluid state layout");
                 if (model.domains[field.domain].flow_mode != model::FlowMode::Stokes)
@@ -226,18 +225,18 @@ namespace mhs::solver {
         for (std::size_t d = 0; d < model.domains.size(); ++d) {
             const auto& domain = model.domains[d];
             if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
-                stokes_.push_back(std::make_unique<StokesAssembler>(
-                    domain, model.layout, static_cast<model::DomainId>(d)));
+                stokes_.push_back(
+                    std::make_unique<StokesAssembler>(domain, model.layout, static_cast<model::DomainId>(d)));
                 domains_.push_back(std::make_unique<ThermalAssembler>(domain, FrozenFlow {}));
             }
             else {
                 stokes_.push_back(nullptr);
-                domains_.push_back(std::make_unique<ThermalAssembler>(
-                    domain, initialize_frozen_flow(domain, temperatures_[d], time)));
+                domains_.push_back(
+                    std::make_unique<ThermalAssembler>(domain, initialize_frozen_flow(domain, temperatures_[d], time)));
             }
         }
-        identity_ = model.domains.size() == 1 && model.rom_domains.empty() && model.connections.empty()
-            && !stokes_.front();
+        identity_
+            = model.domains.size() == 1 && model.rom_domains.empty() && model.connections.empty() && !stokes_.front();
         for (std::size_t c = 0; identity_ && c < dofs_[0].size(); ++c)
             identity_ = dofs_[0][c] == c;
     }
@@ -260,8 +259,7 @@ namespace mhs::solver {
         core::Vector<double> load(state.size(), 0.0);
         for (std::size_t d = 0; d < domains_.size(); ++d) {
             if (stokes_[d])
-                domains_[d]->set_flow(stokes_[d]->assemble(state, temperatures_[d], time,
-                    stiffness, capacity, load));
+                domains_[d]->set_flow(stokes_[d]->assemble(state, temperatures_[d], time, stiffness, capacity, load));
             const auto& ops = domains_[d]->assemble(temperatures_[d], time);
             const auto& map = dofs_[d];
             auto append = [&](const core::CSRMatrix<double>& matrix, auto& entries) {
@@ -377,7 +375,8 @@ namespace mhs::solver {
     Operators assemble_thermal(const model::FomDomain& model, std::span<const double> temperature, double time)
     {
         if (model.flow_mode == model::FlowMode::Stokes)
-            throw std::invalid_argument("standalone FOM thermal assembly requires frozen flow; use a state layout for Stokes");
+            throw std::invalid_argument(
+                "standalone FOM thermal assembly requires frozen flow; use a state layout for Stokes");
         ThermalAssembler workspace(model, initialize_frozen_flow(model, temperature, time));
         workspace.assemble(temperature, time);
         return std::move(workspace).take_operators();

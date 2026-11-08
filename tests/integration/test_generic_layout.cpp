@@ -281,7 +281,6 @@ TEST(GenericLayout, PartialPortsPreserveExternalBoundarySubdivisions)
     }
 }
 
-
 TEST(GenericLayout, StaggeredStokesPressureAndVelocitySatisfyConservativeContinuity)
 {
     using namespace mhs::model;

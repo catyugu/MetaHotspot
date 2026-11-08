@@ -11,10 +11,7 @@
 namespace mhs::solver {
     namespace {
         using namespace mhs::model;
-        double patch_area(const std::array<double, 4>& b)
-        {
-            return (b[1] - b[0]) * (b[3] - b[2]);
-        }
+        double patch_area(const std::array<double, 4>& b) { return (b[1] - b[0]) * (b[3] - b[2]); }
         bool close_coordinate(double a, double b)
         {
             const double scale = std::max({std::abs(a), std::abs(b), 1e-3});
@@ -22,7 +19,8 @@ namespace mhs::solver {
         }
     }
 
-    StokesAssembler::StokesAssembler(const model::FomDomain& domain, const model::StateLayout& layout, model::DomainId id)
+    StokesAssembler::StokesAssembler(
+        const model::FomDomain& domain, const model::StateLayout& layout, model::DomainId id)
         : domain_(domain)
     {
         using namespace mhs::model;
@@ -73,10 +71,8 @@ namespace mhs::solver {
         // contributions to neighbouring unknowns without adding wall DOFs.
         for (std::size_t f = 0; f < mesh.faces.size(); ++f) {
             const auto& face = mesh.faces[f];
-            const bool minus = face.minus != core::invalid_id
-                && fluid.global_to_fluid[face.minus] != core::invalid_id;
-            const bool plus = face.plus != core::invalid_id
-                && fluid.global_to_fluid[face.plus] != core::invalid_id;
+            const bool minus = face.minus != core::invalid_id && fluid.global_to_fluid[face.minus] != core::invalid_id;
+            const bool plus = face.plus != core::invalid_id && fluid.global_to_fluid[face.plus] != core::invalid_id;
             if (!minus && !plus)
                 continue;
             Node node;
@@ -88,8 +84,8 @@ namespace mhs::solver {
             node.component = static_cast<std::size_t>(face.axis);
             const auto axis = node.component;
             // Face plane, not the neighbouring cell's centre.
-            node.center[axis] = face.minus != core::invalid_id ? mesh.cells[face.minus].max[axis]
-                                                                : mesh.cells[face.plus].min[axis];
+            node.center[axis]
+                = face.minus != core::invalid_id ? mesh.cells[face.minus].max[axis] : mesh.cells[face.plus].min[axis];
             node.low[axis] = minus ? mesh.cells[face.minus].center()[axis] : node.center[axis];
             node.high[axis] = plus ? mesh.cells[face.plus].center()[axis] : node.center[axis];
             std::size_t t = 0;
@@ -100,8 +96,8 @@ namespace mhs::solver {
                     node.center[j] = (node.low[j] + node.high[j]) / 2;
                     ++t;
                 }
-            if (node.dof != core::invalid_id && !((minus && plus)
-                    || (face.exterior() && node.condition != core::invalid_id)))
+            if (node.dof != core::invalid_id
+                && !((minus && plus) || (face.exterior() && node.condition != core::invalid_id)))
                 throw std::invalid_argument("Stokes velocity DOF is not supported by an open or interior face");
             nodes_.push_back(node);
         }
@@ -136,8 +132,7 @@ namespace mhs::solver {
                         double area = 1;
                         for (std::size_t j = 0; j < 3; ++j)
                             if (j != direction)
-                                area *= std::max(0.0, std::min(a.high[j], b.high[j])
-                                    - std::max(a.low[j], b.low[j]));
+                                area *= std::max(0.0, std::min(a.high[j], b.high[j]) - std::max(a.low[j], b.low[j]));
                         if (area <= 0)
                             continue;
                         const auto da = a.high[direction] - a.center[direction];
@@ -163,8 +158,7 @@ namespace mhs::solver {
                 for (std::size_t side = 0; side < 2; ++side) {
                     if (node.joined[2 * j + side])
                         continue;
-                    const double span = side ? node.high[j] - node.center[j]
-                                             : node.center[j] - node.low[j];
+                    const double span = side ? node.high[j] - node.center[j] : node.center[j] - node.low[j];
                     if (span <= 0) // The velocity is itself on the open boundary.
                         continue;
                     const double distance = (j == node.component ? 2 : 1) * span;
@@ -193,8 +187,8 @@ namespace mhs::solver {
             const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[cell], time};
             density[cell] = props.rho.eval(context);
             viscosity[cell] = props.dynamic_viscosity->eval(context);
-            if (!std::isfinite(density[cell]) || density[cell] <= 0
-                || !std::isfinite(viscosity[cell]) || viscosity[cell] <= 0)
+            if (!std::isfinite(density[cell]) || density[cell] <= 0 || !std::isfinite(viscosity[cell])
+                || viscosity[cell] <= 0)
                 throw std::invalid_argument("Stokes density and viscosity must be finite and strictly positive");
         }
 
@@ -228,8 +222,8 @@ namespace mhs::solver {
                 double volume = 1.0;
                 for (std::size_t a = 0; a < 3; ++a)
                     volume *= n.high[a] - n.low[a];
-                capacity.emplace_back(static_cast<core::SparseIndex>(n.dof),
-                    static_cast<core::SparseIndex>(n.dof), nodal_rho[i] * volume);
+                capacity.emplace_back(static_cast<core::SparseIndex>(n.dof), static_cast<core::SparseIndex>(n.dof),
+                    nodal_rho[i] * volume);
                 const auto row = static_cast<core::SparseIndex>(n.dof);
                 if (n.minus != core::invalid_id)
                     stiffness.emplace_back(row, static_cast<core::SparseIndex>(pressure_dof_[n.minus]), -area);
@@ -262,10 +256,11 @@ namespace mhs::solver {
                 const auto& condition = domain_.fluid_conditions[n.condition];
                 const double outward_mass = (n.minus != core::invalid_id ? 1.0 : -1.0) * mass;
                 if (outward_mass < 0) {
-                    const auto temperature_bc = std::visit(
-                        [](const auto& bc) -> std::optional<double> { return bc.temperature; }, condition);
+                    const auto temperature_bc
+                        = std::visit([](const auto& bc) -> std::optional<double> { return bc.temperature; }, condition);
                     if (!temperature_bc)
-                        throw std::invalid_argument("incoming Stokes flow requires an explicit inlet/backflow temperature");
+                        throw std::invalid_argument(
+                            "incoming Stokes flow requires an explicit inlet/backflow temperature");
                     flow.boundary_terms.push_back({cell, FluidInflow {-outward_mass, *temperature_bc}});
                 }
                 else
@@ -277,8 +272,7 @@ namespace mhs::solver {
         for (const auto& link : links_) {
             const auto& a = nodes_[link.a];
             const auto& b = nodes_[link.b];
-            const double conductance = link.area
-                / (link.da / nodal_mu[link.a] + link.db / nodal_mu[link.b]);
+            const double conductance = link.area / (link.da / nodal_mu[link.a] + link.db / nodal_mu[link.b]);
             if (a.dof != core::invalid_id) {
                 const auto row = static_cast<core::SparseIndex>(a.dof);
                 stiffness.emplace_back(row, row, conductance);
