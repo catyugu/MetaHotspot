@@ -83,7 +83,10 @@ typedef int32_t mhs_geometry_op_t;
 enum { MHS_GEOM_ADD = 0, MHS_GEOM_SUB = 1 };
 
 typedef int32_t mhs_solver_type_t;
-enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
+enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1, MHS_SOLVER_SPARSE_LU = 2 };
+
+typedef int32_t mhs_flow_mode_t;
+enum { MHS_FLOW_FROZEN = 0, MHS_FLOW_STOKES = 1 };
 
 typedef int32_t mhs_fluid_bc_t;
 enum { MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
@@ -277,6 +280,9 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t do
 /** Refine aligned parent-cell boxes by 2^levels in each Cartesian direction (levels 1..3). */
 MHS_API mhs_status_t mhs_model_refine_cartesian_box(mhs_model_t* m, mhs_index_t domain,
     const double min_xyz[3], const double max_xyz[3], uint32_t levels);
+
+/** Select frozen-flux transport or coupled staggered Stokes/energy physics. */
+MHS_API mhs_status_t mhs_model_set_flow_mode(mhs_model_t* m, mhs_index_t domain, mhs_flow_mode_t mode);
 
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
 

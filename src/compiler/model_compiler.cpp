@@ -78,6 +78,7 @@ namespace mhs::compiler {
             const auto& domain = definition.domains[domain_id];
             compiled.domains.emplace_back();
             auto& model = compiled.domains.back();
+            model.flow_mode = domain.flow_mode;
             // Compile material properties in ModelDefinition::materials order.
             model.material_table.resize(definition.materials.size());
 
@@ -168,6 +169,72 @@ namespace mhs::compiler {
             }
             compiled.layout.state_count += n;
             compiled.layout.fields.push_back(std::move(temperature));
+
+            if (model.flow_mode == model::FlowMode::Stokes && !fluid.fluid_to_global.empty()) {
+                fluid.face_conditions.assign(model.discrete.faces.size(), core::invalid_id);
+                for (const auto& patch : model.fluid_boundaries) {
+                    mhs::model::FaceId matched = core::invalid_id;
+                    for (const auto id : model.discrete.incident_faces(patch.cell)) {
+                        const auto& face = model.discrete.faces[id];
+                        if (face.exterior() && face.axis == patch.axis && face.bounds == patch.bounds) {
+                            matched = id;
+                            break;
+                        }
+                    }
+                    if (matched == core::invalid_id || fluid.face_conditions[matched] != core::invalid_id)
+                        throw std::invalid_argument(
+                            "staggered Stokes requires each fluid boundary to cover exactly one whole face");
+                    fluid.face_conditions[matched] = static_cast<core::EntityIndex>(patch.condition);
+                }
+                bool has_pressure_boundary = false;
+                for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
+                    const auto& face = model.discrete.faces[id];
+                    const auto i = face.minus == core::invalid_id ? core::invalid_id
+                        : fluid.global_to_fluid[face.minus];
+                    const auto j = face.plus == core::invalid_id ? core::invalid_id
+                        : fluid.global_to_fluid[face.plus];
+                    if (i != core::invalid_id && j != core::invalid_id) {
+                        fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
+                    }
+                    else if (face.exterior() && (i != core::invalid_id || j != core::invalid_id)
+                        && fluid.face_conditions[id] != core::invalid_id) {
+                        const auto& bc = model.fluid_conditions[fluid.face_conditions[id]];
+                        if (std::holds_alternative<model::PressureInlet>(bc)
+                            || std::holds_alternative<model::PressureOutlet>(bc)) {
+                            fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
+                            has_pressure_boundary = true;
+                        }
+                    }
+                }
+                if (!has_pressure_boundary)
+                    throw std::invalid_argument(
+                        "staggered Stokes requires at least one pressure boundary to fix the pressure gauge");
+
+                model::FieldLayout pressure;
+                pressure.domain = static_cast<model::DomainId>(domain_id);
+                pressure.quantity = model::FieldQuantity::Pressure;
+                pressure.support = model::EntitySupport::Cell;
+                for (auto cell : fluid.fluid_to_global) {
+                    pressure.entities.push_back(cell);
+                    pressure.dofs.push_back(static_cast<model::DofId>(compiled.layout.state_count++));
+                }
+                core::detail::checked_sparse_size(compiled.layout.state_count);
+                compiled.layout.fields.push_back(std::move(pressure));
+                for (std::uint32_t axis = 0; axis < 3; ++axis) {
+                    model::FieldLayout velocity;
+                    velocity.domain = static_cast<model::DomainId>(domain_id);
+                    velocity.quantity = model::FieldQuantity::Velocity;
+                    velocity.support = model::EntitySupport::Face;
+                    velocity.component = axis;
+                    for (auto face_id : fluid.velocity_faces)
+                        if (static_cast<std::uint32_t>(model.discrete.faces[face_id].axis) == axis) {
+                            velocity.entities.push_back(face_id);
+                            velocity.dofs.push_back(static_cast<model::DofId>(compiled.layout.state_count++));
+                        }
+                    core::detail::checked_sparse_size(compiled.layout.state_count);
+                    compiled.layout.fields.push_back(std::move(velocity));
+                }
+            }
         }
         // A ROM has algebraic coordinates and physical boundary maps but no
         // Cartesian cell mesh or fabricated material table.

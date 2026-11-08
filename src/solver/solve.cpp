@@ -40,6 +40,9 @@ namespace mhs::solver {
             case SolveOptions::LinearSolverType::Amg:
                 type = mhs::linear::SolverType::Amg;
                 break;
+            case SolveOptions::LinearSolverType::SparseLu:
+                type = mhs::linear::SolverType::SparseLu;
+                break;
             default:
                 throw std::invalid_argument("build_solver_spec: unknown linear_solver");
             }
@@ -198,7 +201,11 @@ namespace mhs::solver {
 
         core::Vector<double> state;
         if (initial_state.empty()) {
-            state.assign(state_count, study.initial_temperature);
+            state.assign(state_count, 0.0);
+            for (const auto& field : compiled.layout.fields)
+                if (field.quantity == model::FieldQuantity::Temperature)
+                    for (const auto dof : field.dofs)
+                        state[dof] = study.initial_temperature;
             for (std::size_t r = 0; r < compiled.rom_domains.size(); ++r) {
                 const auto domain = static_cast<model::DomainId>(compiled.domains.size() + r);
                 const auto& field

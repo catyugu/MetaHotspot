@@ -58,6 +58,7 @@ namespace mhs::model {
 
     struct FomDomain {
         DiscreteMesh discrete;
+        FlowMode flow_mode = FlowMode::Frozen;
 
         mhs::core::Vector<MaterialId> cell_material;
         mhs::core::Vector<MaterialProps> material_table;

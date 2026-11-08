@@ -451,6 +451,16 @@ MHS_API mhs_status_t mhs_model_refine_cartesian_box(mhs_model_t* m, mhs_index_t 
     });
 }
 
+MHS_API mhs_status_t mhs_model_set_flow_mode(mhs_model_t* m, mhs_index_t domain, mhs_flow_mode_t mode)
+{
+    CHECK_NULL(m);
+    MHS_TRY({
+        if (mode != MHS_FLOW_FROZEN && mode != MHS_FLOW_STOKES)
+            throw std::invalid_argument("unknown flow mode");
+        m->def.domains.at(domain).flow_mode = static_cast<mhs::model::FlowMode>(mode);
+    });
+}
+
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression)
 {
     CHECK_NULL(m);
@@ -805,7 +815,11 @@ MHS_API mhs_status_t mhs_compiled_default_state(
     MHS_TRY({
         if (!std::isfinite(initial_temperature) || state_count != c->model.layout.state_count)
             throw std::invalid_argument("initial state size or temperature is invalid");
-        std::fill_n(state, state_count, initial_temperature);
+        std::fill_n(state, state_count, 0.0);
+        for (const auto& field : c->model.layout.fields)
+            if (field.quantity == mhs::model::FieldQuantity::Temperature)
+                for (const auto dof : field.dofs)
+                    state[dof] = initial_temperature;
         for (std::size_t r = 0; r < c->model.rom_domains.size(); ++r) {
             const auto d = static_cast<mhs::model::DomainId>(c->model.domains.size() + r);
             const auto& field

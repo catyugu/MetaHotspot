@@ -174,8 +174,11 @@ namespace mhs::model {
         PortReference a, b;
     };
 
+    enum class FlowMode : std::uint8_t { Frozen, Stokes };
+
     struct FomDomainDefinition {
         MeshSpec mesh;
+        FlowMode flow_mode = FlowMode::Frozen;
         mhs::core::Vector<PortDefinition> ports;
         mhs::core::Vector<VolumeSpec> volumes;
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;

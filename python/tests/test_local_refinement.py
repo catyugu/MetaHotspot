@@ -13,4 +13,4 @@ def test_octree_refinement_uses_public_model_contract():
     compiled = model.compile()
     assert compiled.cell_count == 9
     assert compiled.info.state_count == 9
-    assert np.isclose(compiled.fields.cell_volume.sum(), 2.0)
+    assert np.isclose(np.prod(compiled.fields.cell_max - compiled.fields.cell_min, axis=1).sum(), 2.0)

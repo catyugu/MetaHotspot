@@ -185,6 +185,10 @@ class Model(OwnedHandle):
             ctx="refine_cartesian_box",
         )
 
+    def set_flow_mode(self, mode: int, *, domain: int = 0) -> None:
+        """Select the fluid solution: FROZEN (legacy) or STOKES (coupled)."""
+        self._call("mhs_model_set_flow_mode", domain, int(mode), ctx="set_flow_mode")
+
     def add_variable(self, name: str, expression: str) -> None:
         """Add an expression constant."""
         self._call(
