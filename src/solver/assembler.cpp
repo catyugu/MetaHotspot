@@ -181,6 +181,8 @@ namespace mhs::solver {
             const auto axis = static_cast<std::size_t>(term.axis);
             const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
             const auto row = static_cast<SparseIndex>(term.cell);
+            if (term.condition == core::invalid_id)
+                continue; // Implicit adiabatic face has zero flux.
             const auto trace = evaluate_boundary(model_.library->boundary_conditions[term.condition],
                 boundary_center(model.discrete.cells[term.cell], term), area,
                 (model.discrete.cells[term.cell].size()[axis] / 2), temperature[row], conductivity_[term.cell][axis],
