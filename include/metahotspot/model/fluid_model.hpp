@@ -9,6 +9,10 @@ namespace mhs::model {
     struct FluidTopology {
         core::Vector<CellId> fluid_to_global;
         core::Vector<FluidCellId> global_to_fluid;
+        // Active normal-face velocity supports in a staggered Stokes discretization.
+        core::Vector<FaceId> velocity_faces;
+        // Boundary-condition indices by geometric face, invalid on other faces.
+        core::Vector<core::EntityIndex> face_conditions;
     };
 
     struct FluidBoundaryPatch {

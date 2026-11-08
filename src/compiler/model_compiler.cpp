@@ -11,6 +11,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace mhs::compiler {
     namespace {
@@ -78,6 +79,7 @@ namespace mhs::compiler {
             const auto& domain = definition.domains[domain_id];
             compiled.domains.emplace_back();
             auto& model = compiled.domains.back();
+            model.flow_mode = domain.flow_mode;
             // Compile material properties in ModelDefinition::materials order.
             model.material_table.resize(definition.materials.size());
 
@@ -168,6 +170,71 @@ namespace mhs::compiler {
             }
             compiled.layout.state_count += n;
             compiled.layout.fields.push_back(std::move(temperature));
+
+            if (model.flow_mode == model::FlowMode::Stokes && !fluid.fluid_to_global.empty()) {
+                fluid.face_conditions.assign(model.discrete.faces.size(), core::invalid_id);
+                for (const auto& patch : model.fluid_boundaries) {
+                    mhs::model::FaceId matched = core::invalid_id;
+                    for (const auto id : model.discrete.incident_faces(patch.cell)) {
+                        const auto& face = model.discrete.faces[id];
+                        if (face.exterior() && face.axis == patch.axis && face.bounds == patch.bounds) {
+                            matched = id;
+                            break;
+                        }
+                    }
+                    if (matched == core::invalid_id || fluid.face_conditions[matched] != core::invalid_id)
+                        throw std::invalid_argument(
+                            "staggered Stokes requires each fluid boundary to cover exactly one whole face");
+                    fluid.face_conditions[matched] = static_cast<core::EntityIndex>(patch.condition);
+                }
+                bool has_pressure_boundary = false;
+                for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
+                    const auto& face = model.discrete.faces[id];
+                    const auto minus = face.minus;
+                    const auto i = minus == core::invalid_id ? core::invalid_id : fluid.global_to_fluid[minus];
+                    const auto j = face.plus == core::invalid_id ? core::invalid_id : fluid.global_to_fluid[face.plus];
+                    if (i != core::invalid_id && j != core::invalid_id) {
+                        fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
+                    }
+                    else if (face.exterior() && (i != core::invalid_id || j != core::invalid_id)
+                        && fluid.face_conditions[id] != core::invalid_id) {
+                        const auto& bc = model.fluid_conditions[fluid.face_conditions[id]];
+                        if (std::holds_alternative<model::PressureInlet>(bc)
+                            || std::holds_alternative<model::PressureOutlet>(bc)) {
+                            fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
+                            has_pressure_boundary = true;
+                        }
+                    }
+                }
+                if (!has_pressure_boundary)
+                    throw std::invalid_argument(
+                        "staggered Stokes requires at least one pressure boundary to fix the pressure gauge");
+
+                model::FieldLayout pressure;
+                pressure.domain = static_cast<model::DomainId>(domain_id);
+                pressure.quantity = model::FieldQuantity::Pressure;
+                pressure.support = model::EntitySupport::Cell;
+                for (auto cell : fluid.fluid_to_global) {
+                    pressure.entities.push_back(cell);
+                    pressure.dofs.push_back(static_cast<model::DofId>(compiled.layout.state_count++));
+                }
+                core::detail::checked_sparse_size(compiled.layout.state_count);
+                compiled.layout.fields.push_back(std::move(pressure));
+                for (std::uint32_t axis = 0; axis < 3; ++axis) {
+                    model::FieldLayout velocity;
+                    velocity.domain = static_cast<model::DomainId>(domain_id);
+                    velocity.quantity = model::FieldQuantity::Velocity;
+                    velocity.support = model::EntitySupport::Face;
+                    velocity.component = axis;
+                    for (auto face_id : fluid.velocity_faces)
+                        if (static_cast<std::uint32_t>(model.discrete.faces[face_id].axis) == axis) {
+                            velocity.entities.push_back(face_id);
+                            velocity.dofs.push_back(static_cast<model::DofId>(compiled.layout.state_count++));
+                        }
+                    core::detail::checked_sparse_size(compiled.layout.state_count);
+                    compiled.layout.fields.push_back(std::move(velocity));
+                }
+            }
         }
         // A ROM has algebraic coordinates and physical boundary maps but no
         // Cartesian cell mesh or fabricated material table.
@@ -217,6 +284,95 @@ namespace mhs::compiler {
             compiled.rom_domains.push_back(std::move(rom));
         }
         compile_connections(definition, compiled);
+
+        // Boundary laws on exposed ROM ports are assembled through their
+        // physical trace maps, not through HTC-specific affine ROM operators.
+        // Subdivide each port patch by the ordinary surface-condition regions.
+        for (std::size_t r = 0; r < definition.rom_domains.size(); ++r) {
+            const auto& rom = definition.rom_domains[r];
+            const auto domain_id = static_cast<model::DomainId>(definition.domains.size() + r);
+            using Bounds = std::array<double, 4>;
+            using RegionLaw = std::pair<Bounds, model::BoundaryConditionId>;
+            core::Vector<core::Vector<RegionLaw>> per_port(rom.ports.size());
+            const auto bounds_of = [](const auto& r) -> Bounds { return {r.a_min, r.a_max, r.b_min, r.b_max}; };
+            const auto overlaps = [](const Bounds& a, const Bounds& b) {
+                return a[1] > b[0] && b[1] > a[0] && a[3] > b[2] && b[3] > a[2];
+            };
+            for (const auto& boundary : rom.thermal_boundaries) {
+                const auto condition
+                    = compile_thermal_boundary(boundary.condition, compiled.rom_boundary_conditions, symbols);
+                for (const auto& region : boundary.regions) {
+                    const auto rectangle = bounds_of(region.rectangle);
+                    if (static_cast<unsigned>(region.axis) > 2 || !std::isfinite(region.coordinate)
+                        || !std::all_of(rectangle.begin(), rectangle.end(), [](double v) { return std::isfinite(v); })
+                        || rectangle[0] >= rectangle[1] || rectangle[2] >= rectangle[3])
+                        throw std::invalid_argument("invalid ROM thermal boundary region");
+                    // One declared boundary rectangle may cover multiple
+                    // adjacent ROM ports on the same physical plane.
+                    double covered = 0.0;
+                    for (std::size_t p = 0; p < rom.ports.size(); ++p) {
+                        const auto& port = rom.ports[p];
+                        if (region.axis != port.region.axis || region.coordinate != port.region.coordinate)
+                            continue;
+                        const auto outer = bounds_of(port.region.rectangle);
+                        Bounds intersection {};
+                        intersection[0] = std::max(rectangle[0], outer[0]);
+                        intersection[1] = std::min(rectangle[1], outer[1]);
+                        intersection[2] = std::max(rectangle[2], outer[2]);
+                        intersection[3] = std::min(rectangle[3], outer[3]);
+                        if (!overlaps(intersection, outer))
+                            continue;
+                        for (const auto& connection : definition.connections)
+                            if ((connection.a.domain == domain_id && connection.a.port == p)
+                                || (connection.b.domain == domain_id && connection.b.port == p))
+                                throw std::invalid_argument("ROM thermal boundary overlaps a connected port");
+                        per_port[p].push_back({intersection, condition});
+                        covered += (intersection[1] - intersection[0]) * (intersection[3] - intersection[2]);
+                    }
+                    const double requested = (rectangle[1] - rectangle[0]) * (rectangle[3] - rectangle[2]);
+                    if (std::abs(covered - requested) > 1e-10 * requested)
+                        throw std::invalid_argument("ROM thermal boundary must be covered by exposed ports");
+                }
+            }
+
+            for (std::size_t p = 0; p < rom.ports.size(); ++p)
+                for (std::size_t j = 0; j < rom.ports[p].patches.size(); ++j) {
+                    const auto original = bounds_of(rom.ports[p].patches[j].rectangle);
+                    core::Vector<double> a {original[0], original[1]}, b {original[2], original[3]};
+                    for (const auto& tagged : per_port[p]) {
+                        const auto& region = tagged.first;
+                        if (!overlaps(original, region))
+                            continue;
+                        a.push_back(std::max(original[0], region[0]));
+                        a.push_back(std::min(original[1], region[1]));
+                        b.push_back(std::max(original[2], region[2]));
+                        b.push_back(std::min(original[3], region[3]));
+                    }
+                    auto unique = [](auto& values) {
+                        std::sort(values.begin(), values.end());
+                        values.erase(std::unique(values.begin(), values.end()), values.end());
+                    };
+                    unique(a);
+                    unique(b);
+                    for (std::size_t u = 1; u < a.size(); ++u)
+                        for (std::size_t v = 1; v < b.size(); ++v) {
+                            const double x = (a[u - 1] + a[u]) / 2, y = (b[v - 1] + b[v]) / 2;
+                            auto condition = core::invalid_id;
+                            for (const auto& [region, id] : per_port[p])
+                                if (x >= region[0] && x <= region[1] && y >= region[2] && y <= region[3])
+                                    condition = id; // Last declared law wins.
+                            if (condition != core::invalid_id) {
+                                model::RomBoundaryTerm term;
+                                term.domain = domain_id;
+                                term.port = static_cast<model::PortId>(p);
+                                term.patch = j;
+                                term.condition = condition;
+                                term.bounds = {a[u - 1], a[u], b[v - 1], b[v]};
+                                compiled.rom_boundary_terms.push_back(term);
+                            }
+                        }
+                }
+        }
         return compiled;
     }
 

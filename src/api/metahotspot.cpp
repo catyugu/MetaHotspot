@@ -130,7 +130,11 @@ template <typename Boundary> static void _add_thermal_boundary(
     bp.regions.reserve(n_regions);
     for (size_t i = 0; i < n_regions; ++i)
         bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    m->def.domains.at(domain).thermal_boundaries.push_back(std::move(bp));
+    if (domain < m->def.domains.size())
+        m->def.domains.at(domain).thermal_boundaries.push_back(std::move(bp));
+    else
+        m->def.rom_domains.at(static_cast<std::size_t>(domain) - m->def.domains.size())
+            .thermal_boundaries.push_back(std::move(bp));
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -140,6 +144,8 @@ static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_ty
         return mhs::solver::SolveOptions::LinearSolverType::Pardiso;
     case MHS_SOLVER_AMG:
         return mhs::solver::SolveOptions::LinearSolverType::Amg;
+    case MHS_SOLVER_SPARSE_LU:
+        return mhs::solver::SolveOptions::LinearSolverType::SparseLu;
     }
     throw std::invalid_argument("invalid solver type: " + std::to_string(t));
 }
@@ -165,7 +171,8 @@ MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
     const mhs::solver::SolveOptions defaults {};
     opts->solver_type = defaults.linear_solver == mhs::solver::SolveOptions::LinearSolverType::Pardiso
         ? MHS_SOLVER_PARDISO
-        : MHS_SOLVER_AMG;
+        : defaults.linear_solver == mhs::solver::SolveOptions::LinearSolverType::SparseLu ? MHS_SOLVER_SPARSE_LU
+                                                                                          : MHS_SOLVER_AMG;
     opts->linear_tolerance = defaults.linear_tolerance;
     opts->linear_max_iterations = defaults.linear_max_iterations;
     opts->underrelaxation = defaults.underrelaxation;
@@ -433,6 +440,16 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t do
         };
         mhs::model::MeshSpec mesh {axis(x, nx), axis(y, ny), axis(z, nz)};
         m->def.domains.at(domain).mesh = std::move(mesh);
+    });
+}
+
+MHS_API mhs_status_t mhs_model_set_flow_mode(mhs_model_t* m, mhs_index_t domain, mhs_flow_mode_t mode)
+{
+    CHECK_NULL(m);
+    MHS_TRY({
+        if (mode != MHS_FLOW_FROZEN && mode != MHS_FLOW_STOKES)
+            throw std::invalid_argument("unknown flow mode");
+        m->def.domains.at(domain).flow_mode = static_cast<mhs::model::FlowMode>(mode);
     });
 }
 
@@ -790,7 +807,11 @@ MHS_API mhs_status_t mhs_compiled_default_state(
     MHS_TRY({
         if (!std::isfinite(initial_temperature) || state_count != c->model.layout.state_count)
             throw std::invalid_argument("initial state size or temperature is invalid");
-        std::fill_n(state, state_count, initial_temperature);
+        std::fill_n(state, state_count, 0.0);
+        for (const auto& field : c->model.layout.fields)
+            if (field.quantity == mhs::model::FieldQuantity::Temperature)
+                for (const auto dof : field.dofs)
+                    state[dof] = initial_temperature;
         for (std::size_t r = 0; r < c->model.rom_domains.size(); ++r) {
             const auto d = static_cast<mhs::model::DomainId>(c->model.domains.size() + r);
             const auto& field

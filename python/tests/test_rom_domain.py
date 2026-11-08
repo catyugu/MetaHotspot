@@ -82,14 +82,27 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     assert transient.probes[0].values.size == transient.history_times.size
 
 
-@pytest.mark.parametrize("htc, expected", [(100.0, 100.0), (200.0, 150.0)])
-def test_rom_affine_convection_reuses_modal_operator_family(htc, expected):
+@pytest.mark.parametrize("htc", [100.0, 200.0])
+def test_rom_exposed_port_uses_regular_convection(htc):
     model = Model()
     domain = model.add_rom_domain(np.array([[2.0]]), np.array([[1.0]]), np.array([0.0]))
-    # A=0.01 m², T_inf=300 K; additive term is h*(A*T - A*T_inf).
-    model.add_rom_affine_term(domain, "h", htc, np.array([[0.01]]), np.array([3.0]))
+    model.add_rom_port(
+        domain,
+        "exposed",
+        SurfaceRegion(Axis.Z, 1, 0, 0.1, 0, 0.1),
+        outward_sign=1,
+        patches=[RomPortPatch((0, 0.1, 0, 0.1), 0.005, (0.05, 0.05), [1.0])],
+    )
+    model.add_convection(
+        [SurfaceRegion(Axis.Z, 1, 0, 0.1, 0, 0.1)],
+        str(htc),
+        "300",
+        domain=domain,
+    )
     compiled = model.compile()
-    np.testing.assert_allclose(compiled.assemble().K.toarray(), [[2 + 0.01 * htc]])
+    g = 0.01 / (0.005 + 1.0 / htc)
+    np.testing.assert_allclose(compiled.assemble().K.toarray(), [[2 + g]])
+    np.testing.assert_allclose(compiled.assemble().f, [300 * g])
     result = compiled.solve()
     assert result.converged
-    np.testing.assert_allclose(result.state, [expected], atol=1e-8)
+    np.testing.assert_allclose(result.state, [300 * g / (2 + g)], atol=1e-8)

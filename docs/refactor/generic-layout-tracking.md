@@ -16,7 +16,7 @@
 1. **FOM Domain 是一个计算部件。** 其笛卡尔六面体网格可同时包含固体、流体及其内部固液界面。用户通过几何、材料、边界及求解配置描述流体；**绝不要求用户另建 Fluid Domain**。`dynamic_viscosity` 继续作为识别流体材料的单一材料语义，不恢复 `is_fluid`。
 2. **ROM Domain 与 FOM Domain 是两类内部表示。** ROM 拥有约化状态、动力学及接口映射，不要求伪造内部逐 Cell 网格。可将 ROM 作为部件嵌入 FOM/ROM 组合系统。
 3. **内部与外部耦合分开。** FOM 内的固液共轭传热/流动耦合由 FOM 内部离散装配负责；仅独立 Domain 间的连接使用 `Connection`。内部交错求解也不创建隐式的用户级 Connection。
-4. **网格限制与非匹配处理边界保持明确。** 全阶内部控制体全部是轴对齐六面体；允许局部加细和粗细非共形，不扩展到一般非结构化单元。几何面、通量积分子片、交错速度自由度可以是不同实体。**同一 FOM Domain 内的非匹配网格直接按 TPFA 装配，无需非正交校正；不同 Domain 间的非匹配热界面必须使用 NCC（non-orthogonal correction）校正热流。**
+4. **网格限制与非匹配处理边界保持明确。** 全阶内部控制体全部是轴对齐六面体。本轮 FOM 仍采用单组笛卡尔坐标轴产生的共形网格，**不开发局部笛卡尔八叉加细或域内非共形网格输入**；独立 Domain 的网格允许彼此非匹配。保留未来支持域内非匹配时直接采用 TPFA 的离散规则；不同 Domain 之间的非匹配热界面必须使用 NCC（non-orthogonal correction）校正热流。
 5. **现有用户抽象继续清晰。** `Study` 和命名 `Probe` 归属于可变模型定义；已编译模型保持与定义分离的不可变快照。保留 C ABI 的模型、编译结果、算子、解四种独立拥有型 opaque handle，优先使用整数 Domain/Field/Port/Connection ID，不为每个概念引入生命周期 handle。
 6. **允许破坏接口兼容性。** 不增加兼容别名、`MHS_ABI_VERSION` 或 ABI 版本查询。PTA 外部网格兼容逻辑只在 app 层，不能重新进入内核公共建模契约。
 7. **不保留模型级参考温度。** 最终删除 `ModelDefinition::reference_temperature`、编译后 `Model::reference_temperature`，连同 C ABI / Python 中对应的模型设置与编译信息接口；物性评价和流体边界不能再依赖隐式的全局 `300 K`。
@@ -35,7 +35,7 @@
 
 - 由 `FomDomain` 与 `RomDomain` 的编译后表示组合构成，并保存 Domain 表、`StateLayout`、已编译 Connection 及观测映射。
 - FOM 拥有笛卡尔几何、离散关联、局部材料/物性引用、源与边界投影及内部物理装配元数据。流体单元只是此 FOM 网格的子集。
-- ROM 拥有约化算子（可参数化）、端口与迹/输出映射；其状态自由度无需与任何 `CellId` 一一对应。
+- ROM 拥有约化算子、端口与迹/输出映射；其状态自由度无需与任何 `CellId` 一一对应。**BCI-ROM 的 HTC 面是普通物理端口**：暴露时给表面分配热边界条件，嵌入其他层时由 Connection 耦合，不为 HTC 单独生成或缓存参数化刚度矩阵/载荷向量。
 - 不可变的预处理结果可保存在 CompiledModel；**压力/速度、冻结或实时流量、随时间更新的系数、迭代暂存值和求解器缓存**应按其是否依赖运行条件明确归属 `SolveWorkspace` / `SimulationState`，不得把某次求解状态永久写回可复用的编译模型。温度依赖的黏度和密度保留编译后的物性表达式，求解期间依据对应状态评价。
 - `SourceTerm`、边界投影、基础网格面等数据应各自保留必要语义并消除重复存储；特别不能因合并 `BoundaryFace` 与表面投影记录而丢失一个面被多个条件切分的情况。
 
@@ -43,20 +43,20 @@
 
 - 每个 Field 至少标识 Domain、物理量（T、p、u/v/w、ROM 坐标等）、实体支撑种类、分量、局部 DOF 数量与局部—全局索引映射。
 - `CellId`、`FaceId` 和 `DofId` 在语义上分离。允许场块连续存储，但不得要求所有场恰好以相同 Cell 索引顺序排列。
-- FOM 的温度通常关联固体和流体单元；压力仅关联流体单元；速度在交错拓扑上的独立 DOF 数量由离散与边界消元决定。局部加细时几何面和通量子片不能默认为一对一速度 DOF。
+- FOM 的温度通常关联固体和流体单元；压力仅关联流体单元；速度在交错拓扑上的独立 DOF 数量由离散与边界消元决定。几何面、通量积分片和独立速度自由度的语义保持区分，但本轮不引入局部加细。
 - 允许查询每个 Domain/Field 的状态片段或映射；全局状态长度不再等同于全局 Cell 数。
 
 ### 2.4 Connection 与通用装配
 
 - `Connection` 引用独立 Domain 的命名接口和耦合律，编译阶段生成几何匹配、迹提取与离散传递信息。
-- 对两侧热状态使用迹映射 `T_A^Γ=P_A x_A`、`T_B^Γ=P_B x_B`，连接通量在明确方向/面积权重下由温差或更一般的物理律给出；相反号散布回两侧残差，守恒应是构造性质。
+- 对两侧热状态使用迹映射 `T_A^Γ=P_A x_A`、`T_B^Γ=P_B x_B`，连接通量在明确方向/面积权重下由温差或更一般的物理律给出；相反号散布回两侧残差，守恒应是构造性质。**ROM 端口不能同时施加外部边界条件与域间连接**；未指定条件且未连接的 ROM 端口视为绝热。
 - 支持匹配 FOM–FOM、非匹配 FOM–FOM、FOM–ROM 及 ROM–ROM 的路径。匹配域间热界面沿用相容的 TPFA/界面导热律；**非匹配域间热界面必须在几何重叠与迹映射之外执行 NCC 热流校正**，不能仅用重叠面积和两点串联热阻代替。ROM 端口必须提供实施相应校正所需的迹/梯度信息或等价离散映射，否则应明确报告该连接暂不支持。
 - 装配流程统一为“域内贡献 + 域间贡献”；目标形式允许 `R(x, xdot, t; μ)=0` 与相应线性化。已有 `K/C/f` 可作为热方程和 ROM/线性化检查的明确视图，不强迫非线性流动问题伪装成常系数热系统。
 - 物理场观测与输出通过 Field/Observation 映射恢复；Probe 可以测量 FOM 物理量或由 ROM 输出映射重建的物理量。
 
 ### 2.5 两类非匹配界面的固定处理规则
 
-**域内部（intra-domain）：TPFA。** FOM 中由局部四叉/八叉加细形成的粗细相邻控制体，即使共享面被划分为多个通量子片，也使用按子片面积与面法向导热率构造的 TPFA 传导率：`g_p=A_p/(d_-/k_{n,-}+d_+/k_{n,+})`，其中 `d_±` 为两侧单元中心至公共面平面的法向距离。每个子片热流只计算一次并以相反号装配至相邻单元，保证离散局部守恒。**此路径不引入 NCC、切向梯度重建或域间 Connection。** TPFA 在此类网格上的近似误差通过 GL-06 的独立参考和加密收敛检验，不预设非匹配时与细网格解析解精确一致。
+**域内部（intra-domain）：TPFA，预留规则。** 本轮 FOM 的单组笛卡尔轴网格为共形网格，内部导热仍用 TPFA。若后续单独支持域内非匹配网格，可按每个物理通量子片的面积和两侧法向半距离构造 `g_p=A_p/(d_-/k_{n,-}+d_+/k_{n,+})`，并以相反符号装配两侧控制体。此路径不需要 NCC，也不依赖域间 Connection。**局部加细生成及其 GL-06 验收明确推迟到后续独立需求，本轮不实现、不作为 PR4 完成条件。**
 
 **域之间（inter-domain）：非匹配界面采用 NCC。** 跨 Domain 的匹配热界面使用相容的普通界面传热装配；跨 Domain 的非匹配热界面先建立重叠覆盖及两侧迹/法向导热传递，再对两侧采样位置与共同界面子片的切向偏移引入 NCC 热流修正。可参考 `playground/interface_nc_correction/nc_interface.py` 的延迟修正/非正交 corrector 迭代原型，但具体迭代与线性化实现须由正式求解器设计确定。修正后的同一界面热流以相反号分配给两侧 Domain，必须保持局部与全局能量守恒。**只做 common-patch 重叠投影加 TPFA（零次 NCC corrector）属于对照基线，不能作为 GL-05 的最终验收实现。** 对 FOM–ROM 等连接，NCC 必需的界面信息应通过 ROM 端口映射提供，不得默认跳过校正。
 
@@ -69,6 +69,15 @@
 - **边界条件：** 流体进入计算域所需的入口温度、压力边界逆流时的回流温度必须具有明确物理来源；如果实际出现逆流但缺少温度条件，应给出清晰诊断，不使用未声明的 `300 K` 默认值。`Study.initial_temperature` 也不应偷偷作为边界回流温度。外部 Robin 环境温度属于独立边界数据，不受此次删除影响。
 - **公开接口：** 删除 `mhs_model_set_reference_temperature()`、`mhs_compiled_info_t.reference_temperature`、`Model.set_reference_temperature()` 和 `CompiledInfo.reference_temperature`；不保留兼容别名。迁移应覆盖 C ABI、Python 和依赖这些字段的调用方。
 - **实施顺序：** 首先在 FOM 所有权收敛时清理静态数据依赖；字段和公开接口的最终删除必须与流体预处理改为运行初始化相协调，保持现有冻结流场回归可用。最迟在流动求解/公开契约收尾阶段完成。
+
+### 2.7 BCI-ROM 的 HTC 面统一采用普通热边界与端口耦合
+
+参考 Codecasa 等，*Connecting MOR-based Boundary Condition Independent Compact Thermal Models*（THERMINIC 2017），第 3–4 页式 (10)–(14)。该论文将 ROM 的内部动力学与外部热传递分离，使用模态迹映射、边界热导和界面热流平衡构造可互连模型。非匹配跨域界面仍按 MetaHotspot 的 NCC 规则装配。
+
+- **统一的用户语义：** ROM 的 HTC 面与普通热端口一致。暴露时调用现有 `mhs_model_add_dirichlet`、`mhs_model_add_neumann`、`mhs_model_add_convection`，Python 调用同名 `Model.add_*` 并指定 ROM `domain`；嵌入其他层时调用普通 `Connection`。连接与外部热边界在同一端口互斥；未覆盖的暴露部分绝热，不添加单独的 ROM-HTC 参数类型。
+- **约化热流装配：** 端口子片面积为 `A`，半热阻 `r>0`（m²K/W），内部物理迹 `theta(z)=w^T z+t0`。对于线性 Robin 边界，消元实际边界温度得到有效导热 `g=A/(r+1/h)`（`h>0`），对 ROM 贡献 `K_r += g w w^T`，`f_r += g w (T_inf - t0)`。Dirichlet、Neumann 复用同一边界消元机制；温度相关边界参数在运行时按状态评价。跨域连接则采用两侧端口迹与同一守恒界面热流的转置散布。
+- **与仿射参数化的关系：** 在固定基和相同离散模型下，显式组装边界与预先推导的 `K_r(h), f_r(h)` 代数等价；这不保证截断基对任意 HTC 的 FOM 响应无误差。ROM 内部 `K_r,C_r,f_r` 不得重复包含运行时施加的同一外部 HTC 项；其他内部物性/源的通用仿射项可保留，不能将它设为 HTC 面的默认处理路径。
+- **验收：** 复用同一 ROM 基底与端口，分别施加不同 HTC/环境温度及连接独立 FOM/ROM 层；检验边界面积切分、刚度和热载荷贡献、重复连接拒绝、稳态/瞬态解、界面守恒和公开 C/Python 路径。
 
 ## 3. 主集成模型 GL-01：带单域内液冷的层状封装
 
@@ -127,12 +136,12 @@ D 初步使用 `h∈[50,2000] W/(m²·K)`，独立验收点可以选择 `h={100,
 | **GL-03** | 三维矩形直通道的层流压力驱动与充分发展速度剖面 | 交错速度 DOF、压力 DOF、速度面定向、离散质量残差、压力参考与压降；与矩形管 Poiseuille 解或独立收敛参考比较 | 流动方程 |
 | **GL-04** | GL-01 A/B 匹配 FOM–FOM 分域 | 装配系统在置换后等价；界面通量符号相反且面积不重计；稳态与瞬态、Probe 一致 | Connection |
 | **GL-05** | GL-01 上部改为 `6×4×2=48` Cell；下部仍为 `12×8×8=768` Cell | 跨域 `z=4 mm` 为 96 对 24 的非匹配界面；必须执行 NCC 热流校正；检查覆盖、保常数、两侧热流守恒、corrector 收敛及相对独立参考的误差，并与未经 NCC 的 TPFA 对照 | 非匹配 Connection |
-| **GL-06** | 同一 FOM 内的局部四叉/八叉加细界面 | 仅用 TPFA 装配内部粗细邻接；检查子片面积、面法向传导率、重复/漏计通量、局部守恒与独立参考下的网格收敛；确认不调用 NCC；**几何子片与速度 DOF 不强制一对一** | 局部加细 |
-| **GL-07** | GL-01 C/D 的 ROM 域接入 | 满秩表示的代数/瞬态等价；截断 ROM 的连接热流、Probe、热点误差；不同外部边界下复用 | ROM |
+| **GL-06（延期）** | 单 FOM 内部局部非共形加细 | 本轮不实现局部八叉加细输入，不运行该项验收，也不作为重构关闭条件；保留未来域内 TPFA 的原则 | 本轮范围外 |
+| **GL-07** | GL-01 C/D 的 ROM 域接入与暴露 ROM HTC 面 | 满秩表示的代数/瞬态等价；截断 ROM 的连接热流、Probe、热点误差；同一端口暴露时使用普通 Robin/Neumann/Dirichlet 边界、嵌入时使用 Connection，并检查多 HTC 的投影等价和无重复计热 | ROM |
 | **GL-08** | 同一 FOM 中温度相关流体黏度与热-流反馈，采用固定压差工况 | `T→μ/ρ→(u,p)→热对流→T` 反馈真正参与迭代；不沿用编译时冻结流量；质量、能量残差与耦合收敛 | 双向耦合 |
 | **GL-09** | 同一 GL-01 模型经纯 C 客户端与 Python 接口完成构造、编译、运行和读取 | Field/Domain 信息、索引/shape、所有权、异常回滚、重复求解、ROM 物理观测的一致性 | 各阶段 |
 
-GL-03 的理论参考必须明确入口发展段的处理与壁面条件，不能直接把有限长入口流道的数值解当作充分发展解析解。GL-05、GL-06 可以使用制造解或更细独立离散作收敛检验；非匹配离散**不要求与原匹配粗网格逐 DOF 一致**。GL-05 应报告 NCC 迭代残差、修正后界面通量与未校正 TPFA 的误差对比；GL-06 应验证内部 TPFA 的网格收敛与守恒，不能将“未启用 NCC”当作失败。
+GL-03 的理论参考必须明确入口发展段的处理与壁面条件，不能直接把有限长入口流道的数值解当作充分发展解析解。GL-05 使用制造解或更细独立离散作收敛检验；跨域非匹配离散**不要求与原匹配粗网格逐 DOF 一致**。GL-05 应报告 NCC 迭代残差、修正后界面通量与未校正 TPFA 的误差对比。GL-06 延期且不计入本轮验收。
 
 ## 6. 验收量、容差和错误定位
 
@@ -146,7 +155,7 @@ GL-03 的理论参考必须明确入口发展段的处理与壁面条件，不�
 ### 6.2 守恒与独立物理量
 
 - **质量守恒：** 对每个流体控制体计算 `r_m(c)=Σ_{f∈∂c}ṁ_f`，同时计算全局入口与出口质量流量差；既检查局部最大残差，也检查归一化残差。
-- **连接热守恒：** 采用统一法向约定，验证 `Q_{Γ,A}+Q_{Γ,B}≈0`，检查界面覆盖面积不重叠、不丢失。跨域非匹配 GL-05 必须对 NCC 修正后的热流执行两侧平衡检查，并记录校正收敛及独立参考误差；单域内部非匹配 GL-06 则检查 TPFA 子片热流逐片反号守恒，无 NCC 迭代。
+- **连接热守恒：** 采用统一法向约定，验证 `Q_{Γ,A}+Q_{Γ,B}≈0`，检查界面覆盖面积不重叠、不丢失。跨域非匹配 GL-05 必须对 NCC 修正后的热流执行两侧平衡检查，并记录校正收敛及独立参考误差。
 - **稳态能量：** 在基准常物性、外边界绝热（顶部对流及流动开口除外）时，检查 `P_source − (H_out−H_in) − Q_ambient ≈ 0`；应按实际离散包含的能量项处理界面储能、入口热流及流体物性，避免遗漏模型中存在的通量。
 - **瞬态能量：** 检查储能变化与热源、出口入口焓流和外部热交换的时间积分收支，并说明采用的时间积分一致性及误差容限。
 - **物理观测：** 热点温度、上部铜层 Probe、入口/出口温度、界面热流、必要时压力降和流量；ROM 增加边界迹及输出重建误差。
@@ -165,7 +174,7 @@ GL-03 的理论参考必须明确入口发展段的处理与壁面条件，不�
 ## 7. 实施与运行策略
 
 1. **阶段 I — CompiledModel / FieldLayout：** 保持单体热解可运行；启用 GL-01 A、GL-02 的布局部分及 GL-09；用现有单域热装配、流体质量守恒和 Python 测试回归，不额外添加无关测试。隔离模型级参考温度的现有依赖，为运行态物性评价迁移做准备。
-2. **阶段 II — 域间 Connection：** 启用 GL-04，随后 GL-05；匹配连接检查分域等价，非匹配连接必须落地 NCC 热流校正及对应收敛/守恒验收。支持局部加细后再启用 GL-06，确认单域内部仍只用 TPFA。
+2. **阶段 II — 域间 Connection：** 启用 GL-04，随后 GL-05；匹配连接检查分域等价，非匹配连接执行 NCC 热流校正及对应收敛/守恒验收。局部加细与 GL-06 不在本轮实施范围内。
 3. **阶段 III — ROM Domain：** 启用 GL-07，先验证满秩再测试截断与参数变化；复用 `playground/simple_erom_case1/`、`playground/connecting_mor_models/` 的已有数值原型与参考。
 4. **阶段 IV — 通用耦合与交错流体：** 启用 GL-03 和 GL-08；将流场状态与编译后常量分离，验证真正的双向传热反馈；落实参考温度的模型级移除与 C ABI/Python 同步瘦身。
 5. **每次结构改动后的原有回归：** 现有 CTest、Python 测试和非 archived 的 playground 示例保持可运行；HotSpot 复现与 PTA app 验证不能因核心 API 改造而静默失效。
@@ -187,14 +196,72 @@ tests/
     ...              # 集成测试：跨模块、模型到求解的完整链路
 ```
 
-- **单元测试（`tests/unit/`）：** 针对单个可隔离的算法或数据结构，如网格面关联、TPFA 子片通量、Field/StateLayout 索引、投影权重、ROM 矩阵变换、NCC 校正算子等；允许依赖必要的内部头文件或测试辅助构造，但不应为了单测而暴露不必要的 SDK 接口。
-- **集成测试（`tests/integration/`）：** 验证多组件真实协作：模型定义→编译→装配→稳态/瞬态求解→Probe/输出，涵盖 GL-01 A/B/C/D、GL-02 至 GL-09 中的端到端部分。优先经公开 C++ SDK / C ABI 路径驱动；GL-09 还需 Python 独立入口的对应测试。内部算法的孤立性质不作为集成测试的替代。
+- **单元测试（`tests/unit/`）：** 针对单个可隔离的算法或数据结构，如网格面关联、现有 TPFA 通量、Field/StateLayout 索引、投影权重、ROM 矩阵变换、NCC 校正算子等；允许依赖必要的内部头文件或测试辅助构造，但不应为了单测而暴露不必要的 SDK 接口。
+- **集成测试（`tests/integration/`）：** 验证多组件真实协作：模型定义→编译→装配→稳态/瞬态求解→Probe/输出，涵盖 GL-01 A/B/C/D、GL-02–05 与 GL-07–09 中的端到端部分（GL-06 延期）。优先经公开 C++ SDK / C ABI 路径驱动；GL-09 还需 Python 独立入口的对应测试。内部算法的孤立性质不作为集成测试的替代。
 - **CMake 配置：** 保留现有 `MHS_BUILD_TESTS` 总开关，在其下提供独立的 `MHS_BUILD_UNIT_TESTS` 与 `MHS_BUILD_INTEGRATION_TESTS` 选项；`tests/CMakeLists.txt` 根据选项分别 `add_subdirectory(unit)`、`add_subdirectory(integration)`。两个子目录各自建立测试可执行目标（例如 `mhs_unit_tests` / `mhs_integration_tests`），并独立注册 GoogleTest 发现逻辑；关闭其中一类时不应编译或注册该类测试。默认顶层开发配置启用两类测试，仍允许分别关闭。
 - **CTest 分类：** 为两类测试分别赋予 `unit` / `integration` 标签（例如在 `gtest_discover_tests(... PROPERTIES LABELS ...)` 中设置），确保 `ctest -L unit`、`ctest -L integration` 可以分别运行；名称前缀建议 `mhs.unit.` 和 `mhs.integration.`，但前缀不能代替标签或构建开关。
 - **范围边界：** `apps/metahotspot/tests/` 的前端/CLI 测试和 `python/tests/` 的绑定测试暂保留各自构建及测试入口，按其实际职责参与系统级回归；本条要求明确针对顶层 `tests/`。如后续统一测试组织，应保留上述独立构建和分类能力，不能重新混入一个目标。
 - **分阶段落实：** 第一阶段的 Model/Layout PR 内完成 `tests/` 结构迁移与构建选项分离，保持现有测试覆盖；第二至第四阶段将各 GL 端到端算例放入 `tests/integration/`，相应离散算子/布局测试放入 `tests/unit/`。CI 对每个阶段性 PR 分别执行两类小规模确定性测试；大型性能验证继续使用独立工作流。
 
 CI 采用小规模、固定种子的确定性端到端验收；性能/规模验证在单独的手动或专用工作流中运行 30–50 万 DOF 案例，记录建模/编译、峰值内存、装配、线性求解与 ROM 接口耦合开销。大型生成的 `.json`、`.csv`、网格场及矩阵结果应存放在忽略目录或 CI artifacts，**不提交到仓库**；如需数值金标准，仅保留有来源、少量关键标量、容差及复现命令。
+
+### 7.2 本轮第四阶段 PR 范围调整（2026-11-08）
+
+PR4 `refactor/generic-multiphysics` 专注于通用多场布局、压力与交错速度状态、流体守恒方程、温度相关物性反馈、双向热流耦合、C ABI/Python 统一及 GL-03/GL-08/GL-09 验收。**不新增 `CartesianRefinement`、八叉加细的 C/Python 建模入口或域内非共形网格构造器。** GL-06 在本轮明确延期；保留域内 TPFA、域间非匹配 NCC 的物理原则。
+
+### 7.3 PR4 多物理求解与公开接口验证记录（2026-11-08）
+
+- **方程与布局：** Stokes 模式将单元中心压力、面法向速度及 FOM 单元温度作为独立 DOF；压力方程保持零容量，速度具有惯性容量。默认 Steady 初态先求水力子系统；热方程以当前流量装配上风焓通量，随温度重评估密度、黏度及能量算子。Frozen flow 保留原有路径。Stokes 使用非 SPD 的 SparseLU；修复了 Eigen 在 `analyzePattern()` 后过早查询 `info()` 的 Debug 断言。
+- **独立物理参考：** `GenericLayout.StaggeredStokesRectangularPoiseuilleConvergesToAnalyticDuctFlow` 对固定压差、定物性、单位正方形截面直通道使用独立 Fourier 级数参考，对 4×4 与 8×8 截面比较中间面速度场的面积加权误差，要求加密后误差至少下降 20%。这项检验与质量守恒残差测试分开，防止仅通过自洽离散残差掩盖速度剖面错误。
+- **稳态、瞬态与反馈：** `StaggeredStokesPressureAndVelocitySatisfyConservativeContinuity` 检查各流体单元质量平衡和压力零容量；`StaggeredStokesThermalFeedbackUpdatesViscosityAndMassFlux` 采用固定压差和温度相关黏度，检验加热后流量变化及同一编译快照的复用；`TransientStokesKeepsPressureAlgebraicAndConservesMass` 在各输出时刻检查压力代数约束和质量残差。
+- **公开接口：** 纯 C 集成客户端及 Python 绑定测试分别经 Model→Compiled→FieldLayout→Solve→Solution 路径构造交错 Stokes 流道，检查状态数量、压力/速度实体支撑、面速度值及重复求解。Python `SolveOptions` 补齐 SparseLU 名称映射。
+- **自动回归证据：** GitHub Actions `Build and package` 运行 [#42479552655](https://github.com/catyugu/MetaHotspot/actions/runs/42479552655) 的 GCC Release、Clang Debug、Clang Sanitizer、macOS、MSVC、ClangCL、Linux/macOS/Windows wheels 和六组 Python 3.10/3.14 jobs 均通过；该运行只有新解析解测试的 clang-format 排版检查失败，随后在独立最终提交修正格式并重新验证。
+- **本地收尾：** 非 archived `playground/` 与 GL-01 C/Python 生命周期的补充验收已完成，记录见第 7.4 节。局部八叉加细 GL-06 维持延期。
+
+### 7.4 PR4 本地最终验收（2026-11-08）
+
+验证代码提交为 `bfa89b1b65c76597c606ce1ace5d3f6ff7e312e9`。本地 Linux x86-64、GCC 14.2、Release、Python 3.12.14；所有 Python 入口使用仓库 `python/` 与同一次本地编译的 `libmhs_c_api.so`。NumPy 2.5.4、SciPy 1.18.1、PyAMG 5.4.1；`OMP_NUM_THREADS=2`、`OPENBLAS_NUM_THREADS=2`、`MPLBACKEND=Agg`。两路独立进程并行运行，因此表中耗时只用于定位日志，不作为性能对比。
+
+**活动 playground。** 按非 archived 目录内所有含 `__main__` 的 Python 入口执行，共 13 项；均使用默认网格、默认工况与默认时间窗，未通过缩小模型或仅导入模块代替实际求解。以下命令在仓库根目录使用 `PYTHONPATH=python python <入口>` 运行，均正常退出：
+
+| 入口 | 耗时（s） |
+| --- | ---: |
+| `playground/bci_rom_testcase1/experiments/extrapolation.py` | 84.63 |
+| `playground/bci_rom_testcase1/reproduce_case1.py` | 94.56 |
+| `playground/connecting_mor_models/experiments/pop.py` | 44.69 |
+| `playground/connecting_mor_models/experiments/simple_erom.py` | 19.24 |
+| `playground/connecting_mor_models/experiments/test_contour_elements.py` | 0.62 |
+| `playground/connecting_mor_models/experiments/transfer_boundary_basis.py` | 2.57 |
+| `playground/connecting_mor_models/experiments/transfer_boundary_enrichment.py` | 5.89 |
+| `playground/hotspot_example2_reproduction/hotspot_example2.py` | 39.66 |
+| `playground/interface_nc_correction/run_study.py` | 93.00 |
+| `playground/interface_nc_correction/showcase.py` | 13.73 |
+| `playground/simple_erom_case1/demonstrate_current_erom.py` | 0.83 |
+| `playground/simple_erom_case1/run_erom_attach.py` | 3.43 |
+| `playground/simple_erom_case1/stress_erom_attach.py` | 43.76 |
+
+EROM stress 的 13 个子工况全部完成；同时检查脚本内部捕获异常后的汇总，均无 `error` 项，浮点指标均有限，最大接口热流不平衡为 `3.87e-9 W`。HotSpot 原始 35,400 单元模型完成稳态和 1 s 瞬态，31 个 Probe 各 101 个输出。BCI reproduction 使用 122,400 单元，PoP 使用默认 `--nxy 43 --nz 36`（102,500 个有效自由度）；NCC study 执行默认全部网格变体，细参考为 542,720 单元。
+
+这里验收的是现有研究程序在新 SDK 上完整运行、输出有限且无异常；保留其原有 ROM 近似误差报告，不将研究程序正常退出解释为额外的统一误差认证。模型库模块由这些入口实际调用，不单独把无主程序的模块计作可执行案例。`run_study.py --refine` 等非默认额外扫描未作为第二个入口计数。
+
+**GL-09 同模型与生命周期。** 临时纯 C 客户端复用 `tests/integration/test_c_layout.c` 的完整 GL-01 构造，经公开 C ABI 导出状态、时间、全历史、四个 Probe 及全部 Field 元数据/实体/DOF 映射；Python 独立使用 `python/tests/test_generic_layout.py::package` 构造同模型。比较 Frozen（960 温度 DOF）与 Stokes（960 温度 + 48 压力 + 96 面速度，共 1104 DOF）两种模式：
+
+| 运行 | 历史 shape（Frozen / Stokes） | C/Python 全状态、时间、Probe 最大差 |
+| --- | --- | ---: |
+| 默认稳态 | `(1,960)` / `(1,1104)` | 0 |
+| 300 K 开始的 2 s 瞬态，0.1 s 输出 | `(21,960)` / `(21,1104)` | 0 |
+| 显式初始温度 315 K、SparseLU、0.2 s 瞬态 | `(3,960)` / `(3,1104)` | 0 |
+| 同一编译模型重复默认稳态 | `(1,960)` / `(1,1104)` | 0 |
+
+逐字段比较 Domain、quantity、support、component、实体与全局 DOF 映射；映射为 `uint32`，状态与历史为 `float64`，映射合并恰好单射覆盖全局状态。编译后修改定义的默认 Study，再销毁定义，已有编译快照仍按原 Study 求解；读取结果前销毁编译快照，C Solution 与 Python 自有数组仍有效。不同 Study/初值/求解器交替使用，输入 NumPy 初值不被改写；重复稳态结果不变。非法 Domain/Field、错误状态尺寸、缺失连接、重复连接和缺失压力基准均拒绝；编译失败不产生半成品句柄，失败后已有快照仍可求解。
+
+Stokes 的零时刻输出遵循既有 DAE 一致初始化：本例显式 315 K 场最大调整 `6.017870226742161e-4 K`，C/Python 完全一致，调用方初值数组保持原值；Frozen 正容量对角系统保留给定初温。本次没有将这两种初始化语义混作同一检查。
+
+另以公开 C/Python 路径构造同一个 FOM–ROM 连接，使用非恒等物理观测 `T_probe=2z+5`：稳态坐标 `[295,285]`，ROM Probe 为 575 K，连接热流为 10 W；0.5 s 瞬态三个输出与稳态的 C/Python 状态、时间和 Probe 最大差均为 0。模型及编译结果销毁后仍可读结果，且缺失/重复连接编译失败后原快照可复用。此项与既有 ROM 端到端回归共同覆盖物理观测映射，避免将模态坐标直接当作观测温度。
+
+**已有回归。** `ctest --test-dir build --output-on-failure -j2`：103/103；`PYTHONPATH=python python -m pytest python/tests -q`：37/37；`python run_cases.py`：全部 PTA 场及 Probe 对照满足原有阈值。构建命令为 `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` 与 `cmake --build build --parallel 4`。本地收尾未修改生产代码或新增永久测试，临时导出客户端、原始日志、二进制数组及数值结果留在忽略的 `.cache/pr4-local/` / playground 输出目录，均不提交。此前同一代码提交的跨平台 CI 为 [#42479998679](https://github.com/catyugu/MetaHotspot/actions/runs/42479998679)，16/16 jobs 成功。
+
+以上两项 PR4 遗留验收已通过。本文整体关闭仍按第 8 节执行，目标分支合并后的验证及文档归档不由本地工作分支验收代替。
 
 ## 8. 关闭清单（全部完成后关闭本临时文档）
 
@@ -203,12 +270,12 @@ CI 采用小规模、固定种子的确定性端到端验收；性能/规模验�
 - [ ] 已删除 ModelDefinition/编译后 Model 的 `reference_temperature` 及 C ABI/Python 关联接口；冻结流场与完全耦合流场按运行温度评价物性，入口/逆流温度边界具有明确来源，没有隐藏的模型级默认温度。
 - [x] 单 FOM GL-01 A 与 GL-02 的现有稳态、瞬态和流体回归通过。
 - [x] Connection 支持匹配 FOM–FOM，GL-04 的代数等价与守恒通过。
-- [ ] 跨 Domain 非匹配连接 GL-05 已实现 NCC 热流校正并通过修正收敛、守恒及参考误差验收；单 FOM 内非匹配 GL-06 使用 TPFA 且无需 NCC，具备验证结果或明确、已接受的范围结论。
-- [ ] ROM Domain 可以完整连接；GL-07 满秩等价和截断误差验收通过。
+- [ ] 跨 Domain 非匹配连接 GL-05 已实现 NCC 热流校正并通过修正收敛、守恒及参考误差验收。GL-06 已明确延期，不能因本轮未实现而阻止关闭本文。
+- [ ] ROM Domain 可以完整连接；GL-07 满秩等价和截断误差验收通过；BCI-ROM HTC 面暴露时走普通热边界、嵌入时走 Connection，无专用 HTC 参数矩阵或重复装配。
 - [ ] 交错流体与双向热流耦合支持落地，GL-03 / GL-08 验收通过。
-- [ ] C ABI / Python 的 GL-09 端到端与生命周期验收通过；无 ABI 兼容冗余或新的不必要 handle。
+- [x] C ABI / Python 的 GL-09 端到端与生命周期验收通过；无 ABI 兼容冗余或新的不必要 handle。
 - [x] `tests/` 已迁移为 `unit/` 和 `integration/` 两个目录、独立 CMake 测试目标及 `MHS_BUILD_UNIT_TESTS` / `MHS_BUILD_INTEGRATION_TESTS` 开关；CTest 标签和按类运行可用，关闭任一类不会编译/注册该类测试。
-- [ ] 当前已有的测试、非 archived playground 与相关 app 回归通过；不同平台构建/安装验证达到项目既定标准。
+- [x] 当前已有的测试、非 archived playground 与相关 app 回归通过；不同平台构建/安装验证达到项目既定标准。
 - [ ] 关键设计约束和必要的长期文档已迁入正式架构文档；剩余风险/不支持功能有明确记录。
 - [ ] **在最终收尾提交中将本文件状态改为 `CLOSED`，并归档或删除它。**
 
@@ -311,8 +378,9 @@ GL-09：纯 C 客户端覆盖多域构造、缺失连接的失败回滚、编译
 完成对应流程。原有 PTA 稳态／瞬态场及 Probe 对照保持通过。
 
 范围：本 PR 支持独立 FOM 的固体热端口；域内部仍可包含完整液冷流道。
-跨域流动、ROM、局部加细输入及 GL-06、交错流体与双向反馈按后续阶段
-推进。GL-05 已实现，含 GL-06 的联合关闭项继续保持未勾选；文档保持 OPEN。
+跨域流动、ROM、局部加细输入及 GL-06、交错流体与双向反馈按当时计划
+推进。**2026-11-08 后续范围变更：局部加细输入及 GL-06 不再纳入本轮重构。**
+GL-05 已实现；文档继续保持 OPEN，直到其余阶段验收完成。
 
 本地最终回归：94 项 CTest、32 项 Python 测试及 PTA 案例对照全部通过；
 clang-format / ruff 检查通过。安装后的 SDK 已通过独立双域 C++ 消费工程；

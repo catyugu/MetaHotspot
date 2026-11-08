@@ -124,6 +124,7 @@ _CORE_FUNC_SIGS = [
         I32,
         [P(MhsModel), ctypes.c_uint32, Size, P(F64), Size, P(F64), Size, P(F64)],
     ),
+    ("mhs_model_set_flow_mode", I32, [P(MhsModel), ctypes.c_uint32, I32]),
     ("mhs_model_add_variable", I32, [P(MhsModel), Text, Text]),
     (
         "mhs_model_add_material",

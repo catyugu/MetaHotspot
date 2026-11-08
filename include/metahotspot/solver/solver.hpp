@@ -17,7 +17,7 @@ namespace mhs::solver {
     /// Defaults are defined here — C API and Python convert from this struct.
     struct SolveOptions {
         // Linear solver
-        enum class LinearSolverType : int { Pardiso, Amg };
+        enum class LinearSolverType : int { Pardiso, Amg, SparseLu };
         LinearSolverType linear_solver = LinearSolverType::Amg;
         double linear_tolerance = 1e-8;
         int linear_max_iterations = 1000;

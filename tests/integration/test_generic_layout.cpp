@@ -280,3 +280,143 @@ TEST(GenericLayout, PartialPortsPreserveExternalBoundarySubdivisions)
         EXPECT_NEAR(remaining, 0.72, 1e-14);
     }
 }
+
+TEST(GenericLayout, StaggeredStokesPressureAndVelocitySatisfyConservativeContinuity)
+{
+    using namespace mhs::model;
+    auto d = channel();
+    d.domains[0].flow_mode = FlowMode::Stokes;
+    d.domains[0].fluid_boundaries[0].condition = PressureInlet {1.0, 300};
+    d.domains[0].fluid_boundaries[1].condition = PressureOutlet {0.0, 300};
+    const auto compiled = mhs::compiler::build_model(d);
+    ASSERT_EQ(compiled.layout.fields.size(), 5u);
+    ASSERT_EQ(compiled.layout.fields[1].quantity, FieldQuantity::Pressure);
+    ASSERT_EQ(compiled.layout.fields[2].support, EntitySupport::Face);
+    ASSERT_EQ(compiled.layout.fields[1].dofs.size(), 2u);
+    const auto solution = mhs::solver::solve(compiled);
+    ASSERT_TRUE(solution.converged);
+    const auto& velocity = compiled.layout.fields[2];
+    ASSERT_EQ(velocity.dofs.size(), 3u);
+    for (const auto dof : velocity.dofs)
+        EXPECT_GT(solution.state[dof], 0);
+    const auto ops = mhs::solver::assemble_thermal(compiled, solution.state, 0.0);
+    for (const auto dof : compiled.layout.fields[1].dofs) {
+        double residual = -ops.f[dof];
+        for (auto p = ops.K.row_ptr()[dof]; p < ops.K.row_ptr()[dof + 1]; ++p)
+            residual += ops.K.values()[p] * solution.state[ops.K.col_idx()[p]];
+        EXPECT_NEAR(residual, 0.0, 1e-9);
+        EXPECT_DOUBLE_EQ(ops.C.coeff(dof, dof), 0);
+    }
+}
+
+TEST(GenericLayout, StaggeredStokesThermalFeedbackUpdatesViscosityAndMassFlux)
+{
+    using namespace mhs::model;
+    auto d = channel();
+    d.domains[0].flow_mode = FlowMode::Stokes;
+    d.domains[0].fluid_boundaries[0].condition = PressureInlet {1, 300};
+    d.domains[0].fluid_boundaries[1].condition = PressureOutlet {0, 300};
+    const auto cold = mhs::compiler::build_model(d);
+    const auto first = mhs::solver::solve(cold);
+    ASSERT_TRUE(first.converged);
+    d.sources = {"5"};
+    d.domains[0].volumes[0].source = 0;
+    const auto heated = mhs::compiler::build_model(d);
+    const auto second = mhs::solver::solve(heated);
+    ASSERT_TRUE(second.converged);
+    const auto& face = heated.layout.fields[2];
+    ASSERT_EQ(face.dofs.size(), 3u);
+    const double cold_flow = first.state[face.dofs[1]];
+    const double hot_flow = second.state[face.dofs[1]];
+    EXPECT_GT(second.state[heated.layout.fields[0].dofs[0]], first.state[cold.layout.fields[0].dofs[0]]);
+    EXPECT_LT(hot_flow, cold_flow);
+    // Neither nonlinear solve may write its changing material properties
+    // or velocity/pressure state into the immutable compiled model.
+    const auto repeated = mhs::solver::solve(cold);
+    ASSERT_TRUE(repeated.converged);
+    EXPECT_NEAR(repeated.state[face.dofs[1]], cold_flow, 1e-9);
+}
+
+TEST(GenericLayout, TransientStokesKeepsPressureAlgebraicAndConservesMass)
+{
+    using namespace mhs::model;
+    auto definition = channel();
+    definition.domains[0].flow_mode = FlowMode::Stokes;
+    definition.domains[0].fluid_boundaries[0].condition = PressureInlet {1, 300};
+    definition.domains[0].fluid_boundaries[1].condition = PressureOutlet {0, 300};
+    auto compiled = mhs::compiler::build_model(definition);
+    auto study = compiled.study;
+    study.type = StudyType::Transient;
+    study.duration = 0.2;
+    study.output_interval = 0.1;
+    const auto solution = mhs::solver::solve(compiled, study);
+    ASSERT_TRUE(solution.converged);
+    ASSERT_EQ(solution.snapshot_times.size(), 3u);
+    const auto n = compiled.layout.state_count;
+    ASSERT_EQ(solution.snapshot_states.size(), 3 * n);
+    for (std::size_t step = 0; step < solution.snapshot_times.size(); ++step) {
+        const auto time = solution.snapshot_times[step];
+        const std::span<const double> state(solution.snapshot_states.data() + step * n, n);
+        const auto ops = mhs::solver::assemble_thermal(compiled, state, time);
+        for (const auto dof : compiled.layout.fields[1].dofs) {
+            EXPECT_DOUBLE_EQ(ops.C.coeff(dof, dof), 0);
+            double continuity = -ops.f[dof];
+            for (auto entry = ops.K.row_ptr()[dof]; entry < ops.K.row_ptr()[dof + 1]; ++entry)
+                continuity += ops.K.values()[entry] * state[ops.K.col_idx()[entry]];
+            EXPECT_NEAR(continuity, 0.0, 1e-8);
+        }
+    }
+}
+
+TEST(GenericLayout, StaggeredStokesRectangularPoiseuilleConvergesToAnalyticDuctFlow)
+{
+    using namespace mhs::model;
+    constexpr double pi = 3.14159265358979323846;
+    double previous_error = 0;
+    for (const unsigned n : {4u, 8u}) {
+        auto definition = channel();
+        auto& domain = definition.domains[0];
+        domain.flow_mode = FlowMode::Stokes;
+        domain.mesh.y_vertices.clear();
+        domain.mesh.z_vertices.clear();
+        for (unsigned i = 0; i <= n; ++i) {
+            const double coordinate = static_cast<double>(i) / n;
+            domain.mesh.y_vertices.push_back(coordinate);
+            domain.mesh.z_vertices.push_back(coordinate);
+        }
+        definition.materials[0].value.dynamic_viscosity = "1";
+        domain.fluid_boundaries[0].condition = PressureInlet {2, 300};
+        domain.fluid_boundaries[1].condition = PressureOutlet {0, 300};
+        const auto compiled = mhs::compiler::build_model(definition);
+        const auto solved = mhs::solver::solve(compiled);
+        ASSERT_TRUE(solved.converged);
+        const auto& mesh = compiled.domains[0].discrete;
+        const auto& velocity = compiled.layout.fields[2];
+        double squared_error = 0;
+        std::size_t samples = 0;
+        for (std::size_t k = 0; k < velocity.dofs.size(); ++k) {
+            const auto& face = mesh.faces[velocity.entities[k]];
+            if (face.exterior())
+                continue;
+            const double y = (face.bounds[0] + face.bounds[1]) / 2;
+            const double z = (face.bounds[2] + face.bounds[3]) / 2;
+            // Independent Fourier-series solution for fully developed
+            // laminar flow in a unit-square duct, dp/dx = -1, mu = 1.
+            double reference = 0;
+            for (int harmonic = 1; harmonic <= 41; harmonic += 2) {
+                const double kappa = harmonic * pi;
+                const double transverse = 1 - std::cosh(kappa * (z - 0.5)) / std::cosh(kappa / 2);
+                reference += 4 * std::sin(kappa * y) * transverse / (kappa * kappa * kappa);
+            }
+            const double difference = solved.state[velocity.dofs[k]] - reference;
+            squared_error += difference * difference / (n * n);
+            ++samples;
+        }
+        ASSERT_EQ(samples, static_cast<std::size_t>(n * n));
+        const double rms_error = std::sqrt(squared_error);
+        RecordProperty("duct_error_" + std::to_string(n), rms_error);
+        if (previous_error > 0)
+            EXPECT_LT(rms_error, previous_error * 0.8);
+        previous_error = rms_error;
+    }
+}

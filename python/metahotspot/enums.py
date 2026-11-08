@@ -33,6 +33,12 @@ class GeometryOp(enum.IntEnum):
 class SolverType(enum.IntEnum):
     PARDISO = 0
     AMG = 1
+    SPARSE_LU = 2
+
+
+class FlowMode(enum.IntEnum):
+    FROZEN = 0
+    STOKES = 1
 
 
 class FluidBC(enum.IntEnum):

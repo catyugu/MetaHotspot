@@ -65,10 +65,55 @@ static int connection_client(void)
     return 0;
 }
 
+/* GL-03/GL-09: staggered pressure/face-velocity state over the public C ABI. */
+static int stokes_client(void)
+{
+    mhs_model_t* m = NULL;
+    mhs_compiled_t* c = NULL;
+    mhs_solution_t* solution = NULL;
+    mhs_index_t material, volume_id;
+    const double x[] = {0, 1, 2}, yz[] = {0, 1};
+    const double lo[] = {0, 0, 0}, hi[] = {2, 1, 1};
+    const double temperature = 300;
+    const mhs_surface_region_t inlet = {MHS_AXIS_X, 0, {0, 1, 0, 1}};
+    const mhs_surface_region_t outlet = {MHS_AXIS_X, 2, {0, 1, 0, 1}};
+    OK(mhs_model_create(&m));
+    OK(mhs_model_set_cartesian_mesh(m, 0, 3, x, 2, yz, 2, yz));
+    OK(mhs_model_add_material(m, "fluid", "1", "1", "1", "1", "1", "T/300", &material));
+    OK(mhs_model_add_volume(m, 0, material, MHS_INVALID_INDEX, &volume_id));
+    OK(mhs_model_volume_add_box(m, 0, volume_id, MHS_GEOM_ADD, lo, hi));
+    OK(mhs_model_set_flow_mode(m, 0, MHS_FLOW_STOKES));
+    OK(mhs_model_add_fluid_boundary(m, 0, &inlet, 1, MHS_FLUID_PRESSURE_INLET, 1, &temperature));
+    OK(mhs_model_add_fluid_boundary(m, 0, &outlet, 1, MHS_FLUID_OUTLET, 0, &temperature));
+    OK(mhs_model_compile(m, &c));
+    mhs_model_destroy(m);
+    mhs_compiled_info_t info;
+    OK(mhs_compiled_get_info(c, &info));
+    CHECK(info.state_count == 7 && info.field_count == 5 && info.cell_count == 2);
+    mhs_field_info_t velocity;
+    OK(mhs_compiled_get_field_info(c, 2, &velocity));
+    CHECK(velocity.quantity == MHS_FIELD_VELOCITY);
+    CHECK(velocity.support == MHS_SUPPORT_FACE);
+    CHECK(velocity.dof_count == 3);
+    OK(mhs_compiled_solve(c, NULL, NULL, 0, NULL, &solution));
+    mhs_solution_info_t result;
+    OK(mhs_solution_get_info(solution, &result));
+    CHECK(result.converged && result.state_count == 7);
+    double state[7];
+    OK(mhs_solution_copy_state(solution, state, 7));
+    for (size_t i = 0; i < 7; ++i)
+        CHECK(isfinite(state[i]));
+    CHECK(state[4] > 0 && state[5] > 0 && state[6] > 0);
+    mhs_solution_destroy(solution);
+    mhs_compiled_destroy(c);
+    return 0;
+}
+
 /* GL-01 A and GL-09: a pure C client, without private C++ access. */
 int main(void)
 {
     CHECK(connection_client() == 0);
+    CHECK(stokes_client() == 0);
     mhs_model_t* m = NULL;
     mhs_compiled_t* c = NULL;
     mhs_solution_t *steady = NULL, *transient = NULL;
