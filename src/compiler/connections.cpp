@@ -186,7 +186,7 @@ namespace mhs::compiler {
                 for (const auto& facet : conn.patches) {
                     const auto index = side == 0 ? facet.a : facet.b;
                     for (const auto& row : port.patches.at(index).tangential_gradient)
-                        if (row.size() != order)
+                        if (row.size() != rom->order)
                             throw std::invalid_argument("nonmatching ROM port requires NCC gradient maps");
                 }
             }
