@@ -121,7 +121,7 @@ namespace mhs::solver {
         core::Vector<ConnectionFlux> result;
         result.reserve(connection.patches.size());
         for (const auto& patch : connection.patches) {
-            const auto a = side(connection.a, patch.a);
+            auto a = side(connection.a, patch.a);
             const auto b = side(connection.b, patch.b);
             const double area = (patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2]);
             const double g = area / (a.resistance + b.resistance);
@@ -139,7 +139,10 @@ namespace mhs::solver {
             }
             const double q = g * (a.temperature - b.temperature) + correction;
             const double trace = a.temperature + offset_a - q * a.resistance / area;
-            result.push_back({g, correction, g * (a.offset - b.offset), q, trace, a.weights, b.weights});
+            auto weights = std::move(a.weights);
+            for (const auto& w : b.weights)
+                weights.push_back({w.dof, -w.weight});
+            result.push_back({g, correction, g * (a.offset - b.offset), q, trace, std::move(weights)});
         }
         return result;
     }

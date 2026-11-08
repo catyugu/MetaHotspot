@@ -4,7 +4,6 @@ add_library(mhs_solver STATIC
     frozen_flow.cpp
     stokes_flow.cpp
     nonlinear_solver.cpp
-    probe_recorder.cpp
     solve.cpp
     thermal_reconstruction.cpp
 )

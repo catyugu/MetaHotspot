@@ -31,6 +31,44 @@ namespace mhs::solver {
             }
             return std::make_shared<const core::CSRPattern>(n, n, std::move(ptr), std::move(columns));
         }
+        // Galerkin scatter for a physical trace q = g * (B*x) - rhs,
+        // where B is a signed map from global states to interface temperature.
+        void scatter_trace(core::Vector<core::Triplet<double>>& stiffness, core::Vector<double>& load,
+            std::span<const WeightedDof> weights, double conductance, double rhs)
+        {
+            for (const auto& row : weights) {
+                load[row.dof] += row.weight * rhs;
+                for (const auto& col : weights)
+                    stiffness.emplace_back(static_cast<core::SparseIndex>(row.dof),
+                        static_cast<core::SparseIndex>(col.dof), conductance * row.weight * col.weight);
+            }
+        }
+        // Reduced local operators are constant for the compiled component.
+        Operators build_reduced_operators(const model::RomDomain& rom)
+        {
+            core::Vector<core::Triplet<double>> stiffness, capacity;
+            core::Vector<double> load(rom.order);
+            for (std::size_t i = 0; i < rom.order; ++i) {
+                const auto row = static_cast<core::SparseIndex>(i);
+                double rhs = rom.f[i];
+                for (const auto& term : rom.affine_terms)
+                    rhs += term.value * term.f[i];
+                load[i] = rhs;
+                for (std::size_t j = 0; j < rom.order; ++j) {
+                    const auto col = static_cast<core::SparseIndex>(j);
+                    const auto index = i * rom.order + j;
+                    double k = rom.K[index];
+                    for (const auto& term : rom.affine_terms)
+                        k += term.value * term.K[index];
+                    if (k != 0.0)
+                        stiffness.emplace_back(row, col, k);
+                    if (rom.C[index] != 0.0)
+                        capacity.emplace_back(row, col, rom.C[index]);
+                }
+            }
+            return {core::build_csr(rom.order, rom.order, std::move(stiffness)),
+                core::build_csr(rom.order, rom.order, std::move(capacity)), std::move(load)};
+        }
         core::CSRMatrix<double> build_capacity(std::size_t n)
         {
             core::Vector<core::SparseIndex> ptr(n + 1), columns(n);
@@ -172,23 +210,25 @@ namespace mhs::solver {
     {
         if (initial.size() != model.layout.state_count || model.components.empty())
             throw std::invalid_argument("thermal assembly requires a complete state and a physical domain");
-        domains_.resize(model.components.size());
-        stokes_.resize(model.components.size());
+        components_.resize(model.components.size());
         for (const auto& field : model.layout.fields) {
+            auto& workspace = components_[field.domain];
+            if (field.quantity == model::FieldQuantity::ReducedCoordinate) {
+                workspace.reduced = build_reduced_operators(model.rom(field.domain));
+                continue;
+            }
             if (field.quantity != model::FieldQuantity::Temperature)
                 continue;
-            const auto d = field.domain;
-            const auto& domain = model.fom(d);
+            const auto& domain = model.fom(field.domain);
             const auto temperature = initial.subspan(field.offset, field.count);
             if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
-                stokes_[d] = std::make_unique<StokesAssembler>(domain, model.layout, d);
-                domains_[d] = std::make_unique<ThermalAssembler>(domain, FrozenFlow {});
+                workspace.stokes = std::make_unique<StokesAssembler>(domain, model.layout, field.domain);
+                workspace.thermal = std::make_unique<ThermalAssembler>(domain, FrozenFlow {});
             }
             else
-                domains_[d]
+                workspace.thermal
                     = std::make_unique<ThermalAssembler>(domain, initialize_frozen_flow(domain, temperature, time));
         }
-        identity_ = model.components.size() == 1 && domains_.front() && model.connections.empty() && !stokes_.front();
     }
 
     const Operators& ModelAssembler::assemble(std::span<const double> state, double time)
@@ -196,54 +236,44 @@ namespace mhs::solver {
         if (state.size() != model_.layout.state_count)
             throw std::invalid_argument("thermal assembly state size mismatch");
 
-        if (identity_) {
-            const auto& field = model_.layout.fields.front();
-            return domains_[0]->assemble(state.subspan(field.offset, field.count), time);
+        // When the global layout is exactly one uncoupled local block, reuse
+        // its CSR directly. This applies to Cartesian and reduced components
+        // alike, avoiding a triplet rebuild on every nonlinear iteration.
+        if (model_.components.size() == 1 && model_.connections.empty() && model_.rom_boundary_terms.empty()
+            && model_.layout.fields.size() == 1) {
+            auto& block = components_.front();
+            if (block.reduced)
+                return *block.reduced;
+            if (block.thermal && !block.stokes)
+                return block.thermal->assemble(state, time);
         }
 
         core::Vector<core::Triplet<double>> stiffness, capacity;
         core::Vector<double> load(state.size(), 0.0);
         for (const auto& field : model_.layout.fields) {
-            if (field.quantity != model::FieldQuantity::Temperature)
+            auto& block = components_[field.domain];
+            const Operators* ops = nullptr;
+            if (field.quantity == model::FieldQuantity::Temperature) {
+                const auto temperature = state.subspan(field.offset, field.count);
+                if (block.stokes)
+                    block.thermal->set_flow(
+                        block.stokes->assemble(state, temperature, time, stiffness, capacity, load));
+                ops = &block.thermal->assemble(temperature, time);
+            }
+            else if (field.quantity == model::FieldQuantity::ReducedCoordinate)
+                ops = &*block.reduced;
+            else
                 continue;
-            const auto d = field.domain;
-            const auto temperature = state.subspan(field.offset, field.count);
-            if (stokes_[d])
-                domains_[d]->set_flow(stokes_[d]->assemble(state, temperature, time, stiffness, capacity, load));
-            const auto& ops = domains_[d]->assemble(temperature, time);
             auto append = [&](const core::CSRMatrix<double>& matrix, auto& entries) {
                 for (std::size_t row = 0; row < matrix.rows(); ++row)
                     for (auto j = matrix.row_ptr()[row]; j < matrix.row_ptr()[row + 1]; ++j)
                         entries.emplace_back(static_cast<core::SparseIndex>(field.dof(row)),
                             static_cast<core::SparseIndex>(field.dof(matrix.col_idx()[j])), matrix.values()[j]);
             };
-            append(ops.K, stiffness);
-            append(ops.C, capacity);
-            for (std::size_t c = 0; c < ops.f.size(); ++c)
-                load[field.dof(c)] += ops.f[c];
-        }
-
-        for (const auto& field : model_.layout.fields) {
-            if (field.quantity != model::FieldQuantity::ReducedCoordinate)
-                continue;
-            const auto& rom = model_.rom(field.domain);
-            for (std::size_t i = 0; i < rom.order; ++i) {
-                const auto row = static_cast<core::SparseIndex>(field.dof(i));
-                double rhs = rom.f[i];
-                for (const auto& term : rom.affine_terms)
-                    rhs += term.value * term.f[i];
-                load[row] += rhs;
-                for (std::size_t j = 0; j < rom.order; ++j) {
-                    const auto col = static_cast<core::SparseIndex>(field.dof(j));
-                    double stiffness_value = rom.K[i * rom.order + j];
-                    for (const auto& term : rom.affine_terms)
-                        stiffness_value += term.value * term.K[i * rom.order + j];
-                    if (stiffness_value != 0.0)
-                        stiffness.emplace_back(row, col, stiffness_value);
-                    if (rom.C[i * rom.order + j] != 0.0)
-                        capacity.emplace_back(row, col, rom.C[i * rom.order + j]);
-                }
-            }
+            append(ops->K, stiffness);
+            append(ops->C, capacity);
+            for (std::size_t c = 0; c < ops->f.size(); ++c)
+                load[field.dof(c)] += ops->f[c];
         }
 
         // An exposed ROM patch is a one-sided thermal connection. Reuse the
@@ -271,40 +301,18 @@ namespace mhs::solver {
             const auto& condition = model_.rom_boundary_conditions.at(term.condition);
             const auto trace
                 = evaluate_boundary(condition, center, area, facet.half_resistance, temperature, 1.0, time);
-            const double rhs = trace.load - trace.conductance * facet.offset;
-            for (std::size_t i = 0; i < rom.order; ++i) {
-                if (facet.trace[i] == 0.0)
-                    continue;
-                const auto row = static_cast<core::SparseIndex>(field.dof(i));
-                load[row] += facet.trace[i] * rhs;
-                for (std::size_t j = 0; j < rom.order; ++j)
-                    if (facet.trace[j] != 0.0)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(field.dof(j)),
-                            facet.trace[i] * trace.conductance * facet.trace[j]);
-            }
+            core::Vector<WeightedDof> weights;
+            for (std::size_t i = 0; i < rom.order; ++i)
+                if (facet.trace[i] != 0.0)
+                    weights.push_back({field.dof(i), facet.trace[i]});
+            scatter_trace(stiffness, load, weights, trace.conductance, trace.load - trace.conductance * facet.offset);
         }
 
         for (const auto& connection : model_.connections) {
             const auto flux = evaluate_connection_flux(model_, connection, state, time);
             for (const auto& patch_flux : flux) {
-                const auto g = patch_flux.conductance;
-                const auto forcing = patch_flux.correction + patch_flux.bias_flux;
-                for (const auto& wa : patch_flux.a) {
-                    const auto row = static_cast<core::SparseIndex>(wa.dof);
-                    load[row] -= wa.weight * forcing;
-                    for (const auto& xa : patch_flux.a)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xa.dof), g * wa.weight * xa.weight);
-                    for (const auto& xb : patch_flux.b)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xb.dof), -g * wa.weight * xb.weight);
-                }
-                for (const auto& wb : patch_flux.b) {
-                    const auto row = static_cast<core::SparseIndex>(wb.dof);
-                    load[row] += wb.weight * forcing;
-                    for (const auto& xa : patch_flux.a)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xa.dof), -g * wb.weight * xa.weight);
-                    for (const auto& xb : patch_flux.b)
-                        stiffness.emplace_back(row, static_cast<core::SparseIndex>(xb.dof), g * wb.weight * xb.weight);
-                }
+                scatter_trace(stiffness, load, patch_flux.weights, patch_flux.conductance,
+                    -patch_flux.correction - patch_flux.bias_flux);
             }
         }
         operators_ = {core::build_csr(state.size(), state.size(), std::move(stiffness)),
