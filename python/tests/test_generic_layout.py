@@ -10,6 +10,7 @@ from metahotspot.enums import Axis, EntitySupport, FieldQuantity, FluidBC, Study
 
 def package(*, fluid=True, anisotropic=False, split=False, coarse=False, refinement=1):
     m = metahotspot.Model()
+    m.add_fom_domain()
     m.set_cartesian_mesh(
         np.arange(12 * refinement + 1) * 0.001 / refinement,
         np.arange(8 * refinement + 1) * 0.001 / refinement,

@@ -20,6 +20,7 @@ from metahotspot.macromodel.geometry import CellGeometry
 
 def _build_operators(nx=2, ny=2, nz=3):
     model = metahotspot.Model()
+    model.add_fom_domain()
     model.set_cartesian_mesh(
         np.linspace(0.0, float(nx) * 1e-3, nx + 1),
         np.linspace(0.0, float(ny) * 1e-3, ny + 1),

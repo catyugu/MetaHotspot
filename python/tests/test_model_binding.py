@@ -13,6 +13,7 @@ from metahotspot.enums import Axis, StudyType
 
 def _model(*, transient: bool = False) -> metahotspot.Model:
     model = metahotspot.Model()
+    model.add_fom_domain()
     model.set_cartesian_mesh(
         np.array([0.0, 0.001]),
         np.array([0.0, 0.001]),
@@ -97,6 +98,7 @@ def test_stokes_public_multifield_layout_and_solve():
     from metahotspot.enums import EntitySupport, FieldQuantity, FlowMode, FluidBC
 
     model = metahotspot.Model()
+    model.add_fom_domain()
     model.set_cartesian_mesh([0.0, 1.0, 2.0], [0.0, 1.0], [0.0, 1.0])
     material = model.add_material("fluid", "1", "1", "1", "1", "1", "T/300")
     volume = model.add_volume(material)
