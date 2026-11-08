@@ -5,9 +5,9 @@
 #include "postprocess.hpp"
 #include "pta/definition.hpp"
 namespace test_pta {
-    inline mhs::model::FaceRegion face_region(
-        mhs::model::Axis axis, double coordinate, std::initializer_list<mhs::model::RegionRect> rectangles)
-    { return {axis, coordinate, rectangles}; }
+    inline mhs::model::SurfaceRegion face_region(
+        mhs::model::Axis axis, double coordinate, mhs::model::RegionRect rectangle)
+    { return {axis, coordinate, rectangle}; }
 
     struct Model : mhs::model::Model {
         mhs::model::MeshSpec sampling_grid;

@@ -66,14 +66,14 @@ namespace mhs::model {
         double b_max = 0.0;
     };
 
-    struct FaceRegion {
+    struct SurfaceRegion {
         Axis axis = Axis::Z;
         double coordinate = 0.0;
-        mhs::core::Vector<RegionRect> rectangles;
+        RegionRect rectangle;
     };
 
-    struct BoundaryPatch {
-        mhs::core::Vector<FaceRegion> regions;
+    struct ThermalBoundarySpec {
+        mhs::core::Vector<SurfaceRegion> regions;
         ThermalBoundary condition;
     };
 
@@ -84,7 +84,6 @@ namespace mhs::model {
         Expression density = "0.0";
         Expression specific_heat = "0.0";
         std::optional<Expression> dynamic_viscosity;
-        bool is_fluid = false;
     };
 
     struct NamedMaterial {
@@ -135,7 +134,7 @@ namespace mhs::model {
         FunctionSpec value;
     };
 
-    struct ObservationPointSpec {
+    struct PointProbeSpec {
         std::string name;
         double x = 0.0;
         double y = 0.0;
@@ -156,7 +155,7 @@ namespace mhs::model {
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
     struct FluidBoundarySpec {
-        mhs::core::Vector<FaceRegion> regions;
+        mhs::core::Vector<SurfaceRegion> regions;
         FluidBoundaryCondition condition;
     };
 
@@ -168,9 +167,9 @@ namespace mhs::model {
         mhs::core::Vector<NamedMaterial> materials;
         mhs::core::Vector<Expression> sources;
         mhs::core::Vector<VolumeSpec> volumes;
-        mhs::core::Vector<BoundaryPatch> boundaries;
+        mhs::core::Vector<ThermalBoundarySpec> boundaries;
         ThermalBoundary default_boundary = NeumannBoundary {};
-        mhs::core::Vector<ObservationPointSpec> observation_points;
+        mhs::core::Vector<PointProbeSpec> point_probes;
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
     };
 

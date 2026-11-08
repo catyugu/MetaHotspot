@@ -118,12 +118,12 @@ typedef struct {
     double x, y;
 } mhs_point2d_t;
 
-/** One face region for use with atomic boundary functions. */
+/** One continuous SI rectangle; tangential axes are X:(y,z), Y:(x,z), Z:(x,y). */
 typedef struct {
     mhs_axis_t axis;
     double coordinate;
     mhs_rect2d_t rectangle;
-} mhs_face_region_t;
+} mhs_surface_region_t;
 
 /** Solver options.  Populate with mhs_solve_options_default(). */
 typedef struct {
@@ -219,15 +219,15 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  settings, mesh, variables                   */
+/*  Model construction  —  study, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_settings(
+MHS_API mhs_status_t mhs_model_set_study(
     mhs_model_t* m, mhs_study_t study, double initial_temperature_K, double duration, double output_interval);
 
 /** Cartesian vertex arrays in SI metres; each axis must be finite, strictly
  * increasing and contain at least two entries. All axes are replaced atomically. */
-MHS_API mhs_status_t mhs_model_set_mesh(
+MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
 
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
@@ -236,6 +236,7 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 /*  Model construction  —  materials, sources, volumes           */
 /* ------------------------------------------------------------------ */
 
+/** NULL dynamic_viscosity selects a solid; a non-NULL expression selects a fluid. */
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id);
 
@@ -251,13 +252,15 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
 /*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
+/** Surface conditions require a nonempty array of SI rectangles. Later regions
+ * override earlier ones; uncovered exterior faces use the default thermal BC. */
 MHS_API mhs_status_t mhs_model_add_dirichlet(
-    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* temperature);
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature);
 
 MHS_API mhs_status_t mhs_model_add_neumann(
-    mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions, const char* heat_flux);
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux);
 
-MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
+MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
     const char* coefficient, const char* ambient_temperature);
 
 MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char* temperature);
@@ -285,10 +288,11 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_probe(mhs_model_t* m, const char* name, double x, double y, double z);
+/** Named point probe, with three finite SI coordinates copied into the model. */
+MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3]);
 /* Same region layout as thermal boundaries. NULL inlet_temperature selects the
  * initial temperature; outlets ignore it. value is pressure (Pa), or mass flow (kg/s). */
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_face_region_t* regions, size_t n_regions,
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
     mhs_fluid_bc_t kind, double value, const double* inlet_temperature);
 
 /* ------------------------------------------------------------------ */

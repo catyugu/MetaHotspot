@@ -52,7 +52,7 @@ namespace mhs::model {
         Vec3 point;
     };
 
-    struct ProbePoint {
+    struct PointProbe {
         std::string name;
         double x = 0.0;
         double y = 0.0;
@@ -75,7 +75,7 @@ namespace mhs::model {
         double transient_duration = 0.0;
         double transient_output_interval = 1.0;
 
-        mhs::core::Vector<ProbePoint> observation_points;
+        mhs::core::Vector<PointProbe> point_probes;
     };
 
 } // namespace mhs::model

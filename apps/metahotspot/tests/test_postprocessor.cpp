@@ -122,9 +122,9 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     io.model.materials.push_back({"copper", copper});
 
     // Dirichlet BC on bottom Z face (Z=0) at 500K
-    mhs::model::BoundaryPatch boundary_dirichlet;
+    mhs::model::ThermalBoundarySpec boundary_dirichlet;
     boundary_dirichlet.condition = mhs::model::DirichletBoundary {"500"};
-    boundary_dirichlet.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
+    boundary_dirichlet.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
     io.model.boundaries.push_back(boundary_dirichlet);
 
     // Neumann(0) for all other faces (adiabatic)
@@ -192,9 +192,9 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     io.model.materials.push_back({"copper", copper});
 
     // 时间依赖的 Dirichlet 表达式：T_bc = 500 + 100*t
-    mhs::model::BoundaryPatch boundary;
+    mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
-    boundary.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {{0.0, 10.0, 0.0, 10.0}}));
+    boundary.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
     io.model.boundaries.push_back(boundary);
 
     io.model.default_boundary = mhs::model::NeumannBoundary {};

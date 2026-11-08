@@ -153,20 +153,18 @@ namespace mhs::app::pta {
         auto scale_regions = [&](auto& regions) {
             for (auto& r : regions) {
                 r.coordinate *= scale;
-                for (auto& q : r.rectangles) {
-                    q.a_min *= scale;
-                    q.a_max *= scale;
-                    q.b_min *= scale;
-                    q.b_max *= scale;
-                }
+                r.rectangle.a_min *= scale;
+                r.rectangle.a_max *= scale;
+                r.rectangle.b_min *= scale;
+                r.rectangle.b_max *= scale;
             }
         };
         for (auto& b : out.boundaries)
             scale_regions(b.regions);
         for (auto& b : out.fluid_boundaries)
             scale_regions(b.regions);
-        for (const auto& p : pta.observation_points)
-            out.observation_points.push_back({p.name, eval(p.x), eval(p.y), eval(p.z)});
+        for (const auto& p : pta.point_probes)
+            out.point_probes.push_back({p.name, eval(p.x), eval(p.y), eval(p.z)});
         return out;
     }
 } // namespace mhs::app::pta

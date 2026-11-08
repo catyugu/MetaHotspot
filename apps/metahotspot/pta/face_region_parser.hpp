@@ -6,6 +6,6 @@
 
 namespace mhs::app::pta::detail {
 
-    mhs::model::FaceRegion parse_face_region(const std::string& encoded);
+    mhs::core::Vector<mhs::model::SurfaceRegion> parse_face_region(const std::string& encoded);
 
 } // namespace mhs::app::pta::detail

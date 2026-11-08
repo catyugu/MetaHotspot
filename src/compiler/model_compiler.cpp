@@ -55,24 +55,15 @@ namespace mhs::compiler {
             return index;
         }
 
-        mhs::core::Vector<CompiledBoundaryRegion> compile_boundary_patches(
-            const mhs::core::Vector<mhs::model::BoundaryPatch>& boundaries,
+        mhs::core::Vector<TaggedSurfaceRegion> compile_thermal_boundaries(
+            const mhs::core::Vector<mhs::model::ThermalBoundarySpec>& boundaries,
             mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
         {
-            mhs::core::Vector<CompiledBoundaryRegion> compiled;
+            mhs::core::Vector<TaggedSurfaceRegion> compiled;
             for (const auto& boundary : boundaries) {
                 const auto condition = compile_thermal_boundary(boundary.condition, conditions, symbols);
-                for (const auto& region : boundary.regions) {
-                    CompiledBoundaryRegion item;
-                    item.axis = region.axis;
-                    item.coordinate = region.coordinate;
-                    item.condition_index = condition;
-                    item.rectangles.reserve(region.rectangles.size());
-                    for (const auto& rectangle : region.rectangles) {
-                        item.rectangles.push_back({rectangle.a_min, rectangle.a_max, rectangle.b_min, rectangle.b_max});
-                    }
-                    compiled.push_back(std::move(item));
-                }
+                for (const auto& region : boundary.regions)
+                    compiled.push_back({region, condition});
             }
             return compiled;
         }
@@ -85,8 +76,8 @@ namespace mhs::compiler {
         copy_scalar_parameters(model, definition);
 
         auto symbols = build_symbol_table(definition);
-        for (const auto& p : definition.observation_points)
-            model.observation_points.push_back({p.name, p.x, p.y, p.z});
+        for (const auto& p : definition.point_probes)
+            model.point_probes.push_back({p.name, p.x, p.y, p.z});
 
         // Compile material properties in ModelDefinition::materials order.
         model.material_table.resize(definition.materials.size());
@@ -102,8 +93,8 @@ namespace mhs::compiler {
             props.kz = compile_mat(mat.conductivity_z);
             props.rho = compile_mat(mat.density);
             props.c = compile_mat(mat.specific_heat);
-            if (mat.is_fluid) {
-                if (!mat.dynamic_viscosity.has_value() || mat.dynamic_viscosity->empty()) {
+            if (mat.dynamic_viscosity.has_value()) {
+                if (mat.dynamic_viscosity->empty()) {
                     throw std::runtime_error(
                         "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
                 }
@@ -127,7 +118,7 @@ namespace mhs::compiler {
 
         // Compile boundary patches.
         auto& boundary_conditions = model.boundary_conditions;
-        auto compiled_boundaries = compile_boundary_patches(definition.boundaries, boundary_conditions, symbols);
+        auto compiled_boundaries = compile_thermal_boundaries(definition.boundaries, boundary_conditions, symbols);
 
         auto default_boundary = compile_thermal_boundary(definition.default_boundary, boundary_conditions, symbols);
 
@@ -136,11 +127,13 @@ namespace mhs::compiler {
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())
                 throw std::out_of_range("cell has no valid material assignment");
-        model.boundary_faces = project_surface_regions(model.discrete, compiled_boundaries, default_boundary);
+        for (const auto& patch : project_surface_regions(model.discrete, compiled_boundaries, default_boundary))
+            model.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
+                static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
 
         // Fluid coupling.
         const bool has_fluid_material = std::any_of(definition.materials.begin(), definition.materials.end(),
-            [](const mhs::model::NamedMaterial& material) { return material.value.is_fluid; });
+            [](const mhs::model::NamedMaterial& material) { return material.value.dynamic_viscosity.has_value(); });
         if (has_fluid_material) {
             mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_materials);
         }

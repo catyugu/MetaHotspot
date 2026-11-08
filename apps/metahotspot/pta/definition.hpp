@@ -37,7 +37,7 @@ namespace mhs::app::pta {
         mhs::core::Vector<BlockSpec> blocks;
     };
 
-    struct ObservationPointSpec {
+    struct PointProbeSpec {
         std::string name;
         mhs::model::Expression x;
         mhs::model::Expression y;
@@ -58,7 +58,7 @@ namespace mhs::app::pta {
         mhs::model::ModelDefinition model;
         LengthUnit length_unit = LengthUnit::Meter;
         mhs::core::Vector<LayerSpec> layers;
-        mhs::core::Vector<ObservationPointSpec> observation_points;
+        mhs::core::Vector<PointProbeSpec> point_probes;
     };
 
     std::string rewrite_formal_argument(const std::string& expression, std::string_view replacement);
