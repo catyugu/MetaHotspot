@@ -69,13 +69,13 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     op1.x = 0.005;
     op1.y = 0.005;
     op1.z = 0.005;
-    io.point_probes.push_back(op1);
+    io.component(0).observations.push_back({op1, {}, 0.0});
     mhs::model::PointProbe op2;
     op2.name = "z0";
     op2.x = 0.005;
     op2.y = 0.005;
     op2.z = 0;
-    io.point_probes.push_back(op2);
+    io.component(0).observations.push_back({op2, {}, 0.0});
 
     mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500"};
@@ -135,7 +135,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     op.x = 0.005;
     op.y = 0.005;
     op.z = 0;
-    io.point_probes.push_back(op);
+    io.component(0).observations.push_back({op, {}, 0.0});
 
     mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
