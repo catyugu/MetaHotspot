@@ -14,6 +14,7 @@ using namespace mhs::model;
 static mhs::model::ModelDefinition cube_definition()
 {
     mhs::model::ModelDefinition d;
+    d.components.emplace_back();
     d.fom(0).mesh.x_vertices = d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 0.5, 1};
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
@@ -102,7 +103,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
 TEST(DiscreteMesh, TemperatureDependentDirichletTemperatureIsRejected)
 {
     auto d = cube_definition();
-    d.fom(0).thermal_boundaries
+    d.component(0).thermal_boundaries
         = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, mhs::model::DirichletBoundary {"300 + 0.1*T"}}};
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
 }
@@ -113,7 +114,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     mhs::model::ThermalBoundarySpec bc;
     bc.condition = mhs::model::NeumannBoundary {"10"};
     bc.regions.push_back({mhs::model::Axis::X, 1.0, {0.1, 0.2, 0.1, 0.2}});
-    d.fom(0).thermal_boundaries.push_back(bc);
+    d.component(0).thermal_boundaries.push_back(bc);
     const auto base = mhs::compiler::build_model(cube_definition()).fom(0).discrete;
     const auto model = mhs::compiler::build_model(d).fom(0);
     ASSERT_EQ(model.discrete.faces.size(), base.faces.size());
@@ -155,7 +156,7 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     mhs::model::ThermalBoundarySpec bc;
     bc.condition = mhs::model::DirichletBoundary {"400"};
     bc.regions.push_back({mhs::model::Axis::X, 1, {0.1, 0.2, 0.1, 0.2}});
-    d.fom(0).thermal_boundaries.push_back(bc);
+    d.component(0).thermal_boundaries.push_back(bc);
     const auto model = mhs::compiler::build_model(d).fom(0);
     const mhs::core::Vector<double> state {300};
     const auto ops = mhs::solver::assemble_thermal(model, state, 0);

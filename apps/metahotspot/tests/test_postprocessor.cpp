@@ -121,7 +121,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     mhs::model::ThermalBoundarySpec boundary_dirichlet;
     boundary_dirichlet.condition = mhs::model::DirichletBoundary {"500"};
     boundary_dirichlet.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
-    io.model.fom(0).thermal_boundaries.push_back(boundary_dirichlet);
+    io.model.component(0).thermal_boundaries.push_back(boundary_dirichlet);
 
     // Neumann(0) for all other faces (adiabatic)
     io.model.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
@@ -189,7 +189,7 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
     boundary.regions.push_back(test_pta::face_region(mhs::model::Axis::Z, 0.0, {0.0, 10.0, 0.0, 10.0}));
-    io.model.fom(0).thermal_boundaries.push_back(boundary);
+    io.model.component(0).thermal_boundaries.push_back(boundary);
 
     io.model.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
 

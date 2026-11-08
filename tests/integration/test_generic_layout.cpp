@@ -12,6 +12,7 @@ namespace {
     {
         using namespace mhs::model;
         ModelDefinition d;
+    d.components.emplace_back();
         d.fom(0).mesh.x_vertices = {0, 1, 2};
         d.fom(0).mesh.y_vertices = d.fom(0).mesh.z_vertices = {0, 1};
         MaterialSpec liquid;
@@ -94,7 +95,8 @@ namespace {
     {
         using namespace mhs::model;
         ModelDefinition d;
-        d.domains.resize(2);
+    d.components.emplace_back();
+        d.components.resize(2);
         MaterialSpec solid;
         solid.conductivity_x = solid.conductivity_y = solid.conductivity_z = "1";
         solid.density = solid.specific_heat = "1";
@@ -111,7 +113,7 @@ namespace {
                     static_cast<double>(side) / 2 + static_cast<double>(i) / static_cast<double>(n));
             domain.volumes = {{0, mhs::core::invalid_id, {{GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}}};
             domain.default_thermal_boundary = DirichletBoundary {"300+x+2*y+3*z"};
-            domain.ports = {{"join", {Axis::Z, 0.5, {0, 1, 0, 1}}}};
+            d.component(static_cast<DomainId>(side)).ports = {{"join", {Axis::Z, 0.5, {0, 1, 0, 1}}}};
         }
         d.connections = {{{0, 0}, {1, 0}}};
         return d;
@@ -126,7 +128,7 @@ TEST(GenericLayout, NonmatchingConnectionCorrectsLinearTangentialOffsetAndConser
     EXPECT_TRUE(connection.nonmatching);
     EXPECT_EQ(connection.patches.size(), 16u);
     mhs::core::Vector<double> exact(compiled.layout.state_count);
-    for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
+    for (std::size_t d = 0; d < compiled.components.size(); ++d) {
         const auto& f = compiled.layout.fields[d];
         for (std::size_t i = 0; i < f.count; ++i) {
             const auto p = compiled.fom(static_cast<mhs::model::DomainId>(d)).discrete.cells[i].center();
@@ -177,13 +179,13 @@ TEST(GenericLayout, ConnectionRejectsMissingDuplicateOverlappingAndInvalidPorts)
     d.connections = {{{0, 0}, {1, 0}}, {{0, 0}, {1, 0}}};
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
     d.connections.resize(1);
-    d.fom(0).ports.push_back(d.fom(0).ports.front());
+    d.component(0).ports.push_back(d.component(0).ports.front());
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
-    d.fom(0).ports.pop_back();
-    d.fom(1).ports[0].region.coordinate = 0.6;
+    d.component(0).ports.pop_back();
+    d.component(1).ports[0].region.coordinate = 0.6;
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
     d = joined_blocks(4, false);
-    d.fom(0).thermal_boundaries = {{{d.fom(0).ports[0].region}, NeumannBoundary {"0"}}};
+    d.component(0).thermal_boundaries = {{{d.component(0).ports[0].region}, NeumannBoundary {"0"}}};
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
 }
 
@@ -193,8 +195,8 @@ TEST(GenericLayout, NccManufacturedQuadraticConvergesAgainstIndependentSolution)
     for (const std::size_t n : {4u, 8u, 16u}) {
         auto definition = joined_blocks(n, true);
         definition.sources = {"-6"};
-        for (auto& value : definition.domains) {
-            auto& domain = std::get<mhs::model::FomDomainDefinition>(value);
+        for (auto& value : definition.components) {
+            auto& domain = std::get<mhs::model::FomDomainDefinition>(value.physics);
             domain.default_thermal_boundary = mhs::model::DirichletBoundary {"300+x*x+y*y+z*z"};
             domain.volumes.front().source = 0;
         }
@@ -209,7 +211,7 @@ TEST(GenericLayout, NccManufacturedQuadraticConvergesAgainstIndependentSolution)
         ASSERT_TRUE(uncorrected.converged);
         auto error = [&](const auto& solution) {
             double sum = 0;
-            for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
+            for (std::size_t d = 0; d < compiled.components.size(); ++d) {
                 const auto& domain = compiled.fom(static_cast<mhs::model::DomainId>(d));
                 for (std::size_t c = 0; c < domain.discrete.cells.size(); ++c) {
                     const auto& cell = domain.discrete.cells[c];
@@ -233,14 +235,14 @@ TEST(GenericLayout, NccManufacturedQuadraticConvergesAgainstIndependentSolution)
 TEST(GenericLayout, PartialPortsPreserveExternalBoundarySubdivisions)
 {
     auto definition = joined_blocks(4, true);
-    for (auto& value : definition.domains)
-        std::get<mhs::model::FomDomainDefinition>(value).ports[0].region.rectangle = {0, 0.4, 0, 0.7};
+    for (auto& value : definition.components)
+        value.ports[0].region.rectangle = {0, 0.4, 0, 0.7};
     const auto compiled = mhs::compiler::build_model(definition);
     double interface_area = 0;
     for (const auto& patch : compiled.connections[0].patches)
         interface_area += (patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2]);
     EXPECT_NEAR(interface_area, 0.28, 1e-14);
-    for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
+    for (std::size_t d = 0; d < compiled.components.size(); ++d) {
         double remaining = 0;
         for (const auto& boundary : compiled.fom(static_cast<mhs::model::DomainId>(d)).boundary_faces)
             if (boundary.axis == mhs::model::Axis::Z && boundary.sign == (d == 0 ? 1 : -1))

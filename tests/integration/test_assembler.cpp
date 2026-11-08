@@ -12,6 +12,7 @@ using namespace mhs::compiler;
 static mhs::model::ModelDefinition make_simple_cube_io()
 {
     mhs::model::ModelDefinition io;
+    io.components.emplace_back();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
@@ -57,6 +58,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     // Material k is T-dependent in this case ("100 + T"). Different T should
     // produce different K.
     mhs::model::ModelDefinition io;
+    io.components.emplace_back();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
