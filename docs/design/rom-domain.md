@@ -67,8 +67,9 @@ such an observation; it does not read a nonexistent ROM cell.
 Both C and Python clients can construct a ROM with base projected `K/C/f`,
 optional initial coordinates, zero or more affine terms, rectangular ports,
 and physical observation maps. ROM ports are submitted with all their patches
-in one C ABI call, so failures cannot leave a partially constructed port. Connections use existing Domain/Port IDs and
-the existing model/compiled/solution opaque handles.
+in one C ABI call, so failures cannot leave a partially constructed port.
+Connections use the same Domain/Port IDs and model/compiled/solution opaque
+handles as FOM connections.
 
 Domain IDs follow creation order, including interleaved FOM and ROM domains.
 The typed domain registry maps each stable Domain ID to the corresponding

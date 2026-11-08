@@ -243,6 +243,8 @@ namespace mhs::model {
             rom_ids_.clear();
         }
         std::size_t size() const { return entries_.size(); }
+        std::size_t fom_count() const { return fom_ids_.size(); }
+        std::size_t rom_count() const { return rom_ids_.size(); }
         bool is_fom(DomainId domain) const { return entries_.at(domain).kind == DomainKind::Fom; }
         bool is_rom(DomainId domain) const { return !is_fom(domain); }
         std::size_t fom(DomainId domain) const { return index(domain, DomainKind::Fom); }

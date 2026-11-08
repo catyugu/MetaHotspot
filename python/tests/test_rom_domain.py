@@ -28,6 +28,22 @@ def test_rom_only_state_layout_initialization_and_steady_solve():
     assert solution.converged
     np.testing.assert_allclose(solution.state, [300.0], atol=1e-8)
 
+    # Add a FOM after the ROM: public IDs follow creation order, while
+    # field DOFs may retain their FOM-first assembly layout.
+    fom = model.add_fom_domain()
+    assert fom == 1
+    model.set_cartesian_mesh([0, 1], [0, 1], [0, 1], domain=fom)
+    material = model.add_material("solid", "1", "1", "1", "1", "1")
+    volume = model.add_volume(material, domain=fom)
+    model.add_box(volume, (0, 0, 0), (1, 1, 1), domain=fom)
+    model.set_default_dirichlet("310", domain=fom)
+    mixed = model.compile()
+    assert [d.cell_count for d in mixed.domains] == [0, 1]
+    assert [f.domain for f in mixed.field_layouts] == [1, 0]
+    np.testing.assert_allclose(mixed.default_state(), [300.0, 290.0])
+    assert mixed.solve().converged
+    np.testing.assert_allclose(compiled.solve().state, [300.0], atol=1e-8)
+
 
 def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     model = Model()

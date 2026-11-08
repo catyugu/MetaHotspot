@@ -70,6 +70,10 @@ namespace mhs::compiler {
         mhs::model::CompiledModel compiled;
         if (definition.registry.size() == 0)
             throw std::invalid_argument("model must contain a FOM or ROM domain");
+        // Public C++ definitions are mutable; validate their registry boundary once.
+        if (definition.registry.fom_count() != definition.domains.size()
+            || definition.registry.rom_count() != definition.rom_domains.size())
+            throw std::invalid_argument("model domains must be added through the typed domain registry");
         compiled.registry = definition.registry;
 
         auto symbols = build_symbol_table(definition);
