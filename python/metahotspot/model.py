@@ -471,6 +471,36 @@ class Model(OwnedHandle):
         self._rom_orders[identifier.value] = k.shape[0]
         return identifier.value
 
+    def add_rom_affine_term(
+        self,
+        domain: int,
+        name: str,
+        value: float,
+        stiffness: np.ndarray,
+        rhs: np.ndarray,
+    ) -> None:
+        """Supply mu*K_i and mu*f_i from a reusable affine HTC ROM.
+
+        The parameter value is frozen into each compiled snapshot. Different
+        snapshots can reuse the same ROM matrices and physical port mappings.
+        """
+        order = self._rom_orders.get(domain)
+        if order is None:
+            raise ValueError("affine parameter requires a ROM domain")
+        k = np.ascontiguousarray(stiffness, dtype=np.float64)
+        f = np.ascontiguousarray(rhs, dtype=np.float64)
+        if k.shape != (order, order) or f.shape != (order,):
+            raise ValueError("affine ROM stiffness/load dimensions must match the ROM order")
+        self._call(
+            "mhs_model_rom_add_affine_term",
+            domain,
+            _text(name),
+            value,
+            _double_ptr(k),
+            _double_ptr(f),
+            ctx="add_rom_affine_term",
+        )
+
     def add_rom_port(
         self,
         domain: int,
