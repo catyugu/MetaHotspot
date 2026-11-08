@@ -293,7 +293,8 @@ namespace mhs::solver {
                 }
             // The equivalent normal conductance is area/half_resistance.
             const auto& condition = model_.rom_boundary_conditions.at(term.condition);
-            const auto trace = evaluate_boundary(condition, center, area, facet.half_resistance, temperature, 1.0, time);
+            const auto normal_resistance = facet.half_resistance;
+            const auto trace = evaluate_boundary(condition, center, area, normal_resistance, temperature, 1.0, time);
             // q_out = g*(V*z + offset) - load; ROM contribution V^T*q_out.
             const double rhs = trace.load - trace.conductance * facet.offset;
             for (std::size_t i = 0; i < rom.order; ++i) {

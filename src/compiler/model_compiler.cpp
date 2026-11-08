@@ -190,7 +190,8 @@ namespace mhs::compiler {
                 bool has_pressure_boundary = false;
                 for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
                     const auto& face = model.discrete.faces[id];
-                    const auto i = face.minus == core::invalid_id ? core::invalid_id : fluid.global_to_fluid[face.minus];
+                    const auto minus = face.minus;
+                    const auto i = minus == core::invalid_id ? core::invalid_id : fluid.global_to_fluid[minus];
                     const auto j = face.plus == core::invalid_id ? core::invalid_id : fluid.global_to_fluid[face.plus];
                     if (i != core::invalid_id && j != core::invalid_id) {
                         fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
