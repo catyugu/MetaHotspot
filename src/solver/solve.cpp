@@ -5,6 +5,7 @@
 #include "solver/assembler.hpp"
 #include "solver/connection_flux.hpp"
 #include "solver/frozen_flow.hpp"
+#include "solver/stokes_flow.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/probe_recorder.hpp"
 #include "solver/solver.hpp"
@@ -19,6 +20,52 @@
 namespace mhs::solver {
 
     namespace {
+
+        // Obtain a physically consistent initial flow for the default state.
+        // In a pure Neumann thermal channel, starting with u=0 would make the
+        // first thermal Picard matrix singular before pressure-driven inflow
+        // can supply the required temperature reference.
+        void initialize_stokes_state(const model::CompiledModel& compiled, core::Vector<double>& state)
+        {
+            for (std::size_t domain_id = 0; domain_id < compiled.domains.size(); ++domain_id) {
+                const auto& domain = compiled.domains[domain_id];
+                if (domain.flow_mode != model::FlowMode::Stokes || domain.fluid.fluid_to_global.empty())
+                    continue;
+                const auto id = static_cast<model::DomainId>(domain_id);
+                const auto& thermal = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Temperature));
+                core::Vector<double> temperatures(domain.discrete.cells.size());
+                for (std::size_t j = 0; j < thermal.entities.size(); ++j)
+                    temperatures[thermal.entities[j]] = state[thermal.dofs[j]];
+
+                core::Vector<model::DofId> degrees;
+                for (const auto& field : compiled.layout.fields)
+                    if (field.domain == id && (field.quantity == model::FieldQuantity::Pressure
+                            || field.quantity == model::FieldQuantity::Velocity))
+                        degrees.insert(degrees.end(), field.dofs.begin(), field.dofs.end());
+                core::Vector<core::SparseIndex> local(state.size(), core::invalid_id);
+                for (std::size_t j = 0; j < degrees.size(); ++j)
+                    local[degrees[j]] = static_cast<core::SparseIndex>(j);
+
+                StokesAssembler stokes(domain, compiled.layout, id);
+                core::Vector<core::Triplet<double>> entries, capacity;
+                core::Vector<double> load(state.size(), 0.0);
+                stokes.assemble(state, temperatures, 0.0, entries, capacity, load);
+                core::Vector<core::Triplet<double>> block;
+                for (const auto& e : entries)
+                    if (local[e.row] != core::invalid_id && local[e.col] != core::invalid_id)
+                        block.emplace_back(local[e.row], local[e.col], e.value);
+                const auto matrix = core::build_csr(degrees.size(), degrees.size(), std::move(block));
+                auto solver = linear::create_solver({linear::SolverType::SparseLu, {}});
+                solver->compute(matrix.view());
+                core::Vector<double> rhs(degrees.size()), solution(degrees.size(), 0.0);
+                for (std::size_t j = 0; j < degrees.size(); ++j)
+                    rhs[j] = load[degrees[j]];
+                if (!solver->solve(rhs, solution).success)
+                    throw std::runtime_error("initial Stokes hydraulic solve failed");
+                for (std::size_t j = 0; j < degrees.size(); ++j)
+                    state[degrees[j]] = solution[j];
+            }
+        }
 
         void validate_operator_dimensions(const Operators& ops, std::size_t state_count)
         {
@@ -223,6 +270,8 @@ namespace mhs::solver {
         if (!std::all_of(state.begin(), state.end(), [](double v) { return std::isfinite(v); }))
             throw std::invalid_argument("initial state must be finite");
 
+        if (initial_state.empty())
+            initialize_stokes_state(compiled, state);
         ModelAssembler assembler(compiled, state);
         SystemAssembler assemble = [&](std::span<const double> current, double time) -> const Operators& {
             return assembler.assemble(current, time);
