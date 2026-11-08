@@ -20,6 +20,13 @@ namespace mhs::model {
         mhs::core::Vector<double> z_vertices;
     };
 
+    // Dyadic octree refinement of Cartesian parent cells inside an axis-aligned box.
+    // Boxes must align with the parent mesh's vertex planes; levels 1..3.
+    struct CartesianRefinement {
+        std::array<double, 3> min {}, max {};
+        std::uint32_t levels = 1;
+    };
+
     struct VariableSpec {
         std::string name;
         Expression value;
@@ -174,6 +181,7 @@ namespace mhs::model {
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
         ThermalBoundary default_thermal_boundary = NeumannBoundary {};
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
+        mhs::core::Vector<CartesianRefinement> refinements;
     };
 
     // Meshless modal domain. Port patches carry physical boundary geometry,

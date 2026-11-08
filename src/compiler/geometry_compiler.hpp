@@ -32,7 +32,8 @@ namespace mhs::compiler {
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& point);
     void project_cell_regions(mhs::model::FomDomain& model, const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
     void compile_cartesian_mesh(mhs::model::FomDomain& model, const mhs::model::MeshSpec& input,
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
+        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes,
+        const mhs::core::Vector<mhs::model::CartesianRefinement>& refinements = {});
 
     // With no fallback tag, uncovered exterior patches are omitted.
     mhs::core::Vector<ProjectedSurfacePatch> project_exterior_surface_regions(const mhs::model::DiscreteMesh& mesh,

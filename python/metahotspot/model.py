@@ -165,6 +165,26 @@ class Model(OwnedHandle):
             ctx="set_cartesian_mesh",
         )
 
+    def refine_cartesian_box(
+        self,
+        lo: Sequence[float],
+        hi: Sequence[float],
+        *,
+        levels: int = 1,
+        domain: int = 0,
+    ) -> None:
+        """Octree-refine parent cells inside a vertex-aligned Cartesian box."""
+        bounds = [np.ascontiguousarray(p, dtype=np.float64) for p in (lo, hi)]
+        if any(p.shape != (3,) for p in bounds):
+            raise ValueError("refinement box endpoints must have three coordinates")
+        self._call(
+            "mhs_model_refine_cartesian_box",
+            domain,
+            *[_double_ptr(p) for p in bounds],
+            levels,
+            ctx="refine_cartesian_box",
+        )
+
     def add_variable(self, name: str, expression: str) -> None:
         """Add an expression constant."""
         self._call(

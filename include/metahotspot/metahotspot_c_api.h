@@ -274,6 +274,10 @@ MHS_API mhs_status_t mhs_model_set_study(mhs_model_t* m, const mhs_study_t* stud
 MHS_API mhs_status_t mhs_model_set_cartesian_mesh(mhs_model_t* m, mhs_index_t domain, size_t nx, const double* x,
     size_t ny, const double* y, size_t nz, const double* z);
 
+/** Refine aligned parent-cell boxes by 2^levels in each Cartesian direction (levels 1..3). */
+MHS_API mhs_status_t mhs_model_refine_cartesian_box(mhs_model_t* m, mhs_index_t domain,
+    const double min_xyz[3], const double max_xyz[3], uint32_t levels);
+
 MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
 
 /* ------------------------------------------------------------------ */

@@ -120,7 +120,7 @@ namespace mhs::compiler {
             auto default_thermal_boundary
                 = compile_thermal_boundary(domain.default_thermal_boundary, boundary_conditions, symbols);
 
-            compile_cartesian_mesh(model, domain.mesh, domain.volumes);
+            compile_cartesian_mesh(model, domain.mesh, domain.volumes, domain.refinements);
             project_cell_regions(model, domain.volumes);
             for (const auto material : model.cell_material)
                 if (material >= model.material_table.size())
