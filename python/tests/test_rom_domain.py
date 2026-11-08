@@ -27,7 +27,6 @@ def test_rom_only_state_layout_initialization_and_steady_solve():
     solution = compiled.solve()
     assert solution.converged
     np.testing.assert_allclose(solution.state, [300.0], atol=1e-8)
-    assert model.add_fom_domain() == 1
 
 
 def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
@@ -59,18 +58,25 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     model.add_point_probe("rom-probe", (2.5, 0.5, 0.5))
     model.add_rom_observation(rom, "rom-probe", (2.5, 0.5, 0.5), [1.0])
 
+    extra = model.add_fom_domain()
+    assert extra == 2
+    model.set_cartesian_mesh([3, 4], [0, 1], [0, 1], domain=extra)
+    extra_volume = model.add_volume(solid, domain=extra)
+    model.add_box(extra_volume, (3, 0, 0), (4, 1, 1), domain=extra)
+    model.set_default_dirichlet("300", domain=extra)
+
     compiled = model.compile()
-    assert compiled.info.domain_count == 2
-    assert compiled.info.cell_count == 1
-    assert compiled.info.state_count == 2
-    np.testing.assert_allclose(compiled.default_state(), [300.0, 290.0])
+    assert compiled.info.domain_count == 3
+    assert compiled.info.cell_count == 2
+    assert compiled.info.state_count == 3
+    np.testing.assert_allclose(compiled.default_state(), [300.0, 290.0, 300.0])
     operators = compiled.assemble()
     np.testing.assert_allclose(
-        operators.K.toarray(), [[3.0, -1.0], [-1.0, 3.0]], atol=1e-12
+        operators.K.toarray()[:2, :2], [[3.0, -1.0], [-1.0, 3.0]], atol=1e-12
     )
     solution = compiled.solve()
     assert solution.converged
-    np.testing.assert_allclose(solution.state, [295.0, 285.0], atol=1e-7)
+    np.testing.assert_allclose(solution.state, [295.0, 285.0, 300.0], atol=1e-7)
     np.testing.assert_allclose(
         compiled.connection_flux(connection, solution.state), [10.0], atol=1e-7
     )
@@ -79,7 +85,7 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
 
     transient = compiled.solve(study=Study(StudyType.TRANSIENT, 300.0, 0.5, 0.25))
     assert transient.converged
-    assert transient.state_history.shape[1] == 2
+    assert transient.state_history.shape[1] == 3
     assert transient.probes[0].values.size == transient.history_times.size
 
 
