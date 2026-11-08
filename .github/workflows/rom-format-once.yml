@@ -37,8 +37,9 @@ jobs:
             python/metahotspot/_dll_interface.py python/tests/test_rom_domain.py
           ruff check --fix python/metahotspot/model.py python/metahotspot/compiled.py \
             python/metahotspot/_dll_interface.py python/tests/test_rom_domain.py
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" config user.name "github-actions[bot]"
+          git -C "$GITHUB_WORKSPACE" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add include/metahotspot/model include/metahotspot/metahotspot_c_api.h \
             src/compiler src/solver src/api tests/integration/test_rom_domain.cpp \
             python/metahotspot python/tests/test_rom_domain.py
