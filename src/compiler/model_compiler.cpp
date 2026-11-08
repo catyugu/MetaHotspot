@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace mhs::compiler {
@@ -67,8 +68,8 @@ namespace mhs::compiler {
     {
         mhs::model::CompiledModel compiled;
         compiled.study = definition.study;
-        if (definition.domains.empty())
-            throw std::invalid_argument("model must contain a FOM domain");
+        if (definition.domains.empty() && definition.rom_domains.empty())
+            throw std::invalid_argument("model must contain a FOM or ROM domain");
 
         auto symbols = build_symbol_table(definition);
         compiled.point_probes = definition.point_probes;
@@ -167,6 +168,45 @@ namespace mhs::compiler {
             }
             compiled.layout.state_count += n;
             compiled.layout.fields.push_back(std::move(temperature));
+        }
+        // A ROM has algebraic coordinates and physical boundary maps but no
+        // Cartesian cell mesh or fabricated material table.
+        for (std::size_t r = 0; r < definition.rom_domains.size(); ++r) {
+            auto rom = definition.rom_domains[r];
+            const auto n = rom.order;
+            if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n
+                || rom.K.size() != n * n || rom.C.size() != n * n || rom.f.size() != n
+                || (!rom.initial_state.empty() && rom.initial_state.size() != n))
+                throw std::invalid_argument("ROM operators or initial state have invalid dimensions");
+            auto finite = [](double value) { return std::isfinite(value); };
+            if (!std::all_of(rom.K.begin(), rom.K.end(), finite)
+                || !std::all_of(rom.C.begin(), rom.C.end(), finite)
+                || !std::all_of(rom.f.begin(), rom.f.end(), finite)
+                || !std::all_of(rom.initial_state.begin(), rom.initial_state.end(), finite))
+                throw std::invalid_argument("ROM operators and initial state must be finite");
+            if (rom.initial_state.empty())
+                rom.initial_state.assign(n, 0.0);
+            for (const auto& obs : rom.observations) {
+                if (obs.weights.size() != n || !std::all_of(obs.weights.begin(), obs.weights.end(), finite)
+                    || !finite(obs.offset) || !finite(obs.point.x) || !finite(obs.point.y)
+                    || !finite(obs.point.z))
+                    throw std::invalid_argument("ROM observation has invalid dimension or values");
+            }
+            const auto global_id = static_cast<model::DomainId>(compiled.domains.size() + r);
+            model::FieldLayout field;
+            field.domain = global_id;
+            field.quantity = model::FieldQuantity::ReducedCoordinate;
+            field.support = model::EntitySupport::Reduced;
+            core::detail::checked_sparse_size(compiled.layout.state_count + n);
+            field.entities.resize(n);
+            field.dofs.resize(n);
+            for (std::size_t j = 0; j < n; ++j) {
+                field.entities[j] = static_cast<core::EntityIndex>(j);
+                field.dofs[j] = static_cast<model::DofId>(compiled.layout.state_count + j);
+            }
+            compiled.layout.state_count += n;
+            compiled.layout.fields.push_back(std::move(field));
+            compiled.rom_domains.push_back(std::move(rom));
         }
         compile_connections(definition, compiled);
         return compiled;
