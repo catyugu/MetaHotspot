@@ -28,7 +28,7 @@ namespace mhs::app::postprocess {
     } // namespace
 
     mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::FomDomain& model,
-        const mhs::model::CompiledLibrary& library, const mhs::model::MeshSpec& grid,
+        const mhs::model::MeshSpec& grid,
         std::span<const double> cell_temperature, double time)
     {
         if (cell_temperature.size() != model.discrete.cells.size())
@@ -44,7 +44,7 @@ namespace mhs::app::postprocess {
             const auto center = cell.center();
             const auto temperature = cell_temperature[c];
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], temperature, time};
-            const auto& mat = library.material_table[model.cell_material[c]];
+            const auto& mat = model.library->material_table[model.cell_material[c]];
             const mhs::model::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             for (double x : {cell.min[0], cell.max[0]})
                 for (double y : {cell.min[1], cell.max[1]})
