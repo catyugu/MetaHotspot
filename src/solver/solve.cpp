@@ -5,10 +5,10 @@
 #include "solver/assembler.hpp"
 #include "solver/connection_flux.hpp"
 #include "solver/frozen_flow.hpp"
-#include "solver/stokes_flow.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/probe_recorder.hpp"
 #include "solver/solver.hpp"
+#include "solver/stokes_flow.hpp"
 #include "solver/thermal_reconstruction.hpp"
 #include <atstep/stepper.hpp>
 
@@ -32,19 +32,21 @@ namespace mhs::solver {
                 if (domain.flow_mode != model::FlowMode::Stokes || domain.fluid.fluid_to_global.empty())
                     continue;
                 const auto id = static_cast<model::DomainId>(domain_id);
-                const auto& thermal = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Temperature));
+                const auto& thermal
+                    = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Temperature));
                 core::Vector<double> temperatures(domain.discrete.cells.size());
                 for (std::size_t j = 0; j < thermal.entities.size(); ++j)
                     temperatures[thermal.entities[j]] = state[thermal.dofs[j]];
 
                 core::Vector<model::DofId> degrees;
                 for (const auto& field : compiled.layout.fields)
-                    if (field.domain == id && (field.quantity == model::FieldQuantity::Pressure
+                    if (field.domain == id
+                        && (field.quantity == model::FieldQuantity::Pressure
                             || field.quantity == model::FieldQuantity::Velocity))
                         degrees.insert(degrees.end(), field.dofs.begin(), field.dofs.end());
-                core::Vector<core::SparseIndex> local(state.size(), core::invalid_id);
+                core::Vector<core::EntityIndex> local(state.size(), core::invalid_id);
                 for (std::size_t j = 0; j < degrees.size(); ++j)
-                    local[degrees[j]] = static_cast<core::SparseIndex>(j);
+                    local[degrees[j]] = static_cast<core::EntityIndex>(j);
 
                 StokesAssembler stokes(domain, compiled.layout, id);
                 core::Vector<core::Triplet<double>> entries, capacity;
