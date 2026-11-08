@@ -111,7 +111,6 @@ namespace mhs::model {
         FomDomain& fom(DomainId id) { return std::get<FomDomain>(components.at(id).physics); }
         const FomDomain& fom(DomainId id) const { return std::get<FomDomain>(components.at(id).physics); }
         const RomDomain& rom(DomainId id) const { return std::get<RomDomain>(components.at(id).physics); }
-        const CompiledLibrary& library() const { return *components.front().library; }
 
         StateLayout layout;
         core::Vector<ThermalConnection> connections;
