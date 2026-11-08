@@ -230,41 +230,61 @@ TEST(RomDomain, RomToRomConnectionNeedsNoFakeFomMesh)
     EXPECT_NEAR(solved_flux[0].outward_a, 10, 1e-8);
 }
 
-TEST(RomDomain, AffineHtcTermsReuseOneReducedSystemForDifferentBoundaryValues)
+TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
 {
-    mhs::model::ModelDefinition d;
+    using namespace mhs::model;
+    ModelDefinition d;
     d.domains.clear();
-    mhs::model::RomDomainDefinition rom;
+    RomDomainDefinition rom;
     rom.order = 1;
     rom.K = {2};
     rom.C = {1};
     rom.f = {0};
     rom.initial_state = {300};
-    // A projected convection term: K_h = A, f_h = A*T_ambient,
-    // with physical area A=0.01 m² and ambient temperature 300 K.
-    rom.affine_terms.push_back({"h", 100, {0.01}, {3}});
+    RomPort port;
+    port.name = "exposed-htc-face";
+    port.region = {Axis::Z, 1, {0, 0.1, 0, 0.1}};
+    port.outward_sign = 1;
+    RomPortPatch patch;
+    patch.rectangle = {0, 0.1, 0, 0.1};
+    patch.half_resistance = 0.005; // m^2 K/W, included in boundary condensation.
+    patch.center = {0.05, 0.05};
+    patch.trace = {1};
+    port.patches.push_back(patch);
+    rom.ports.push_back(port);
+    rom.thermal_boundaries.push_back(
+        {{{Axis::Z, 1, {0, 0.1, 0, 0.1}}}, ConvectionBoundary {"100", "300"}});
     d.rom_domains.push_back(rom);
     const mhs::core::Vector<double> initial {300};
-    const auto first = mhs::compiler::build_model(d);
-    const auto first_ops = mhs::solver::assemble_thermal(first, initial, 0);
-    EXPECT_NEAR(first_ops.K.coeff(0, 0), 3, 1e-12);
-    EXPECT_NEAR(first_ops.f[0], 300, 1e-12);
-    const auto first_solution = mhs::solver::solve(first);
-    ASSERT_TRUE(first_solution.converged);
-    EXPECT_NEAR(first_solution.state[0], 100, 1e-8);
 
-    // No new basis or trace extraction: only change the parameter coefficient
-    // and construct another immutable compiled snapshot.
-    d.rom_domains[0].affine_terms[0].value = 200;
+    const auto first = mhs::compiler::build_model(d);
+    ASSERT_TRUE(first.connections.empty());
+    ASSERT_EQ(first.rom_boundary_terms.size(), 1u);
+    const auto first_ops = mhs::solver::assemble_thermal(first, initial, 0);
+    const double first_g = 0.01 / (0.005 + 1.0 / 100.0);
+    EXPECT_NEAR(first_ops.K.coeff(0, 0), 2 + first_g, 1e-12);
+    EXPECT_NEAR(first_ops.f[0], first_g * 300, 1e-12);
+    EXPECT_NEAR(mhs::solver::solve(first).state[0], 300 * first_g / (2 + first_g), 1e-8);
+
+    // Reuse the same intrinsic ROM and physical port; only the ordinary
+    // exterior boundary condition changes with the surrounding environment.
+    d.rom_domains[0].thermal_boundaries[0].condition = ConvectionBoundary {"200", "300"};
     const auto second = mhs::compiler::build_model(d);
     const auto second_ops = mhs::solver::assemble_thermal(second, initial, 0);
-    EXPECT_NEAR(second_ops.K.coeff(0, 0), 4, 1e-12);
-    EXPECT_NEAR(second_ops.f[0], 600, 1e-12);
-    const auto second_solution = mhs::solver::solve(second);
-    ASSERT_TRUE(second_solution.converged);
-    EXPECT_NEAR(second_solution.state[0], 150, 1e-8);
-    const auto first_again = mhs::solver::solve(first);
-    EXPECT_NEAR(first_again.state[0], first_solution.state[0], 1e-12);
+    const double second_g = 0.01 / (0.005 + 1.0 / 200.0);
+    EXPECT_NEAR(second_ops.K.coeff(0, 0), 2 + second_g, 1e-12);
+    EXPECT_NEAR(second_ops.f[0], second_g * 300, 1e-12);
+    EXPECT_NEAR(mhs::solver::solve(second).state[0], 300 * second_g / (2 + second_g), 1e-8);
+    EXPECT_NEAR(mhs::solver::solve(first).state[0], 300 * first_g / (2 + first_g), 1e-8);
+
+    // A connected face must never receive an additional external HTC law.
+    auto invalid = d;
+    RomDomainDefinition other = rom;
+    other.thermal_boundaries.clear();
+    other.ports[0].outward_sign = -1;
+    invalid.rom_domains.push_back(other);
+    invalid.connections.push_back({{0, 0}, {1, 0}});
+    EXPECT_THROW(mhs::compiler::build_model(invalid), std::invalid_argument);
 }
 
 TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
