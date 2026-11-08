@@ -5,8 +5,8 @@
 
 namespace mhs::solver {
     namespace {
-        // Directional least squares over the domain's internal neighbours and
-        // physical boundary traces. One-sided stencils reproduce linear fields.
+        // Directional least squares over internal neighbours and physical
+        // boundary traces. One-sided stencils reproduce linear fields.
         model::Vec3 gradient(const model::FomDomain& domain, std::span<const double> t, model::CellId cell,
             model::Axis normal, double time)
         {
@@ -46,68 +46,122 @@ namespace mhs::solver {
                     sum[axis] /= weights[axis];
             return sum;
         }
-    }
+
+        core::Vector<core::Vector<double>> gather_fom(const model::CompiledModel& compiled,
+            std::span<const double> state)
+        {
+            core::Vector<core::Vector<double>> values;
+            for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
+                auto& t = values.emplace_back(compiled.domains[d].discrete.cells.size());
+                const auto& field = compiled.layout.field(compiled.layout.find(
+                    static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
+                for (std::size_t i = 0; i < field.dofs.size(); ++i)
+                    t.at(field.entities[i]) = state.at(field.dofs[i]);
+            }
+            return values;
+        }
+
+        double dot(std::span<const double> weights, std::span<const double> state,
+            const model::FieldLayout& field)
+        {
+            double value = 0.0;
+            for (std::size_t i = 0; i < weights.size(); ++i)
+                value += weights[i] * state[field.dofs[i]];
+            return value;
+        }
+
+        struct Side {
+            double temperature = 0.0;
+            double resistance = 0.0; // Per unit area, m^2 K/W
+            double offset = 0.0;
+            std::array<double, 2> center {};
+            std::array<double, 2> tangent {};
+            core::Vector<WeightedDof> weights;
+        };
+    } // namespace
+
     core::Vector<ConnectionFlux> evaluate_connection_flux(const model::CompiledModel& compiled,
         const model::ThermalConnection& connection, std::span<const double> state, double time)
     {
         if (state.size() != compiled.layout.state_count)
             throw std::invalid_argument("connection flux requires a complete state");
-        core::Vector<core::Vector<double>> temperatures;
-        for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
-            auto& t = temperatures.emplace_back(compiled.domains[d].discrete.cells.size());
-            const auto& field = compiled.layout.field(
-                compiled.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
-            for (std::size_t i = 0; i < field.dofs.size(); ++i)
-                t.at(field.entities[i]) = state[field.dofs[i]];
-        }
-        return evaluate_connection_flux(compiled, connection, temperatures, time);
-    }
-
-    core::Vector<ConnectionFlux> evaluate_connection_flux(const model::CompiledModel& compiled,
-        const model::ThermalConnection& connection, const core::Vector<core::Vector<double>>& t, double time)
-    {
-        const auto da = connection.a.domain, db = connection.b.domain;
-        const auto& a = compiled.domains.at(da);
-        const auto& b = compiled.domains.at(db);
+        const auto nfom = compiled.domains.size();
         const auto axis = static_cast<std::size_t>(connection.axis);
+        const auto temperatures = gather_fom(compiled, state);
+        auto side = [&](model::PortReference ref, model::CellId index) -> Side {
+            Side result;
+            if (ref.domain < nfom) {
+                const auto& domain = compiled.domains.at(ref.domain);
+                const auto cell = index;
+                const auto& box = domain.discrete.cells.at(cell);
+                const auto center = box.center();
+                const auto& mat = domain.material_table.at(domain.cell_material.at(cell));
+                const auto& law = axis == 0 ? mat.kx : axis == 1 ? mat.ky : mat.kz;
+                const double temperature = temperatures[ref.domain][cell];
+                const double k = law.eval({center[0], center[1], center[2], temperature, time});
+                if (!std::isfinite(k) || k <= 0)
+                    throw std::invalid_argument("connection requires finite positive normal conductivity");
+                result.resistance = box.size()[axis] / (2 * k);
+                result.temperature = temperature;
+                const auto& field = compiled.layout.field(
+                    compiled.layout.find(ref.domain, model::FieldQuantity::Temperature));
+                for (std::size_t j = 0; j < field.entities.size(); ++j)
+                    if (field.entities[j] == cell) {
+                        result.weights.push_back({field.dofs[j], 1.0});
+                        break;
+                    }
+                if (result.weights.empty())
+                    throw std::invalid_argument("connection cell is missing its temperature DOF");
+                const auto grad = gradient(domain, temperatures[ref.domain], cell, connection.axis, time);
+                std::size_t t = 0;
+                for (std::size_t a = 0; a < 3; ++a)
+                    if (a != axis) {
+                        result.center[t] = center[a];
+                        result.tangent[t] = grad[a];
+                        ++t;
+                    }
+            }
+            else {
+                const auto& rom = compiled.rom_domains.at(ref.domain - nfom);
+                const auto& facet = rom.ports.at(ref.port).patches.at(index);
+                const auto& field = compiled.layout.field(
+                    compiled.layout.find(ref.domain, model::FieldQuantity::ReducedCoordinate));
+                result.resistance = facet.half_resistance;
+                result.offset = facet.offset;
+                result.temperature = dot(facet.trace, state, field) + facet.offset;
+                result.center = facet.center;
+                for (std::size_t j = 0; j < rom.order; ++j)
+                    if (facet.trace[j] != 0.0)
+                        result.weights.push_back({field.dofs[j], facet.trace[j]});
+                for (std::size_t t = 0; t < 2; ++t)
+                    if (!facet.tangential_gradient[t].empty())
+                        result.tangent[t] = dot(facet.tangential_gradient[t], state, field);
+            }
+            return result;
+        };
         core::Vector<ConnectionFlux> result;
         result.reserve(connection.patches.size());
-        auto conductivity = [&](const model::FomDomain& domain, model::CellId cell, double temperature) {
-            const auto p = domain.discrete.cells[cell].center();
-            const auto& mat = domain.material_table[domain.cell_material[cell]];
-            const auto& law = axis == 0 ? mat.kx : axis == 1 ? mat.ky : mat.kz;
-            const auto k = law.eval({p[0], p[1], p[2], temperature, time});
-            if (!std::isfinite(k) || k <= 0)
-                throw std::invalid_argument("connection requires finite positive normal conductivity");
-            return k;
-        };
         for (const auto& patch : connection.patches) {
-            const auto& ca = a.discrete.cells[patch.a];
-            const auto& cb = b.discrete.cells[patch.b];
+            const auto a = side(connection.a, patch.a);
+            const auto b = side(connection.b, patch.b);
             const double area = (patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2]);
-            const double g = area
-                / (ca.size()[axis] / (2 * conductivity(a, patch.a, t[da][patch.a]))
-                    + cb.size()[axis] / (2 * conductivity(b, patch.b, t[db][patch.b])));
-            double correction = 0, offset_a = 0;
+            const double g = area / (a.resistance + b.resistance);
+            if (!std::isfinite(g) || g <= 0)
+                throw std::invalid_argument("connection requires finite positive conductance");
+            double correction = 0.0, offset_a = 0.0;
             if (connection.nonmatching) {
-                const auto ga = gradient(a, t[da], patch.a, connection.axis, time);
-                const auto gb = gradient(b, t[db], patch.b, connection.axis, time);
-                const auto xa = ca.center(), xb = cb.center();
-                std::size_t tangent = 0;
-                for (std::size_t dim = 0; dim < 3; ++dim) {
-                    if (dim == axis)
-                        continue;
-                    const double point = (patch.bounds[2 * tangent] + patch.bounds[2 * tangent + 1]) / 2;
-                    offset_a += (point - xa[dim]) * ga[dim];
-                    correction += g * ((point - xa[dim]) * ga[dim] - (point - xb[dim]) * gb[dim]);
-                    ++tangent;
+                for (std::size_t t = 0; t < 2; ++t) {
+                    const auto x = (patch.bounds[2 * t] + patch.bounds[2 * t + 1]) / 2;
+                    const double da = (x - a.center[t]) * a.tangent[t];
+                    const double db = (x - b.center[t]) * b.tangent[t];
+                    offset_a += da;
+                    correction += g * (da - db);
                 }
             }
-            const double q = g * (t[da][patch.a] - t[db][patch.b]) + correction;
-            const double trace = t[da][patch.a] + offset_a
-                - q * ca.size()[axis] / (2 * conductivity(a, patch.a, t[da][patch.a]) * area);
-            result.push_back({g, correction, q, trace});
+            const double q = g * (a.temperature - b.temperature) + correction;
+            const double trace = a.temperature + offset_a - q * a.resistance / area;
+            result.push_back({g, correction, g * (a.offset - b.offset), q, trace, a.weights, b.weights});
         }
         return result;
     }
-}
+} // namespace mhs::solver
