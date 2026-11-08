@@ -6,7 +6,6 @@
 #include "solver/connection_flux.hpp"
 #include "solver/frozen_flow.hpp"
 #include "solver/nonlinear_solver.hpp"
-#include "solver/probe_recorder.hpp"
 #include "solver/solver.hpp"
 #include "solver/stokes_flow.hpp"
 #include "solver/thermal_reconstruction.hpp"
@@ -268,48 +267,50 @@ namespace mhs::solver {
             return assembler.assemble(current, time);
         };
 
-        // Resolve physical probes against either FOM geometry or explicitly
-        // declared ROM observations. A point cannot belong to both.
-        core::Vector<model::DomainId> probe_domains;
-        core::Vector<std::unique_ptr<ProbeRecorder>> recorders;
-        core::Vector<const model::RomObservation*> rom_observations;
-        core::Vector<ProbeTrace> rom_traces;
+        // Bind each probe once to a component and its local physical
+        // observation. All probes share the same output timeline.
+        struct ObservationSlot {
+            model::DomainId domain = core::invalid_id;
+            model::CellId cell = core::invalid_id;
+            const model::RomObservation* reduced = nullptr;
+            model::Vec3 point {};
+            ProbeTrace trace;
+        };
+        core::Vector<ObservationSlot> observations;
         for (const auto& probe : compiled.point_probes) {
-            model::DomainId owner = core::invalid_id;
-            const model::RomObservation* observation = nullptr;
+            ObservationSlot slot;
+            slot.point = {probe.x, probe.y, probe.z};
+            slot.trace.name = probe.name;
             for (std::size_t d = 0; d < compiled.components.size(); ++d) {
-                if (const auto* fom = std::get_if<model::FomDomain>(&compiled.components[d].physics)) {
-                    const auto cell = locate_cell(fom->discrete, {probe.x, probe.y, probe.z});
+                const auto& physics = compiled.components[d].physics;
+                if (const auto* fom = std::get_if<model::FomDomain>(&physics)) {
+                    const auto cell = locate_cell(fom->discrete, slot.point);
                     if (cell == core::invalid_id)
                         continue;
-                    if (owner != core::invalid_id)
+                    if (slot.domain != core::invalid_id)
                         throw std::invalid_argument("probe belongs to multiple domains");
-                    owner = static_cast<model::DomainId>(d);
-                    continue;
+                    slot.domain = static_cast<model::DomainId>(d);
+                    slot.cell = cell;
                 }
-                const auto& rom = std::get<model::RomDomain>(compiled.components[d].physics);
-                for (const auto& value : rom.observations) {
-                    if (probe.name != value.point.name || probe.x != value.point.x || probe.y != value.point.y
-                        || probe.z != value.point.z)
-                        continue;
-                    if (owner != core::invalid_id)
-                        throw std::invalid_argument("probe belongs to multiple domains");
-                    owner = static_cast<model::DomainId>(d);
-                    observation = &value;
-                }
+                else
+                    for (const auto& value : std::get<model::RomDomain>(physics).observations) {
+                        if (probe.name != value.point.name || probe.x != value.point.x || probe.y != value.point.y
+                            || probe.z != value.point.z)
+                            continue;
+                        if (slot.domain != core::invalid_id)
+                            throw std::invalid_argument("probe belongs to multiple domains");
+                        slot.domain = static_cast<model::DomainId>(d);
+                        slot.reduced = &value;
+                    }
             }
-            if (owner == core::invalid_id)
+            if (slot.domain == core::invalid_id)
                 throw std::invalid_argument("probe is outside all domains");
-            probe_domains.push_back(owner);
-            rom_observations.push_back(observation);
-            rom_traces.push_back({probe.name, {}});
-            if (observation)
-                recorders.push_back(nullptr);
-            else
-                recorders.push_back(std::make_unique<ProbeRecorder>(compiled.fom(owner), std::span(&probe, 1)));
+            observations.push_back(std::move(slot));
         }
 
         StateObserver observe = [&](double t, std::span<const double> accepted_state) {
+            if (observations.empty())
+                return;
             core::Vector<core::Vector<SurfaceTrace>> traces(compiled.components.size());
             for (const auto& connection : compiled.connections) {
                 const auto flux = evaluate_connection_flux(compiled, connection, accepted_state, t);
@@ -326,21 +327,21 @@ namespace mhs::solver {
                                 flux[p].interface_temperature});
                 }
             }
-            for (std::size_t p = 0; p < recorders.size(); ++p) {
-                if (recorders[p]) {
-                    const auto& field = compiled.layout.field(
-                        compiled.layout.find(probe_domains[p], model::FieldQuantity::Temperature));
-                    recorders[p]->record(
-                        t, accepted_state.subspan(field.offset, field.count), traces[probe_domains[p]]);
-                    continue;
+            for (auto& slot : observations) {
+                const auto quantity
+                    = slot.reduced ? model::FieldQuantity::ReducedCoordinate : model::FieldQuantity::Temperature;
+                const auto& field = compiled.layout.field(compiled.layout.find(slot.domain, quantity));
+                double temperature = 0.0;
+                if (slot.reduced) {
+                    temperature = slot.reduced->offset;
+                    for (std::size_t j = 0; j < slot.reduced->weights.size(); ++j)
+                        temperature += slot.reduced->weights[j] * accepted_state[field.dof(j)];
                 }
-                const auto* observation = rom_observations[p];
-                const auto& field = compiled.layout.field(
-                    compiled.layout.find(probe_domains[p], model::FieldQuantity::ReducedCoordinate));
-                double temperature = observation->offset;
-                for (std::size_t j = 0; j < observation->weights.size(); ++j)
-                    temperature += observation->weights[j] * accepted_state[field.dof(j)];
-                rom_traces[p].values.push_back(temperature);
+                else
+                    temperature = sample_point(compiled.fom(slot.domain),
+                        accepted_state.subspan(field.offset, field.count), t, slot.cell, slot.point,
+                        traces[slot.domain]);
+                slot.trace.values.push_back(temperature);
             }
         };
 
@@ -356,12 +357,8 @@ namespace mhs::solver {
                     break;
                 }
         auto sol = solve_system(study, assemble, std::move(state), effective_options, observe);
-        for (std::size_t p = 0; p < recorders.size(); ++p) {
-            if (recorders[p])
-                sol.probe_traces.push_back(std::move(*recorders[p]).take_traces().front());
-            else
-                sol.probe_traces.push_back(std::move(rom_traces[p]));
-        }
+        for (auto& slot : observations)
+            sol.probe_traces.push_back(std::move(slot.trace));
         return sol;
     }
 
