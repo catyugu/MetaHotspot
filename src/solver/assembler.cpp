@@ -170,63 +170,24 @@ namespace mhs::solver {
     ModelAssembler::ModelAssembler(const model::CompiledModel& model, std::span<const double> initial, double time)
         : model_(model)
     {
-        if (initial.size() != model.layout.state_count || (model.domains.empty() && model.rom_domains.empty()))
-            throw std::invalid_argument("thermal assembly requires a complete state and a physical domain");
-        core::Vector<bool> seen(initial.size(), false);
+        if (initial.size() != model.layout.state_count)
+            throw std::invalid_argument("thermal assembly requires a complete state");
+        // build_model() owns the field layout invariant. Do not validate every
+        // generated DOF map again for each new solver workspace.
         for (std::size_t d = 0; d < model.domains.size(); ++d) {
             const auto& domain = model.domains[d];
-            const auto& field = model.layout.field(
-                model.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
-            const auto n = domain.discrete.cells.size();
-            auto& map = dofs_.emplace_back(n, core::invalid_id);
-            if (field.entities.size() != n || field.dofs.size() != n)
-                throw std::invalid_argument("invalid thermal state layout");
-            for (std::size_t i = 0; i < n; ++i) {
-                const auto c = field.entities[i], dof = field.dofs[i];
-                if (c >= n || dof >= seen.size() || seen[dof] || map[c] != core::invalid_id)
-                    throw std::invalid_argument("invalid thermal state mapping");
-                seen[dof] = true;
-                map[c] = dof;
-            }
-            temperatures_.emplace_back(n);
+            const auto id = model.registry.fom_id(d);
+            const auto& field = model.layout.field(model.layout.find(id, model::FieldQuantity::Temperature));
+            auto& map = dofs_.emplace_back(domain.discrete.cells.size());
+            for (std::size_t i = 0; i < field.dofs.size(); ++i)
+                map[field.entities[i]] = field.dofs[i];
+            temperatures_.emplace_back(domain.discrete.cells.size());
         }
-        // Nonthermal fields are independent state entries, not cell temperatures.
-        // Validate the full injective map before constructing workspaces.
-        for (const auto& field : model.layout.fields)
-            if (field.quantity == model::FieldQuantity::Pressure || field.quantity == model::FieldQuantity::Velocity) {
-                if (field.domain >= model.domains.size() || field.entities.size() != field.dofs.size())
-                    throw std::invalid_argument("invalid fluid state layout");
-                if (model.domains[field.domain].flow_mode != model::FlowMode::Stokes)
-                    throw std::invalid_argument("fluid state field on a frozen-flow domain");
-                for (const auto dof : field.dofs) {
-                    if (dof >= seen.size() || seen[dof])
-                        throw std::invalid_argument("invalid or repeated fluid DOF");
-                    seen[dof] = true;
-                }
-            }
-        for (std::size_t r = 0; r < model.rom_domains.size(); ++r) {
-            const auto domain = static_cast<model::DomainId>(model.domains.size() + r);
-            const auto& field = model.layout.field(model.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
-            const auto n = model.rom_domains[r].order;
-            if (field.entities.size() != n || field.dofs.size() != n)
-                throw std::invalid_argument("ROM field does not cover modal coordinates");
-            core::Vector<bool> local_seen(n, false);
-            for (std::size_t i = 0; i < n; ++i) {
-                const auto entity = field.entities[i], dof = field.dofs[i];
-                if (entity >= n || dof >= seen.size() || seen[dof] || local_seen[entity])
-                    throw std::invalid_argument("invalid ROM state mapping");
-                seen[dof] = true;
-                local_seen[entity] = true;
-            }
-        }
-        if (std::find(seen.begin(), seen.end(), false) != seen.end())
-            throw std::invalid_argument("fields do not cover entire system state");
         gather(initial);
         for (std::size_t d = 0; d < model.domains.size(); ++d) {
             const auto& domain = model.domains[d];
             if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
-                stokes_.push_back(
-                    std::make_unique<StokesAssembler>(domain, model.layout, static_cast<model::DomainId>(d)));
+                stokes_.push_back(std::make_unique<StokesAssembler>(domain, model.layout, model.registry.fom_id(d)));
                 domains_.push_back(std::make_unique<ThermalAssembler>(domain, FrozenFlow {}));
             }
             else {
@@ -275,7 +236,7 @@ namespace mhs::solver {
         }
         for (std::size_t r = 0; r < model_.rom_domains.size(); ++r) {
             const auto& rom = model_.rom_domains[r];
-            const auto domain = static_cast<model::DomainId>(model_.domains.size() + r);
+            const auto domain = model_.registry.rom_id(r);
             const auto& field
                 = model_.layout.field(model_.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
             for (std::size_t i = 0; i < rom.order; ++i) {
@@ -301,7 +262,7 @@ namespace mhs::solver {
         // FOM boundary law's local trace elimination, then distribute its
         // physical conductance and heat load by the Galerkin transpose map.
         for (const auto& term : model_.rom_boundary_terms) {
-            const auto& rom = model_.rom_domains.at(term.domain - model_.domains.size());
+            const auto& rom = model_.rom(term.domain);
             const auto& port = rom.ports.at(term.port);
             const auto& facet = port.patches.at(term.patch);
             const auto& field

@@ -54,7 +54,7 @@ namespace mhs::solver {
             for (std::size_t d = 0; d < compiled.domains.size(); ++d) {
                 auto& t = values.emplace_back(compiled.domains[d].discrete.cells.size());
                 const auto& field = compiled.layout.field(
-                    compiled.layout.find(static_cast<model::DomainId>(d), model::FieldQuantity::Temperature));
+                    compiled.layout.find(compiled.registry.fom_id(d), model::FieldQuantity::Temperature));
                 for (std::size_t i = 0; i < field.dofs.size(); ++i)
                     t.at(field.entities[i]) = state[field.dofs[i]];
             }
@@ -84,19 +84,18 @@ namespace mhs::solver {
     {
         if (state.size() != compiled.layout.state_count)
             throw std::invalid_argument("connection flux requires a complete state");
-        const auto nfom = compiled.domains.size();
         const auto axis = static_cast<std::size_t>(connection.axis);
         const auto temperatures = gather_fom(compiled, state);
         auto side = [&](model::PortReference ref, model::CellId index) -> Side {
             Side result;
-            if (ref.domain < nfom) {
-                const auto& domain = compiled.domains.at(ref.domain);
+            if (compiled.registry.is_fom(ref.domain)) {
+                const auto& domain = compiled.fom(ref.domain);
                 const auto cell = index;
                 const auto& box = domain.discrete.cells.at(cell);
                 const auto center = box.center();
                 const auto& mat = domain.material_table.at(domain.cell_material.at(cell));
                 const auto& law = axis == 0 ? mat.kx : axis == 1 ? mat.ky : mat.kz;
-                const double temperature = temperatures[ref.domain][cell];
+                const double temperature = temperatures[compiled.registry.fom(ref.domain)][cell];
                 const double k = law.eval({center[0], center[1], center[2], temperature, time});
                 if (!std::isfinite(k) || k <= 0)
                     throw std::invalid_argument("connection requires finite positive normal conductivity");
@@ -111,7 +110,7 @@ namespace mhs::solver {
                     }
                 if (result.weights.empty())
                     throw std::invalid_argument("connection cell is missing its temperature DOF");
-                const auto grad = gradient(domain, temperatures[ref.domain], cell, connection.axis, time);
+                const auto grad = gradient(domain, temperatures[compiled.registry.fom(ref.domain)], cell, connection.axis, time);
                 std::size_t t = 0;
                 for (std::size_t a = 0; a < 3; ++a)
                     if (a != axis) {
@@ -121,7 +120,7 @@ namespace mhs::solver {
                     }
             }
             else {
-                const auto& rom = compiled.rom_domains.at(ref.domain - nfom);
+                const auto& rom = compiled.rom(ref.domain);
                 const auto& facet = rom.ports.at(ref.port).patches.at(index);
                 const auto& field
                     = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::ReducedCoordinate));

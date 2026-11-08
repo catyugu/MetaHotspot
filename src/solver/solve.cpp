@@ -31,7 +31,7 @@ namespace mhs::solver {
                 const auto& domain = compiled.domains[domain_id];
                 if (domain.flow_mode != model::FlowMode::Stokes || domain.fluid.fluid_to_global.empty())
                     continue;
-                const auto id = static_cast<model::DomainId>(domain_id);
+                const auto id = compiled.registry.fom_id(domain_id);
                 const auto& thermal
                     = compiled.layout.field(compiled.layout.find(id, model::FieldQuantity::Temperature));
                 core::Vector<double> temperatures(domain.discrete.cells.size());
@@ -256,7 +256,7 @@ namespace mhs::solver {
                     for (const auto dof : field.dofs)
                         state[dof] = study.initial_temperature;
             for (std::size_t r = 0; r < compiled.rom_domains.size(); ++r) {
-                const auto domain = static_cast<model::DomainId>(compiled.domains.size() + r);
+                const auto domain = compiled.registry.rom_id(r);
                 const auto& field
                     = compiled.layout.field(compiled.layout.find(domain, model::FieldQuantity::ReducedCoordinate));
                 const auto& initial = compiled.rom_domains[r].initial_state;
@@ -294,7 +294,7 @@ namespace mhs::solver {
                     continue;
                 if (owner != core::invalid_id)
                     throw std::invalid_argument("probe belongs to multiple domains");
-                owner = static_cast<model::DomainId>(d);
+                owner = compiled.registry.fom_id(d);
             }
             for (std::size_t r = 0; r < compiled.rom_domains.size(); ++r) {
                 for (const auto& value : compiled.rom_domains[r].observations) {
@@ -303,7 +303,7 @@ namespace mhs::solver {
                         continue;
                     if (owner != core::invalid_id)
                         throw std::invalid_argument("probe belongs to multiple domains");
-                    owner = static_cast<model::DomainId>(compiled.domains.size() + r);
+                    owner = compiled.registry.rom_id(r);
                     observation = &value;
                 }
             }
@@ -315,24 +315,24 @@ namespace mhs::solver {
             if (observation)
                 recorders.push_back(nullptr);
             else
-                recorders.push_back(std::make_unique<ProbeRecorder>(compiled.domains[owner], std::span(&probe, 1)));
+                recorders.push_back(std::make_unique<ProbeRecorder>(compiled.fom(owner), std::span(&probe, 1)));
         }
 
         StateObserver observe = [&](double t, std::span<const double> accepted_state) {
             assembler.gather(accepted_state);
             core::Vector<core::Vector<SurfaceTrace>> traces(compiled.domains.size());
             for (const auto& connection : compiled.connections) {
-                if (connection.a.domain >= compiled.domains.size() && connection.b.domain >= compiled.domains.size())
+                if (compiled.registry.is_rom(connection.a.domain) && compiled.registry.is_rom(connection.b.domain))
                     continue;
                 const auto flux = evaluate_connection_flux(compiled, connection, accepted_state, t);
                 for (std::size_t p = 0; p < connection.patches.size(); ++p) {
                     const auto& patch = connection.patches[p];
-                    if (connection.a.domain < compiled.domains.size())
-                        traces[connection.a.domain].push_back(
+                    if (compiled.registry.is_fom(connection.a.domain))
+                        traces[compiled.registry.fom(connection.a.domain)].push_back(
                             {{patch.a, connection.axis, connection.sign_a, core::invalid_id, patch.bounds},
                                 flux[p].interface_temperature});
-                    if (connection.b.domain < compiled.domains.size())
-                        traces[connection.b.domain].push_back(
+                    if (compiled.registry.is_fom(connection.b.domain))
+                        traces[compiled.registry.fom(connection.b.domain)].push_back(
                             {{patch.b, connection.axis, static_cast<std::int8_t>(-connection.sign_a), core::invalid_id,
                                  patch.bounds},
                                 flux[p].interface_temperature});
@@ -340,7 +340,8 @@ namespace mhs::solver {
             }
             for (std::size_t p = 0; p < recorders.size(); ++p) {
                 if (recorders[p]) {
-                    recorders[p]->record(t, assembler.temperatures()[probe_domains[p]], traces[probe_domains[p]]);
+                    recorders[p]->record(t, assembler.temperatures()[compiled.registry.fom(probe_domains[p])],
+                        traces[compiled.registry.fom(probe_domains[p])]);
                     continue;
                 }
                 const auto* observation = rom_observations[p];
