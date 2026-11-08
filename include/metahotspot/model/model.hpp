@@ -96,9 +96,11 @@ namespace mhs::model {
 
     // Published as a const snapshot by the API; solve workspaces own all flow state.
     struct CompiledModel {
-        Study study;
         mhs::core::Vector<FomDomain> domains;
         mhs::core::Vector<RomDomain> rom_domains;
+        DomainRegistry registry;
+        const FomDomain& fom(DomainId id) const { return domains.at(registry.fom(id)); }
+        const RomDomain& rom(DomainId id) const { return rom_domains.at(registry.rom(id)); }
         StateLayout layout;
         core::Vector<ThermalConnection> connections;
         core::Vector<BoundaryCondition> rom_boundary_conditions;

@@ -5,7 +5,9 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <variant>
 
 namespace mhs::model {
@@ -226,11 +228,89 @@ namespace mhs::model {
         mhs::core::Vector<RomAffineTerm> affine_terms;
     };
 
+    // Stable public DomainId -> typed local storage index. The FOM and ROM
+    // payloads stay in homogeneous arrays; creation order controls DomainId.
+    enum class DomainKind : std::uint8_t { Fom, Rom };
+
+    class DomainRegistry {
+    public:
+        DomainId add_fom() { return add(DomainKind::Fom, fom_ids_); }
+        DomainId add_rom() { return add(DomainKind::Rom, rom_ids_); }
+        void clear()
+        {
+            entries_.clear();
+            fom_ids_.clear();
+            rom_ids_.clear();
+        }
+        std::size_t size() const { return entries_.size(); }
+        bool is_fom(DomainId domain) const { return entries_.at(domain).kind == DomainKind::Fom; }
+        bool is_rom(DomainId domain) const { return !is_fom(domain); }
+        std::size_t fom(DomainId domain) const { return index(domain, DomainKind::Fom); }
+        std::size_t rom(DomainId domain) const { return index(domain, DomainKind::Rom); }
+        DomainId fom_id(std::size_t local) const { return fom_ids_.at(local); }
+        DomainId rom_id(std::size_t local) const { return rom_ids_.at(local); }
+
+    private:
+        struct Entry {
+            DomainKind kind;
+            std::size_t index;
+        };
+        mhs::core::Vector<Entry> entries_;
+        mhs::core::Vector<DomainId> fom_ids_, rom_ids_;
+
+        DomainId add(DomainKind kind, mhs::core::Vector<DomainId>& ids)
+        {
+            if (entries_.size() >= static_cast<std::size_t>(mhs::core::invalid_id))
+                throw std::length_error("too many domains");
+            const auto id = static_cast<DomainId>(entries_.size());
+            entries_.push_back({kind, ids.size()});
+            try {
+                ids.push_back(id);
+            }
+            catch (...) {
+                entries_.pop_back();
+                throw;
+            }
+            return id;
+        }
+        std::size_t index(DomainId domain, DomainKind expected) const
+        {
+            const auto& entry = entries_.at(domain);
+            if (entry.kind != expected)
+                throw std::invalid_argument("domain has the wrong physical representation");
+            return entry.index;
+        }
+    };
+
     struct ModelDefinition {
-        Study study;
         mhs::core::Vector<FomDomainDefinition> domains {1};
-        // Global DomainId order: all FOM domains followed by ROM domains.
         mhs::core::Vector<RomDomainDefinition> rom_domains;
+        DomainRegistry registry = [] {
+            DomainRegistry ids;
+            ids.add_fom();
+            return ids;
+        }();
+
+        DomainId add_fom_domain(FomDomainDefinition domain = {})
+        {
+            domains.push_back(std::move(domain));
+            return registry.add_fom();
+        }
+        DomainId add_rom_domain(RomDomainDefinition domain)
+        {
+            rom_domains.push_back(std::move(domain));
+            return registry.add_rom();
+        }
+        void clear_domains()
+        {
+            domains.clear();
+            rom_domains.clear();
+            registry.clear();
+        }
+        FomDomainDefinition& fom(DomainId id) { return domains.at(registry.fom(id)); }
+        const FomDomainDefinition& fom(DomainId id) const { return domains.at(registry.fom(id)); }
+        RomDomainDefinition& rom(DomainId id) { return rom_domains.at(registry.rom(id)); }
+        const RomDomainDefinition& rom(DomainId id) const { return rom_domains.at(registry.rom(id)); }
         mhs::core::Vector<ConnectionDefinition> connections;
         mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<NamedFunction> functions;

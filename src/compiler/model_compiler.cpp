@@ -68,9 +68,9 @@ namespace mhs::compiler {
     mhs::model::CompiledModel build_model(const mhs::model::ModelDefinition& definition)
     {
         mhs::model::CompiledModel compiled;
-        compiled.study = definition.study;
-        if (definition.domains.empty() && definition.rom_domains.empty())
+        if (definition.registry.size() == 0)
             throw std::invalid_argument("model must contain a FOM or ROM domain");
+        compiled.registry = definition.registry;
 
         auto symbols = build_symbol_table(definition);
         compiled.point_probes = definition.point_probes;
@@ -185,7 +185,7 @@ namespace mhs::compiler {
             // Only temperature is an unknown in frozen-flow mode. Hydraulic diagnostics
             // are solve workspace data, not fictitious pressure/velocity state blocks.
             mhs::model::FieldLayout temperature;
-            temperature.domain = static_cast<mhs::model::DomainId>(domain_id);
+            temperature.domain = definition.registry.fom_id(domain_id);
             const auto n = model.discrete.cells.size();
             mhs::core::detail::checked_sparse_size(compiled.layout.state_count + n);
             temperature.entities.resize(n);
@@ -239,7 +239,7 @@ namespace mhs::compiler {
                         "staggered Stokes requires a pressure boundary for every connected fluid component");
 
                 model::FieldLayout pressure;
-                pressure.domain = static_cast<model::DomainId>(domain_id);
+                pressure.domain = definition.registry.fom_id(domain_id);
                 pressure.quantity = model::FieldQuantity::Pressure;
                 pressure.support = model::EntitySupport::Cell;
                 for (auto cell : fluid.fluid_to_global) {
@@ -250,7 +250,7 @@ namespace mhs::compiler {
                 compiled.layout.fields.push_back(std::move(pressure));
                 for (std::uint32_t axis = 0; axis < 3; ++axis) {
                     model::FieldLayout velocity;
-                    velocity.domain = static_cast<model::DomainId>(domain_id);
+                    velocity.domain = definition.registry.fom_id(domain_id);
                     velocity.quantity = model::FieldQuantity::Velocity;
                     velocity.support = model::EntitySupport::Face;
                     velocity.component = axis;
@@ -295,7 +295,7 @@ namespace mhs::compiler {
                     || !finite(obs.offset) || !finite(obs.point.x) || !finite(obs.point.y) || !finite(obs.point.z))
                     throw std::invalid_argument("ROM observation has invalid dimension or values");
             }
-            const auto global_id = static_cast<model::DomainId>(compiled.domains.size() + r);
+            const auto global_id = definition.registry.rom_id(r);
             model::FieldLayout field;
             field.domain = global_id;
             field.quantity = model::FieldQuantity::ReducedCoordinate;
@@ -318,7 +318,7 @@ namespace mhs::compiler {
         // Subdivide each port patch by the ordinary surface-condition regions.
         for (std::size_t r = 0; r < definition.rom_domains.size(); ++r) {
             const auto& rom = definition.rom_domains[r];
-            const auto domain_id = static_cast<model::DomainId>(definition.domains.size() + r);
+            const auto domain_id = definition.registry.rom_id(r);
             using Bounds = std::array<double, 4>;
             using RegionLaw = std::pair<Bounds, model::BoundaryConditionId>;
             core::Vector<core::Vector<RegionLaw>> per_port(rom.ports.size());
