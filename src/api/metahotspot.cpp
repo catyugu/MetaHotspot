@@ -676,11 +676,7 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     CHECK_NULL(out);
     *out = nullptr;
     CHECK_NULL(m);
-    MHS_TRY({
-        auto c = std::make_unique<mhs_compiled_t>();
-        c->model = mhs::compiler::build_model(m->def);
-        *out = c.release();
-    });
+    MHS_TRY({ *out = new mhs_compiled_t {mhs::compiler::build_model(m->def)}; });
 }
 
 MHS_API void mhs_compiled_destroy(mhs_compiled_t* c) { delete c; }
@@ -971,9 +967,8 @@ MHS_API mhs_status_t mhs_compiled_assemble(
             return MHS_ERROR;
         }
 
-        auto result = std::make_unique<mhs_operators_t>();
-        result->operators = mhs::solver::assemble_thermal(c->model, std::span<const double>(state, state_count), time);
-        *out = result.release();
+        *out = new mhs_operators_t {
+            mhs::solver::assemble_thermal(c->model, std::span<const double>(state, state_count), time)};
     });
 }
 
@@ -1063,16 +1058,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study
             throw std::invalid_argument("initial state must be NULL/0 or have state_count entries");
         const std::span<const double> init_span(state, state_count);
 
-        auto sol = mhs::solver::solve(c->model, run, init_span, so);
-
-        auto* s = new (std::nothrow) mhs_solution_t;
-        if (!s) {
-            *out = nullptr;
-            SET_ERR("memory allocation failed");
-            return MHS_ERROR;
-        }
-        s->sol = std::move(sol);
-        *out = s;
+        *out = new mhs_solution_t {mhs::solver::solve(c->model, run, init_span, so)};
     });
 }
 
