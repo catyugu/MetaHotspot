@@ -13,7 +13,6 @@ namespace test_pta {
 
     struct Model : mhs::model::FomDomain {
         mhs::solver::FrozenFlow flow;
-        std::shared_ptr<const mhs::model::CompiledLibrary> library;
         mhs::model::MeshSpec sampling_grid;
         struct {
             mhs::core::Vector<mhs::model::Vec3> points;
@@ -25,7 +24,6 @@ namespace test_pta {
         Model m;
         auto compiled = mhs::compiler::build_model(d);
         static_cast<mhs::model::FomDomain&>(m) = std::move(compiled.fom(0));
-        m.library = std::move(compiled.library);
         m.flow = mhs::solver::initialize_frozen_flow(m,
             mhs::core::Vector<double>(m.discrete.cells.size(), 300));
         const auto& mesh = d.fom(0).mesh;
