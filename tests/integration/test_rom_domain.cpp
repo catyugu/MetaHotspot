@@ -186,6 +186,42 @@ TEST(RomDomain, RomToRomConnectionNeedsNoFakeFomMesh)
     EXPECT_NEAR(solved_flux[0].outward_a, 10, 1e-8);
 }
 
+TEST(RomDomain, AffineHtcTermsReuseOneReducedSystemForDifferentBoundaryValues)
+{
+    mhs::model::ModelDefinition d;
+    d.domains.clear();
+    mhs::model::RomDomainDefinition rom;
+    rom.order = 1;
+    rom.K = {2};
+    rom.C = {1};
+    rom.f = {0};
+    rom.initial_state = {300};
+    // A projected convection term: K_h = A, f_h = A*T_ambient,
+    // with physical area A=0.01 m² and ambient temperature 300 K.
+    rom.affine_terms.push_back({"h", 100, {0.01}, {3}});
+    d.rom_domains.push_back(rom);
+    const auto first = mhs::compiler::build_model(d);
+    const auto first_ops = mhs::solver::assemble_thermal(first, {300}, 0);
+    EXPECT_NEAR(first_ops.K.coeff(0, 0), 3, 1e-12);
+    EXPECT_NEAR(first_ops.f[0], 300, 1e-12);
+    const auto first_solution = mhs::solver::solve(first);
+    ASSERT_TRUE(first_solution.converged);
+    EXPECT_NEAR(first_solution.state[0], 100, 1e-8);
+
+    // No new basis or trace extraction: only change the parameter coefficient
+    // and construct another immutable compiled snapshot.
+    d.rom_domains[0].affine_terms[0].value = 200;
+    const auto second = mhs::compiler::build_model(d);
+    const auto second_ops = mhs::solver::assemble_thermal(second, {300}, 0);
+    EXPECT_NEAR(second_ops.K.coeff(0, 0), 4, 1e-12);
+    EXPECT_NEAR(second_ops.f[0], 600, 1e-12);
+    const auto second_solution = mhs::solver::solve(second);
+    ASSERT_TRUE(second_solution.converged);
+    EXPECT_NEAR(second_solution.state[0], 150, 1e-8);
+    const auto first_again = mhs::solver::solve(first);
+    EXPECT_NEAR(first_again.state[0], first_solution.state[0], 1e-12);
+}
+
 TEST(RomDomain, NonmatchingRomPortRequiresNccGradient)
 {
     mhs::model::ModelDefinition d;
