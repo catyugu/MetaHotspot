@@ -11,7 +11,6 @@ namespace mhs::compiler {
     constexpr double EPS = mhs::model::geometry_eps;
 
     SurfaceBounds surface_bounds(const mhs::model::RegionRect& r) { return {r.a_min, r.a_max, r.b_min, r.b_max}; }
-    SurfaceBounds surface_bounds(const mhs::model::SurfaceRegion& r) { return surface_bounds(r.rectangle); }
     SurfaceBounds intersect_bounds(const SurfaceBounds& a, const SurfaceBounds& b)
     { return {std::max(a[0], b[0]), std::min(a[1], b[1]), std::max(a[2], b[2]), std::min(a[3], b[3])}; }
     bool positive_bounds(const SurfaceBounds& r) { return r[1] > r[0] && r[3] > r[2]; }
@@ -136,7 +135,7 @@ namespace mhs::compiler {
             mhs::core::Vector<TaggedBounds> regions;
             for (const auto& tagged : boundaries)
                 if (tagged.region.axis == face.axis && std::abs(tagged.region.coordinate - coordinate) < EPS)
-                    regions.push_back({surface_bounds(tagged.region), tagged.tag});
+                    regions.push_back({surface_bounds(tagged.region.rectangle), tagged.tag});
             for (const auto& patch : partition_surface_bounds(face.bounds, regions, fallback))
                 faces.push_back({cell, face.axis, sign, patch.tag, patch.bounds});
         }
