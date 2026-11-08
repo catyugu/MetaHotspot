@@ -216,7 +216,52 @@ PR4 `refactor/generic-multiphysics` 专注于通用多场布局、压力与交�
 - **稳态、瞬态与反馈：** `StaggeredStokesPressureAndVelocitySatisfyConservativeContinuity` 检查各流体单元质量平衡和压力零容量；`StaggeredStokesThermalFeedbackUpdatesViscosityAndMassFlux` 采用固定压差和温度相关黏度，检验加热后流量变化及同一编译快照的复用；`TransientStokesKeepsPressureAlgebraicAndConservesMass` 在各输出时刻检查压力代数约束和质量残差。
 - **公开接口：** 纯 C 集成客户端及 Python 绑定测试分别经 Model→Compiled→FieldLayout→Solve→Solution 路径构造交错 Stokes 流道，检查状态数量、压力/速度实体支撑、面速度值及重复求解。Python `SolveOptions` 补齐 SparseLU 名称映射。
 - **自动回归证据：** GitHub Actions `Build and package` 运行 [#42479552655](https://github.com/catyugu/MetaHotspot/actions/runs/42479552655) 的 GCC Release、Clang Debug、Clang Sanitizer、macOS、MSVC、ClangCL、Linux/macOS/Windows wheels 和六组 Python 3.10/3.14 jobs 均通过；该运行只有新解析解测试的 clang-format 排版检查失败，随后在独立最终提交修正格式并重新验证。
-- **验收边界：** 上述结果证明当前确定性算例及 SDK CI 回归；不宣称完成尚未逐项运行的所有非 archived `playground/` 算例或全量 GL-01 Python/C 物理一致性与生命周期矩阵。关闭清单仍要求逐项核实这些内容。局部八叉加细 GL-06 维持延期。
+- **本地收尾：** 非 archived `playground/` 与 GL-01 C/Python 生命周期的补充验收已完成，记录见第 7.4 节。局部八叉加细 GL-06 维持延期。
+
+### 7.4 PR4 本地最终验收（2026-11-08）
+
+验证代码提交为 `bfa89b1b65c76597c606ce1ace5d3f6ff7e312e9`。本地 Linux x86-64、GCC 14.2、Release、Python 3.12.14；所有 Python 入口使用仓库 `python/` 与同一次本地编译的 `libmhs_c_api.so`。NumPy 2.5.4、SciPy 1.18.1、PyAMG 5.4.1；`OMP_NUM_THREADS=2`、`OPENBLAS_NUM_THREADS=2`、`MPLBACKEND=Agg`。两路独立进程并行运行，因此表中耗时只用于定位日志，不作为性能对比。
+
+**活动 playground。** 按非 archived 目录内所有含 `__main__` 的 Python 入口执行，共 13 项；均使用默认网格、默认工况与默认时间窗，未通过缩小模型或仅导入模块代替实际求解。以下命令在仓库根目录使用 `PYTHONPATH=python python <入口>` 运行，均正常退出：
+
+| 入口 | 耗时（s） |
+| --- | ---: |
+| `playground/bci_rom_testcase1/experiments/extrapolation.py` | 84.63 |
+| `playground/bci_rom_testcase1/reproduce_case1.py` | 94.56 |
+| `playground/connecting_mor_models/experiments/pop.py` | 44.69 |
+| `playground/connecting_mor_models/experiments/simple_erom.py` | 19.24 |
+| `playground/connecting_mor_models/experiments/test_contour_elements.py` | 0.62 |
+| `playground/connecting_mor_models/experiments/transfer_boundary_basis.py` | 2.57 |
+| `playground/connecting_mor_models/experiments/transfer_boundary_enrichment.py` | 5.89 |
+| `playground/hotspot_example2_reproduction/hotspot_example2.py` | 39.66 |
+| `playground/interface_nc_correction/run_study.py` | 93.00 |
+| `playground/interface_nc_correction/showcase.py` | 13.73 |
+| `playground/simple_erom_case1/demonstrate_current_erom.py` | 0.83 |
+| `playground/simple_erom_case1/run_erom_attach.py` | 3.43 |
+| `playground/simple_erom_case1/stress_erom_attach.py` | 43.76 |
+
+EROM stress 的 13 个子工况全部完成；同时检查脚本内部捕获异常后的汇总，均无 `error` 项，浮点指标均有限，最大接口热流不平衡为 `3.87e-9 W`。HotSpot 原始 35,400 单元模型完成稳态和 1 s 瞬态，31 个 Probe 各 101 个输出。BCI reproduction 使用 122,400 单元，PoP 使用默认 `--nxy 43 --nz 36`（102,500 个有效自由度）；NCC study 执行默认全部网格变体，细参考为 542,720 单元。
+
+这里验收的是现有研究程序在新 SDK 上完整运行、输出有限且无异常；保留其原有 ROM 近似误差报告，不将研究程序正常退出解释为额外的统一误差认证。模型库模块由这些入口实际调用，不单独把无主程序的模块计作可执行案例。`run_study.py --refine` 等非默认额外扫描未作为第二个入口计数。
+
+**GL-09 同模型与生命周期。** 临时纯 C 客户端复用 `tests/integration/test_c_layout.c` 的完整 GL-01 构造，经公开 C ABI 导出状态、时间、全历史、四个 Probe 及全部 Field 元数据/实体/DOF 映射；Python 独立使用 `python/tests/test_generic_layout.py::package` 构造同模型。比较 Frozen（960 温度 DOF）与 Stokes（960 温度 + 48 压力 + 96 面速度，共 1104 DOF）两种模式：
+
+| 运行 | 历史 shape（Frozen / Stokes） | C/Python 全状态、时间、Probe 最大差 |
+| --- | --- | ---: |
+| 默认稳态 | `(1,960)` / `(1,1104)` | 0 |
+| 300 K 开始的 2 s 瞬态，0.1 s 输出 | `(21,960)` / `(21,1104)` | 0 |
+| 显式初始温度 315 K、SparseLU、0.2 s 瞬态 | `(3,960)` / `(3,1104)` | 0 |
+| 同一编译模型重复默认稳态 | `(1,960)` / `(1,1104)` | 0 |
+
+逐字段比较 Domain、quantity、support、component、实体与全局 DOF 映射；映射为 `uint32`，状态与历史为 `float64`，映射合并恰好单射覆盖全局状态。编译后修改定义的默认 Study，再销毁定义，已有编译快照仍按原 Study 求解；读取结果前销毁编译快照，C Solution 与 Python 自有数组仍有效。不同 Study/初值/求解器交替使用，输入 NumPy 初值不被改写；重复稳态结果不变。非法 Domain/Field、错误状态尺寸、缺失连接、重复连接和缺失压力基准均拒绝；编译失败不产生半成品句柄，失败后已有快照仍可求解。
+
+Stokes 的零时刻输出遵循既有 DAE 一致初始化：本例显式 315 K 场最大调整 `6.017870226742161e-4 K`，C/Python 完全一致，调用方初值数组保持原值；Frozen 正容量对角系统保留给定初温。本次没有将这两种初始化语义混作同一检查。
+
+另以公开 C/Python 路径构造同一个 FOM–ROM 连接，使用非恒等物理观测 `T_probe=2z+5`：稳态坐标 `[295,285]`，ROM Probe 为 575 K，连接热流为 10 W；0.5 s 瞬态三个输出与稳态的 C/Python 状态、时间和 Probe 最大差均为 0。模型及编译结果销毁后仍可读结果，且缺失/重复连接编译失败后原快照可复用。此项与既有 ROM 端到端回归共同覆盖物理观测映射，避免将模态坐标直接当作观测温度。
+
+**已有回归。** `ctest --test-dir build --output-on-failure -j2`：103/103；`PYTHONPATH=python python -m pytest python/tests -q`：37/37；`python run_cases.py`：全部 PTA 场及 Probe 对照满足原有阈值。构建命令为 `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release` 与 `cmake --build build --parallel 4`。本地收尾未修改生产代码或新增永久测试，临时导出客户端、原始日志、二进制数组及数值结果留在忽略的 `.cache/pr4-local/` / playground 输出目录，均不提交。此前同一代码提交的跨平台 CI 为 [#42479998679](https://github.com/catyugu/MetaHotspot/actions/runs/42479998679)，16/16 jobs 成功。
+
+以上两项 PR4 遗留验收已通过。本文整体关闭仍按第 8 节执行，目标分支合并后的验证及文档归档不由本地工作分支验收代替。
 
 ## 8. 关闭清单（全部完成后关闭本临时文档）
 
@@ -228,9 +273,9 @@ PR4 `refactor/generic-multiphysics` 专注于通用多场布局、压力与交�
 - [ ] 跨 Domain 非匹配连接 GL-05 已实现 NCC 热流校正并通过修正收敛、守恒及参考误差验收。GL-06 已明确延期，不能因本轮未实现而阻止关闭本文。
 - [ ] ROM Domain 可以完整连接；GL-07 满秩等价和截断误差验收通过；BCI-ROM HTC 面暴露时走普通热边界、嵌入时走 Connection，无专用 HTC 参数矩阵或重复装配。
 - [ ] 交错流体与双向热流耦合支持落地，GL-03 / GL-08 验收通过。
-- [ ] C ABI / Python 的 GL-09 端到端与生命周期验收通过；无 ABI 兼容冗余或新的不必要 handle。
+- [x] C ABI / Python 的 GL-09 端到端与生命周期验收通过；无 ABI 兼容冗余或新的不必要 handle。
 - [x] `tests/` 已迁移为 `unit/` 和 `integration/` 两个目录、独立 CMake 测试目标及 `MHS_BUILD_UNIT_TESTS` / `MHS_BUILD_INTEGRATION_TESTS` 开关；CTest 标签和按类运行可用，关闭任一类不会编译/注册该类测试。
-- [ ] 当前已有的测试、非 archived playground 与相关 app 回归通过；不同平台构建/安装验证达到项目既定标准。
+- [x] 当前已有的测试、非 archived playground 与相关 app 回归通过；不同平台构建/安装验证达到项目既定标准。
 - [ ] 关键设计约束和必要的长期文档已迁入正式架构文档；剩余风险/不支持功能有明确记录。
 - [ ] **在最终收尾提交中将本文件状态改为 `CLOSED`，并归档或删除它。**
 
