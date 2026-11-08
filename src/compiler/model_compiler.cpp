@@ -56,7 +56,6 @@ namespace mhs::compiler {
     {
         mhs::model::CompiledModel compiled;
         auto compiled_library = std::make_shared<mhs::model::CompiledLibrary>();
-        const auto& library = *library_handle;
         auto append_field = [&](model::DomainId domain, model::FieldQuantity quantity, std::size_t count) {
             core::detail::checked_sparse_size(compiled.layout.state_count + count);
             const auto offset = static_cast<model::DofId>(compiled.layout.state_count);
@@ -72,6 +71,7 @@ namespace mhs::compiler {
             if (component.library != library_handle)
                 throw std::invalid_argument("all model components must share one Library");
 
+        const auto& library = *library_handle;
         auto symbols = build_symbol_table(definition);
         compiled_library->material_table.resize(library.materials.size());
         for (std::size_t m = 0; m < library.materials.size(); ++m) {
