@@ -73,13 +73,13 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             // Unit conductivity, unit area and half-cell distance give g = 2 W/K;
             // T-dependent laws are evaluated at the surface trace, not at the cell.
             const auto center = mhs::solver::boundary_center(model.discrete.cells[patch.cell], patch);
-            const auto trace = mhs::solver::evaluate_boundary(compiled.library.boundary_conditions[patch.condition], center,
+            const auto trace = mhs::solver::evaluate_boundary(compiled.library->boundary_conditions[patch.condition], center,
                 ((patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2])),
                 (model.discrete.cells[patch.cell].size()[static_cast<std::size_t>(patch.axis)] / 2), state[0], 1.0, 0);
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], trace.temperature, 0};
             const double conductive_flux = 2 * (state[0] - trace.temperature);
-            if (std::holds_alternative<mhs::model::Convection>(compiled.library.boundary_conditions[patch.condition])) {
-                const auto& law = std::get<mhs::model::Convection>(compiled.library.boundary_conditions[patch.condition]);
+            if (std::holds_alternative<mhs::model::Convection>(compiled.library->boundary_conditions[patch.condition])) {
+                const auto& law = std::get<mhs::model::Convection>(compiled.library->boundary_conditions[patch.condition]);
                 const double h = law.coefficient.eval(ctx);
                 const double ambient = law.ambient_temperature.eval(ctx);
                 EXPECT_NEAR(conductive_flux, h * (trace.temperature - ambient), 1e-4);
@@ -88,7 +88,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
                 EXPECT_NEAR(trace.load, condensed * ambient, 1e-9);
             }
             else {
-                const auto& law = std::get<mhs::model::Neumann>(compiled.library.boundary_conditions[patch.condition]);
+                const auto& law = std::get<mhs::model::Neumann>(compiled.library->boundary_conditions[patch.condition]);
                 // Positive q is inward: the trace conducts q out of the cell.
                 EXPECT_NEAR(conductive_flux, -law.heat_flux.eval(ctx), 1e-4);
                 EXPECT_DOUBLE_EQ(trace.conductance, 0.0);
@@ -96,7 +96,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             }
             // Sampling and assembly read the same surface trace.
             EXPECT_DOUBLE_EQ(
-                mhs::solver::sample_point(model, compiled.library.material_table, compiled.library.boundary_conditions, state, 0, static_cast<CellId>(0), center), trace.temperature);
+                mhs::solver::sample_point(model, compiled.library->material_table, compiled.library->boundary_conditions, state, 0, static_cast<CellId>(0), center), trace.temperature);
         }
     }
 }
@@ -168,11 +168,11 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     EXPECT_NEAR(ops.f[0], 8, 1e-12);
     // The projected Dirichlet area raises the reconstructed x-gradient to 1 K/m,
     // so an interior probe moves at exactly that rate along x.
-    const auto left = mhs::solver::sample_point(model, compiled.library.material_table, compiled.library.boundary_conditions, state, 0, static_cast<CellId>(0), {0.2, 0.5, 0.5});
-    const auto right = mhs::solver::sample_point(model, compiled.library.material_table, compiled.library.boundary_conditions, state, 0, static_cast<CellId>(0), {0.8, 0.5, 0.5});
+    const auto left = mhs::solver::sample_point(model, compiled.library->material_table, compiled.library->boundary_conditions, state, 0, static_cast<CellId>(0), {0.2, 0.5, 0.5});
+    const auto right = mhs::solver::sample_point(model, compiled.library->material_table, compiled.library->boundary_conditions, state, 0, static_cast<CellId>(0), {0.8, 0.5, 0.5});
     EXPECT_NEAR((right - left) / 0.6, 1.0, 1e-12);
-    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, compiled.library.material_table, compiled.library.boundary_conditions, state, 0, static_cast<CellId>(0), {1, 0.15, 0.15}), 400);
-    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, compiled.library.material_table, compiled.library.boundary_conditions, state, 0, static_cast<CellId>(0), {1, 0.8, 0.8}), 300);
+    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, compiled.library->material_table, compiled.library->boundary_conditions, state, 0, static_cast<CellId>(0), {1, 0.15, 0.15}), 400);
+    EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, compiled.library->material_table, compiled.library->boundary_conditions, state, 0, static_cast<CellId>(0), {1, 0.8, 0.8}), 300);
 }
 
 TEST(DiscreteMesh, MissingReferencesRemainInvalid)
