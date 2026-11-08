@@ -14,13 +14,6 @@ namespace mhs::model {
 
     enum class GeometryOperation : uint8_t { Add, Subtract };
 
-    struct ModelSettings {
-        StudyType study_type = StudyType::Steady;
-        double initial_temperature = 300.0;
-        double transient_duration = 0.0;
-        double transient_output_interval = 1.0;
-    };
-
     struct MeshSpec {
         mhs::core::Vector<double> x_vertices;
         mhs::core::Vector<double> y_vertices;
@@ -72,10 +65,12 @@ namespace mhs::model {
         RegionRect rectangle;
     };
 
-    struct ThermalBoundarySpec {
+    template <typename Condition> struct SurfaceConditionSpec {
         mhs::core::Vector<SurfaceRegion> regions;
-        ThermalBoundary condition;
+        Condition condition;
     };
+
+    using ThermalBoundarySpec = SurfaceConditionSpec<ThermalBoundary>;
 
     struct MaterialSpec {
         Expression conductivity_x = "0.0";
@@ -141,7 +136,7 @@ namespace mhs::model {
         double z = 0.0;
     };
 
-    // Omitted incoming temperature uses the model's initial temperature.
+    // Omitted incoming temperature uses the model reference temperature.
     struct PressureInlet {
         double pressure = 0.0;
         std::optional<double> temperature;
@@ -154,13 +149,10 @@ namespace mhs::model {
         double pressure = 0.0;
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
-    struct FluidBoundarySpec {
-        mhs::core::Vector<SurfaceRegion> regions;
-        FluidBoundaryCondition condition;
-    };
+    using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryCondition>;
 
     struct ModelDefinition {
-        ModelSettings settings;
+        double reference_temperature = 300.0;
         MeshSpec mesh;
         mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<NamedFunction> functions;

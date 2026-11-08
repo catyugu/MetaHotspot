@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "python"))
 
 import metahotspot
-from metahotspot.enums import Face, Study
+from metahotspot.enums import Face
 from metahotspot.macromodel.geometry import CellGeometry
 from metahotspot.macromodel.utils import normalized_operators
 
@@ -91,10 +91,7 @@ def build_current_detailed(x: np.ndarray, y: np.ndarray):
     base_pos, base_size = xyz(base, "location"), xyz(base, "size")
     src_pos, src_size = xyz(source, "location"), xyz(source, "size")
     model = metahotspot.Model()
-    model.set_study(
-        study=Study.STEADY,
-        initial_temperature_K=AMBIENT_K,
-    )
+    model.set_reference_temperature(AMBIENT_K)
     grid_mm = current_grid_axis_mm()
     model.set_cartesian_mesh(grid_mm * 1e-3, grid_mm * 1e-3, grid_mm * 1e-3)
     material_id = model.add_material(name, k, k, k, rho, c)

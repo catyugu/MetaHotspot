@@ -10,7 +10,12 @@
 
 namespace mhs::app::pta {
 
-    mhs::model::ModelDefinition read_xml(const std::string& xml_path);
+    struct Input {
+        mhs::model::Study study;
+        mhs::model::ModelDefinition model;
+    };
+
+    Input read_xml(const std::string& xml_path);
 
     // Every trace follows observation_times. With no traces, omit Result0DTransient.
     void write_xml(const std::string& input_path, const std::string& output_path,

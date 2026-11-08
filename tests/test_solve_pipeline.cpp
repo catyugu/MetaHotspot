@@ -8,8 +8,6 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
     // Cube with heat source + Dirichlet on bottom + convective BC on top
     mhs::model::ModelDefinition io;
-    io.settings.study_type = mhs::model::StudyType::Steady;
-    io.settings.initial_temperature = 300.0;
 
     io.mesh.x_vertices = {0.0, 0.005, 0.01};
     io.mesh.y_vertices = {0.0, 0.005, 0.01};
@@ -48,8 +46,6 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
     mhs::model::ModelDefinition io;
-    io.settings.study_type = mhs::model::StudyType::Transient;
-    io.settings.initial_temperature = 300.0;
 
     io.mesh.x_vertices = {0.0, 0.005, 0.01};
     io.mesh.y_vertices = {0.0, 0.005, 0.01};
@@ -63,9 +59,6 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     mat.density = "8920";
     mat.specific_heat = "385";
     io.materials.push_back({"copper", mat});
-
-    io.settings.transient_duration = 5.0;
-    io.settings.transient_output_interval = 1.0;
 
     io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
@@ -89,7 +82,8 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
     auto model = mhs::compiler::build_model(io);
 
-    auto result = mhs::solver::solve(model);
+    mhs::model::Study study {mhs::model::StudyType::Transient, 300.0, 5.0, 1.0};
+    auto result = mhs::solver::solve(model, study);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 2u);
@@ -119,8 +113,6 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 {
     mhs::model::ModelDefinition io;
-    io.settings.study_type = mhs::model::StudyType::Transient;
-    io.settings.initial_temperature = 300.0;
 
     io.mesh.x_vertices = {0.0, 0.005, 0.01};
     io.mesh.y_vertices = {0.0, 0.005, 0.01};
@@ -132,9 +124,6 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
     io.materials.push_back({"copper", mat});
-
-    io.settings.transient_duration = 5.0;
-    io.settings.transient_output_interval = 1.0;
 
     io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
@@ -152,7 +141,8 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     auto model = mhs::compiler::build_model(io);
 
-    auto result = mhs::solver::solve(model);
+    mhs::model::Study study {mhs::model::StudyType::Transient, 300.0, 5.0, 1.0};
+    auto result = mhs::solver::solve(model, study);
 
     const auto& traces = result.probe_traces;
     ASSERT_EQ(traces.size(), 1u);

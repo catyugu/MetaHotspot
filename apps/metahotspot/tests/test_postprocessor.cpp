@@ -9,9 +9,7 @@ using namespace mhs::compiler;
 static mhs::app::pta::Definition make_simple_uniform_grid_io()
 {
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
     io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
@@ -91,9 +89,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     // average of ~500 and ~400 ≈ ~450-500 (depending on cell temps).
     // With Dirichlet priority, the result must be exactly 500K.
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
     io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
@@ -161,9 +157,7 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     // 本测试对 z=0 面上 Dirichlet 表达式 "500 + 100*t" 在 t=0 和 t=10
     // 两个时间点分别求值，验证两者差异严格为 1000K（旧实现会得到 0K 差异）。
     mhs::app::pta::Definition io;
-    io.model.settings.study_type = mhs::model::StudyType::Steady;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
-    io.model.settings.initial_temperature = 300.0;
 
     io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
     io.model.mesh.y_vertices = {0.0, 5.0, 10.0};

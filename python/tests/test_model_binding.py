@@ -8,17 +8,11 @@ import pytest
 import metahotspot
 from metahotspot import SurfaceRegion
 from metahotspot._error import MetaHotspotError
-from metahotspot.enums import Axis, Study
+from metahotspot.enums import Axis, StudyType
 
 
 def _model(*, transient: bool = False) -> metahotspot.Model:
     model = metahotspot.Model()
-    model.set_study(
-        study=Study.TRANSIENT if transient else Study.STEADY,
-        initial_temperature_K=300.0,
-        duration=1.0 if transient else 0.0,
-        output_interval=0.5 if transient else 0.0,
-    )
     model.set_cartesian_mesh(
         np.array([0.0, 0.001]),
         np.array([0.0, 0.001]),
@@ -84,7 +78,10 @@ def test_solution_views_derive_from_one_native_snapshot():
     model.set_default_neumann("0")
     model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
 
-    solution = model.compile().solve(state=np.array([300, -1], dtype=np.float32)[::2])
+    study = metahotspot.Study(StudyType.TRANSIENT, 300.0, 1.0, 0.5)
+    solution = model.compile().solve(
+        study=study, state=np.array([300, -1], dtype=np.float32)[::2]
+    )
 
     assert solution.converged
     assert solution.state.size == 1

@@ -75,14 +75,14 @@ TEST(IoTest, ReadXmlParsesObservationPoints3D)
     auto path = write_tmp_xml("io_obs_present.xml", make_xml_with_observe_points(obs));
 
     auto io_structure = mhs::app::pta::read_xml(path.string());
-    ASSERT_EQ(io_structure.point_probes.size(), 2u);
-    EXPECT_EQ(io_structure.point_probes[0].name, "p1");
+    ASSERT_EQ(io_structure.model.point_probes.size(), 2u);
+    EXPECT_EQ(io_structure.model.point_probes[0].name, "p1");
     // PTA adapter resolves observation coordinates to SI metres.
-    EXPECT_EQ(io_structure.point_probes[0].x, 0.0015);
-    EXPECT_EQ(io_structure.point_probes[0].y, 0.0025);
-    EXPECT_EQ(io_structure.point_probes[0].z, 0.0035);
-    EXPECT_EQ(io_structure.point_probes[1].name, "p2");
-    EXPECT_EQ(io_structure.point_probes[1].x, 0.0001);
+    EXPECT_EQ(io_structure.model.point_probes[0].x, 0.0015);
+    EXPECT_EQ(io_structure.model.point_probes[0].y, 0.0025);
+    EXPECT_EQ(io_structure.model.point_probes[0].z, 0.0035);
+    EXPECT_EQ(io_structure.model.point_probes[1].name, "p2");
+    EXPECT_EQ(io_structure.model.point_probes[1].x, 0.0001);
     std::filesystem::remove(path);
 }
 
@@ -90,7 +90,7 @@ TEST(IoTest, ReadXmlWithoutObservationPointsReturnsEmpty)
 {
     auto path = write_tmp_xml("io_obs_absent.xml", make_xml_with_observe_points(""));
     auto io_structure = mhs::app::pta::read_xml(path.string());
-    EXPECT_TRUE(io_structure.point_probes.empty()) << "No <ObservePoints3D> → empty vector";
+    EXPECT_TRUE(io_structure.model.point_probes.empty()) << "No <ObservePoints3D> → empty vector";
     std::filesystem::remove(path);
 }
 
@@ -143,15 +143,17 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
     const auto definition = mhs::app::pta::read_xml(path.string());
     std::filesystem::remove(path);
 
-    ASSERT_EQ(definition.volumes.size(), 2u);
-    EXPECT_EQ(definition.materials[definition.volumes[0].material].name, "background");
-    EXPECT_EQ(definition.materials[definition.volumes[1].material].name, "foreground");
-    ASSERT_EQ(definition.volumes[0].geometry.size(), 2u);
-    EXPECT_EQ(definition.volumes[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
-    EXPECT_EQ(definition.volumes[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
-    ASSERT_EQ(definition.thermal_boundaries.size(), 2u);
-    EXPECT_TRUE(std::holds_alternative<mhs::model::DirichletBoundary>(definition.thermal_boundaries[0].condition));
-    EXPECT_TRUE(std::holds_alternative<mhs::model::ConvectionBoundary>(definition.thermal_boundaries[1].condition));
+    ASSERT_EQ(definition.model.volumes.size(), 2u);
+    EXPECT_EQ(definition.model.materials[definition.model.volumes[0].material].name, "background");
+    EXPECT_EQ(definition.model.materials[definition.model.volumes[1].material].name, "foreground");
+    ASSERT_EQ(definition.model.volumes[0].geometry.size(), 2u);
+    EXPECT_EQ(definition.model.volumes[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
+    EXPECT_EQ(definition.model.volumes[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
+    ASSERT_EQ(definition.model.thermal_boundaries.size(), 2u);
+    EXPECT_TRUE(
+        std::holds_alternative<mhs::model::DirichletBoundary>(definition.model.thermal_boundaries[0].condition));
+    EXPECT_TRUE(
+        std::holds_alternative<mhs::model::ConvectionBoundary>(definition.model.thermal_boundaries[1].condition));
 }
 
 TEST(IoTest, WriteXmlEmitsResult0DTransient)
@@ -310,11 +312,11 @@ TEST(IoTest, ReadXmlThermalConductivitySingleExpressionTrimsWhitespace)
 {
     auto path = write_tmp_xml("io_thermal_conductivity_trim.xml", make_xml_with_thermal_conductivity("  5  "));
     auto io_structure = mhs::app::pta::read_xml(path.string());
-    ASSERT_EQ(io_structure.materials.size(), 1u);
-    EXPECT_EQ(io_structure.materials[0].name, "mat");
-    EXPECT_EQ(io_structure.materials[0].value.conductivity_x, "5");
-    EXPECT_EQ(io_structure.materials[0].value.conductivity_y, "5");
-    EXPECT_EQ(io_structure.materials[0].value.conductivity_z, "5");
+    ASSERT_EQ(io_structure.model.materials.size(), 1u);
+    EXPECT_EQ(io_structure.model.materials[0].name, "mat");
+    EXPECT_EQ(io_structure.model.materials[0].value.conductivity_x, "5");
+    EXPECT_EQ(io_structure.model.materials[0].value.conductivity_y, "5");
+    EXPECT_EQ(io_structure.model.materials[0].value.conductivity_z, "5");
     std::filesystem::remove(path);
 }
 
@@ -323,11 +325,11 @@ TEST(IoTest, ReadXmlThermalConductivityThreeExpressionsWithTrim)
     auto path
         = write_tmp_xml("io_thermal_conductivity_3trim.xml", make_xml_with_thermal_conductivity("  1.5e2 , 2.5 , 0 "));
     auto io_structure = mhs::app::pta::read_xml(path.string());
-    ASSERT_EQ(io_structure.materials.size(), 1u);
-    EXPECT_EQ(io_structure.materials[0].name, "mat");
-    EXPECT_EQ(io_structure.materials[0].value.conductivity_x, "1.5e2");
-    EXPECT_EQ(io_structure.materials[0].value.conductivity_y, "2.5");
-    EXPECT_EQ(io_structure.materials[0].value.conductivity_z, "0");
+    ASSERT_EQ(io_structure.model.materials.size(), 1u);
+    EXPECT_EQ(io_structure.model.materials[0].name, "mat");
+    EXPECT_EQ(io_structure.model.materials[0].value.conductivity_x, "1.5e2");
+    EXPECT_EQ(io_structure.model.materials[0].value.conductivity_y, "2.5");
+    EXPECT_EQ(io_structure.model.materials[0].value.conductivity_z, "0");
     std::filesystem::remove(path);
 }
 

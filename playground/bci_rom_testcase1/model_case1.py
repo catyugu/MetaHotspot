@@ -44,7 +44,7 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 import metahotspot
-from metahotspot.enums import Face, Study
+from metahotspot.enums import Face
 
 from metahotspot.macromodel.affine import (  # noqa: E402
     AffineParametricModel,
@@ -200,18 +200,12 @@ class Case1Config:
         }
 
 
-def build_geometry(cfg: Case1Config, study: Study, *, detail: bool, macro: bool):
+def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
     """Assemble the Case-1 geometry (no boundary conditions; default Neumman)."""
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
     model = metahotspot.Model()
-    transient = study == Study.TRANSIENT
-    model.set_study(
-        study=study,
-        initial_temperature_K=cfg.ambient_K,
-        duration=cfg.duration_s if transient else 0.0,
-        output_interval=cfg.dt_s if transient else 0.0,
-    )
+    model.set_reference_temperature(cfg.ambient_K)
     model.set_cartesian_mesh(
         cfg.x_vertices_mm * 1e-3, cfg.y_vertices_mm * 1e-3, cfg.z_vertices_mm * 1e-3
     )
@@ -263,8 +257,8 @@ class Case1Model(AffineParametricModel):
 
     # ------------------------------------------------ geometry hooks
 
-    def build_geometry(self, study, *, detail, macro):
-        return build_geometry(self.config, study, detail=detail, macro=macro)
+    def build_geometry(self, *, detail, macro):
+        return build_geometry(self.config, detail=detail, macro=macro)
 
     def source_ports(self) -> list[SourcePort]:
         f = np.asarray(self.core.f, dtype=np.float64)

@@ -5,8 +5,12 @@ from __future__ import annotations
 import ctypes
 from dataclasses import dataclass, fields
 from functools import cached_property
+from typing import TYPE_CHECKING
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from metahotspot.model import Study
 
 from metahotspot._compiled_data import CompiledFields, Operators
 from metahotspot._error import check
@@ -94,8 +98,7 @@ class CompiledInfo:
     face_count: int
     projection_count: int
     source_count: int
-    study_type: int
-    initial_temperature: float
+    reference_temperature: float
 
 
 def _double_ptr(array: np.ndarray):
@@ -137,8 +140,7 @@ def _compiled_info(dll, handle) -> CompiledInfo:
         face_count=int(info.face_count),
         projection_count=int(info.projection_count),
         source_count=int(info.source_count),
-        study_type=int(info.study_type),
-        initial_temperature=float(info.initial_temperature),
+        reference_temperature=float(info.reference_temperature),
     )
 
 
@@ -307,8 +309,8 @@ class Compiled(OwnedHandle):
         state = np.ascontiguousarray(state, dtype=np.float64)
         return _eval_materials(self._dll, self._handle, state, time)
 
-    def default_state(self) -> np.ndarray:
-        return np.full(self.cell_count, self.info.initial_temperature, dtype=np.float64)
+    def default_state(self, temperature: float = 300.0) -> np.ndarray:
+        return np.full(self.cell_count, temperature, dtype=np.float64)
 
     def assemble(self, state: np.ndarray | None = None, time: float = 0.0) -> Operators:
         """Assemble K, C, f at a state and time."""
@@ -319,9 +321,10 @@ class Compiled(OwnedHandle):
 
     def solve(
         self,
+        study: Study | None = None,
         state: np.ndarray | None = None,
         opts: SolveOptions | None = None,
     ):
         from metahotspot.solution import Solution
 
-        return Solution._solve_compiled(self, state, opts)
+        return Solution._solve_compiled(self, study, state, opts)

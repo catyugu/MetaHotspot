@@ -33,7 +33,7 @@ import numpy as np
 
 import metahotspot
 from metahotspot.compiled import CompiledFields
-from metahotspot.enums import Face, Study
+from metahotspot.enums import Face
 from metahotspot.macromodel.geometry import CellGeometry
 from metahotspot.macromodel.affine import (
     AffineParametricModel,
@@ -140,17 +140,12 @@ def _band_for_z(bands, z_mm: float):
     return min(range(len(bands)), key=lambda i: abs(bands[i][0] - z_mm))
 
 
-def build_geometry(cfg: AttachConfig, study: Study, *, detail: bool, macro: bool):
+def build_geometry(cfg: AttachConfig, *, detail: bool, macro: bool):
     """Assemble the full stacked model (no BC; default Neumann)."""
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
     model = metahotspot.Model()
-    model.set_study(
-        study=study,
-        initial_temperature_K=cfg.ambient_K,
-        duration=cfg.duration_s if study == Study.TRANSIENT else 0.0,
-        output_interval=cfg.dt_s if study == Study.TRANSIENT else 0.0,
-    )
+    model.set_reference_temperature(cfg.ambient_K)
     model.set_cartesian_mesh(cube_axis_mm() * 1e-3, cube_axis_mm() * 1e-3, _z_full_mm(cfg) * 1e-3)
     copper = model.add_material("Copper (Pure)", *COPPER)
     H = cfg.ext_thickness_mm
@@ -194,8 +189,8 @@ class AttachModel(AffineParametricModel):
     def name(self) -> str:
         return "erom_cube_attach"
 
-    def build_geometry(self, study, *, detail, macro):
-        return build_geometry(self.config, study, detail=detail, macro=macro)
+    def build_geometry(self, *, detail, macro):
+        return build_geometry(self.config, detail=detail, macro=macro)
 
     def source_ports(self) -> list[SourcePort]:
         f = np.asarray(self.core.f, dtype=np.float64)

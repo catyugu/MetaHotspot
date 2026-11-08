@@ -73,7 +73,7 @@ typedef struct mhs_operators_t mhs_operators_t;
 /* ------------------------------------------------------------------ */
 /*  Enumerations                                                       */
 /* ------------------------------------------------------------------ */
-typedef int32_t mhs_study_t;
+typedef int32_t mhs_study_type_t;
 enum { MHS_STUDY_STEADY = 0, MHS_STUDY_TRANSIENT = 1 };
 
 typedef int32_t mhs_axis_t;
@@ -125,6 +125,14 @@ typedef struct {
     mhs_rect2d_t rectangle;
 } mhs_surface_region_t;
 
+/** Study/run configuration. Populate with mhs_study_default(). */
+typedef struct {
+    mhs_study_type_t type;
+    double initial_temperature;
+    double duration;
+    double output_interval;
+} mhs_study_t;
+
 /** Solver options.  Populate with mhs_solve_options_default(). */
 typedef struct {
     mhs_solver_type_t solver_type;
@@ -141,8 +149,7 @@ typedef struct {
 /** Explicit compiled geometry sizes. State order is CellId order. */
 typedef struct {
     size_t cell_count, face_count, projection_count, source_count;
-    mhs_study_t study_type;
-    double initial_temperature;
+    double reference_temperature;
 } mhs_compiled_info_t;
 
 /** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
@@ -199,6 +206,9 @@ typedef struct {
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
 
+/** Fill study with steady/300 K defaults. */
+MHS_API void mhs_study_default(mhs_study_t* study);
+
 /** Fill opts with sensible defaults (AMG, 1e-8, 1e-6, …). */
 MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts);
 
@@ -219,14 +229,12 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  study, mesh, variables                   */
+/*  Model construction  —  reference state, mesh, variables         */
 /* ------------------------------------------------------------------ */
 
-/** Initial temperature, duration and output interval must be finite. Transient
- * duration must be positive; output interval must be nonnegative. Settings are
- * updated atomically. */
-MHS_API mhs_status_t mhs_model_set_study(
-    mhs_model_t* m, mhs_study_t study, double initial_temperature_K, double duration, double output_interval);
+/** Reference temperature used only by compile-time frozen-flow preprocessing
+ * and by fluid inlets whose temperature is omitted. */
+MHS_API mhs_status_t mhs_model_set_reference_temperature(mhs_model_t* m, double temperature_K);
 
 /** Cartesian vertex arrays in SI metres; each axis must be finite, strictly
  * increasing and contain at least two entries. All axes are replaced atomically. */
@@ -294,7 +302,7 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 /** Named point probe, with three finite SI coordinates copied into the model. */
 MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3]);
 /* Same region layout as thermal boundaries. NULL inlet_temperature selects the
- * initial temperature; outlets ignore it. value is pressure (Pa), or mass flow (kg/s). */
+ * model reference temperature; outlets ignore it. value is pressure (Pa), or mass flow (kg/s). */
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
     mhs_fluid_bc_t kind, double value, const double* inlet_temperature);
 
@@ -335,10 +343,11 @@ MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, do
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-/** state is NULL/0 for model defaults, otherwise exactly cell_count entries.
- * opts may be NULL to select defaults. Check solution.converged separately. */
-MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
-    const mhs_solve_options_t* opts, mhs_solution_t** out);
+/** study may be NULL for a steady 300 K default. state is NULL/0 to build a
+ * uniform initial state from study->initial_temperature, otherwise it must have
+ * exactly cell_count entries. opts may be NULL to select defaults. */
+MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study_t* study, const double* state,
+    size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out);
 
 MHS_API void mhs_solution_destroy(mhs_solution_t* s);
 

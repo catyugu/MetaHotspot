@@ -109,30 +109,6 @@ static mhs::model::Axis _to_axis(mhs_axis_t a)
     }
 }
 
-static mhs::model::StudyType _to_model_study(mhs_study_t s)
-{
-    switch (s) {
-    case MHS_STUDY_STEADY:
-        return mhs::model::StudyType::Steady;
-    case MHS_STUDY_TRANSIENT:
-        return mhs::model::StudyType::Transient;
-    default:
-        throw std::invalid_argument("invalid study type: " + std::to_string(s));
-    }
-}
-
-static mhs_study_t _from_core_study(mhs::model::StudyType s)
-{
-    switch (s) {
-    case mhs::model::StudyType::Steady:
-        return MHS_STUDY_STEADY;
-    case mhs::model::StudyType::Transient:
-        return MHS_STUDY_TRANSIENT;
-    default:
-        throw std::logic_error("invalid core study type");
-    }
-}
-
 static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
 {
     if (!std::isfinite(coord) || !std::isfinite(r.a_min) || !std::isfinite(r.a_max) || !std::isfinite(r.b_min)
@@ -168,6 +144,16 @@ static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_ty
 /* ------------------------------------------------------------------ */
 /*  Global helpers                                                     */
 /* ------------------------------------------------------------------ */
+
+MHS_API void mhs_study_default(mhs_study_t* study)
+{
+    if (!study)
+        return;
+    study->type = MHS_STUDY_STEADY;
+    study->initial_temperature = 300.0;
+    study->duration = 0.0;
+    study->output_interval = 1.0;
+}
 
 MHS_API void mhs_solve_options_default(mhs_solve_options_t* opts)
 {
@@ -217,23 +203,16 @@ MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
 /*  Model construction  —  settings, mesh, variables                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_set_study(
-    mhs_model_t* m, mhs_study_t study, double initial_temperature_K, double duration, double output_interval)
+MHS_API mhs_status_t mhs_model_set_reference_temperature(mhs_model_t* m, double temperature_K)
 {
     CHECK_NULL(m);
-    MHS_TRY({
-        const mhs::model::ModelSettings settings {
-            _to_model_study(study), initial_temperature_K, duration, output_interval};
-        if (!std::isfinite(settings.initial_temperature))
-            throw std::invalid_argument("initial temperature must be finite");
-        if (!std::isfinite(settings.transient_duration))
-            throw std::invalid_argument("duration must be finite");
-        if (settings.study_type == mhs::model::StudyType::Transient && settings.transient_duration <= 0)
-            throw std::invalid_argument("transient duration must be positive");
-        if (!std::isfinite(settings.transient_output_interval) || settings.transient_output_interval < 0)
-            throw std::invalid_argument("output interval must be finite and nonnegative");
-        m->def.settings = settings;
-    });
+    if (!std::isfinite(temperature_K)) {
+        SET_ERR("reference temperature must be finite");
+        return MHS_ERROR;
+    }
+    m->def.reference_temperature = temperature_K;
+    mhs_detail_clear_last_error();
+    return MHS_OK;
 }
 
 MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
@@ -538,8 +517,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     out->face_count = c->model.discrete.faces.size();
     out->projection_count = c->model.source_terms.size();
     out->source_count = c->model.heat_source_table.size();
-    out->study_type = _from_core_study(c->model.study_type);
-    out->initial_temperature = c->model.initial_temperature;
+    out->reference_temperature = c->model.reference_temperature;
 
     mhs_detail_clear_last_error();
     return MHS_OK;
@@ -785,20 +763,36 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts)
 /*  Solve                                                              */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const double* state, size_t state_count,
-    const mhs_solve_options_t* opts, mhs_solution_t** out)
+MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study_t* study, const double* state,
+    size_t state_count, const mhs_solve_options_t* opts, mhs_solution_t** out)
 {
     CHECK_NULL(out);
     *out = nullptr;
     CHECK_NULL(c);
     MHS_TRY({
         auto so = to_solve_options(opts);
+        mhs::model::Study run;
+        if (study) {
+            switch (study->type) {
+            case MHS_STUDY_STEADY:
+                run.type = mhs::model::StudyType::Steady;
+                break;
+            case MHS_STUDY_TRANSIENT:
+                run.type = mhs::model::StudyType::Transient;
+                break;
+            default:
+                throw std::invalid_argument("invalid study type");
+            }
+            run.initial_temperature = study->initial_temperature;
+            run.duration = study->duration;
+            run.output_interval = study->output_interval;
+        }
 
         if ((!state && state_count != 0) || (state && state_count != c->model.discrete.cells.size()))
             throw std::invalid_argument("initial state must be NULL/0 or have cell_count entries");
         const std::span<const double> init_span(state, state_count);
 
-        auto sol = mhs::solver::solve(c->model, init_span, so);
+        auto sol = mhs::solver::solve(c->model, run, init_span, so);
 
         auto* s = new (std::nothrow) mhs_solution_t;
         if (!s) {

@@ -28,7 +28,7 @@ namespace mhs::solver {
         double nonlinear_relative_tolerance = 1e-6;
         double nonlinear_absolute_tolerance = 1e-12;
 
-        // Adaptive BDF1/2 time integration. Output sampling is set by the model.
+        // Adaptive BDF1/2 time integration. Output sampling is set by Study.
         double time_tolerance = 1e-4;
         std::optional<double> max_time_step; // seconds; unset selects automatic
     };
@@ -39,7 +39,7 @@ namespace mhs::solver {
     /// Validates initial_state size when provided.
     /// Internally assembles the thermal system, runs nonlinear iteration
     /// and time integration, and records probes.
-    mhs::solver::Solution solve(
-        const mhs::model::Model& model, std::span<const double> initial_state = {}, const SolveOptions& options = {});
+    mhs::solver::Solution solve(const mhs::model::Model& model, const mhs::model::Study& study = {},
+        std::span<const double> initial_state = {}, const SolveOptions& options = {});
 
 } // namespace mhs::solver

@@ -53,14 +53,22 @@ class MhsSurfaceRegion(ctypes.Structure):
     ]
 
 
+class MhsStudy(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_int32),
+        ("initial_temperature", ctypes.c_double),
+        ("duration", ctypes.c_double),
+        ("output_interval", ctypes.c_double),
+    ]
+
+
 class MhsCompiledInfo(ctypes.Structure):
     _fields_ = [
         ("cell_count", ctypes.c_size_t),
         ("face_count", ctypes.c_size_t),
         ("projection_count", ctypes.c_size_t),
         ("source_count", ctypes.c_size_t),
-        ("study_type", ctypes.c_int32),
-        ("initial_temperature", ctypes.c_double),
+        ("reference_temperature", ctypes.c_double),
     ]
 
 
