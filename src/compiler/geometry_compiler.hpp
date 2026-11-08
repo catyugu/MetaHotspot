@@ -1,5 +1,6 @@
 #pragma once
 #include <optional>
+#include <span>
 
 #include "model/model.hpp"
 #include "model/model_definition.hpp"
@@ -16,13 +17,26 @@ namespace mhs::compiler {
         std::size_t tag;
     };
 
+    using SurfaceBounds = std::array<double, 4>;
+    struct TaggedBounds {
+        SurfaceBounds bounds;
+        std::size_t tag;
+    };
     struct ProjectedSurfacePatch {
         mhs::model::CellId cell;
         mhs::model::Axis axis;
         std::int8_t sign;
         std::size_t tag;
-        std::array<double, 4> bounds;
+        SurfaceBounds bounds;
     };
+
+    SurfaceBounds surface_bounds(const mhs::model::RegionRect& rectangle);
+    SurfaceBounds surface_bounds(const mhs::model::SurfaceRegion& region);
+    SurfaceBounds intersect_bounds(const SurfaceBounds& a, const SurfaceBounds& b);
+    bool positive_bounds(const SurfaceBounds& bounds);
+    double surface_area(const SurfaceBounds& bounds);
+    mhs::core::Vector<TaggedBounds> partition_surface_bounds(const SurfaceBounds& outer,
+        std::span<const TaggedBounds> regions, std::optional<std::size_t> fallback = std::nullopt);
 
     // ──────────────────────────────────────────────────────────────
     //  Internal compiler operations
