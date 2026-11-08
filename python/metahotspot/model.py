@@ -490,7 +490,7 @@ class Model(OwnedHandle):
         k = np.ascontiguousarray(stiffness, dtype=np.float64)
         f = np.ascontiguousarray(rhs, dtype=np.float64)
         if k.shape != (order, order) or f.shape != (order,):
-            raise ValueError("affine ROM stiffness/load dimensions must match the ROM order")
+            raise ValueError("affine ROM coefficient dimensions must match the ROM order")
         self._call(
             "mhs_model_rom_add_affine_term",
             domain,
