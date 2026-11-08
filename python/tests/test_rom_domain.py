@@ -3,13 +3,13 @@
 import numpy as np
 import pytest
 
-from metahotspot import Model, RomPortPatch, Study, SurfaceRegion
+from metahotspot import Convection, Dirichlet, Model, Neumann, RomPortPatch, Study, SurfaceRegion
 from metahotspot.enums import Axis, StudyType
 
 
 def test_rom_only_state_layout_initialization_and_steady_solve():
     model = Model()
-    rom = model.add_rom_domain(
+    rom = model.add_reduced_component(
         np.array([[2.0]]),
         np.array([[1.0]]),
         np.array([600.0]),
@@ -17,11 +17,11 @@ def test_rom_only_state_layout_initialization_and_steady_solve():
     )
     assert rom == 0
     compiled = model.compile()
-    assert compiled.info.domain_count == 1
+    assert compiled.info.component_count == 1
     assert compiled.info.cell_count == 0
     assert compiled.info.state_count == 1
     np.testing.assert_allclose(compiled.default_state(), [290.0])
-    assert compiled.domains[0].cell_count == 0
+    assert compiled.components[0].cell_count == 0
     assert compiled.field_layouts[0].dofs.tolist() == [0]
     np.testing.assert_allclose(compiled.assemble().K.toarray(), [[2.0]])
     solution = compiled.solve()
@@ -31,24 +31,23 @@ def test_rom_only_state_layout_initialization_and_steady_solve():
 
 def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     model = Model()
-    assert model.add_fom_domain() == 0
+    assert model.add_cartesian_component() == 0
     model.set_cartesian_mesh([0, 1], [0, 1], [0, 1])
     solid = model.add_material("solid", "1", "1", "1", "1", "1")
     volume = model.add_volume(solid)
     model.add_box(volume, (0, 0, 0), (1, 1, 1))
-    model.set_default_neumann("0")
-    model.add_dirichlet(
-        [SurfaceRegion(Axis.X, 0, 0, 1, 0, 1)],
-        "300",
+    model.set_default_thermal_boundary(Neumann("0"))
+    model.add_thermal_boundary(
+        [SurfaceRegion(Axis.X, 0, 0, 1, 0, 1)], Dirichlet("300")
     )
     a = model.add_port(0, "fom-join", SurfaceRegion(Axis.X, 1, 0, 1, 0, 1))
-    rom = model.add_rom_domain(
+    rom = model.add_reduced_component(
         np.array([[2.0]]),
         np.array([[1.0]]),
         np.array([560.0]),
         initial_state=np.array([290.0]),
     )
-    b = model.add_rom_port(
+    b = model.add_port(
         rom,
         "rom-join",
         SurfaceRegion(Axis.X, 1, 0, 1, 0, 1),
@@ -56,18 +55,17 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
         patches=[RomPortPatch((0, 1, 0, 1), 0.5, (0.5, 0.5), [1.0])],
     )
     connection = model.connect(0, a, rom, b)
-    model.add_point_probe("rom-probe", (2.5, 0.5, 0.5))
-    model.add_rom_observation(rom, "rom-probe", (2.5, 0.5, 0.5), [1.0])
+    model.add_observation(rom, "rom-probe", (2.5, 0.5, 0.5), weights=[1.0])
 
-    extra = model.add_fom_domain()
+    extra = model.add_cartesian_component()
     assert extra == 2
-    model.set_cartesian_mesh([3, 4], [0, 1], [0, 1], domain=extra)
-    extra_volume = model.add_volume(solid, domain=extra)
-    model.add_box(extra_volume, (3, 0, 0), (4, 1, 1), domain=extra)
-    model.set_default_dirichlet("300", domain=extra)
+    model.set_cartesian_mesh([3, 4], [0, 1], [0, 1], component=extra)
+    extra_volume = model.add_volume(solid, component=extra)
+    model.add_box(extra_volume, (3, 0, 0), (4, 1, 1), component=extra)
+    model.set_default_thermal_boundary(Dirichlet("300"), component=extra)
 
     compiled = model.compile()
-    assert compiled.info.domain_count == 3
+    assert compiled.info.component_count == 3
     assert compiled.info.cell_count == 2
     assert compiled.info.state_count == 3
     np.testing.assert_allclose(compiled.default_state(), [300.0, 290.0, 300.0])
@@ -93,19 +91,18 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
 @pytest.mark.parametrize("htc", [100.0, 200.0])
 def test_rom_exposed_port_uses_regular_convection(htc):
     model = Model()
-    domain = model.add_rom_domain(np.array([[2.0]]), np.array([[1.0]]), np.array([0.0]))
-    model.add_rom_port(
+    domain = model.add_reduced_component(np.array([[2.0]]), np.array([[1.0]]), np.array([0.0]))
+    model.add_port(
         domain,
         "exposed",
         SurfaceRegion(Axis.Z, 1, 0, 0.1, 0, 0.1),
         outward_sign=1,
         patches=[RomPortPatch((0, 0.1, 0, 0.1), 0.005, (0.05, 0.05), [1.0])],
     )
-    model.add_convection(
+    model.add_thermal_boundary(
         [SurfaceRegion(Axis.Z, 1, 0, 0.1, 0, 0.1)],
-        str(htc),
-        "300",
-        domain=domain,
+        Convection(str(htc), "300"),
+        component=domain,
     )
     compiled = model.compile()
     g = 0.01 / (0.005 + 1.0 / htc)

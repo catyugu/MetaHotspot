@@ -4,13 +4,13 @@ import numpy as np
 import pytest
 
 import metahotspot
-from metahotspot import SolveOptions, Study, SurfaceRegion
+from metahotspot import Convection, SolveOptions, Study, SurfaceRegion
 from metahotspot.enums import Axis, EntitySupport, FieldQuantity, FluidBC, StudyType
 
 
 def package(*, fluid=True, anisotropic=False, split=False, coarse=False, refinement=1):
     m = metahotspot.Model()
-    m.add_fom_domain()
+    m.add_cartesian_component()
     m.set_cartesian_mesh(
         np.arange(12 * refinement + 1) * 0.001 / refinement,
         np.arange(8 * refinement + 1) * 0.001 / refinement,
@@ -20,12 +20,12 @@ def package(*, fluid=True, anisotropic=False, split=False, coarse=False, refinem
         m.set_cartesian_mesh(
             np.arange(13) * 0.001, np.arange(9) * 0.001, np.arange(9) * 0.0005
         )
-        upper = m.add_fom_domain()
+        upper = m.add_cartesian_component()
         m.set_cartesian_mesh(
             np.arange(7 if coarse else 13) * (0.002 if coarse else 0.001),
             np.arange(5 if coarse else 9) * (0.002 if coarse else 0.001),
             [0.004, 0.0045, 0.005],
-            domain=upper,
+            component=upper,
         )
     materials = [
         m.add_material(
@@ -56,17 +56,16 @@ def package(*, fluid=True, anisotropic=False, split=False, coarse=False, refinem
         v = m.add_volume(materials[material], 0xFFFFFFFF if power is None else power)
         m.add_box(v, lo, hi)
     if split:
-        volume = m.add_volume(materials[2], domain=upper)
-        m.add_box(volume, [0, 0, 0.004], [0.012, 0.008, 0.005], domain=upper)
+        volume = m.add_volume(materials[2], component=upper)
+        m.add_box(volume, [0, 0, 0.004], [0.012, 0.008, 0.005], component=upper)
         region = SurfaceRegion(Axis.Z, 0.004, 0, 0.012, 0, 0.008)
         a = m.add_port(0, "top", region)
         b = m.add_port(upper, "bottom", region)
         m.connect(0, a, upper, b)
-    m.add_convection(
+    m.add_thermal_boundary(
         [SurfaceRegion(Axis.Z, 0.005, 0, 0.012, 0, 0.008)],
-        "400",
-        "300",
-        domain=upper if split else 0,
+        Convection("400", "300"),
+        component=upper if split else 0,
     )
     if fluid:
         m.add_fluid_boundary(
@@ -86,7 +85,7 @@ def package(*, fluid=True, anisotropic=False, split=False, coarse=False, refinem
         ("downstream", [0.0105, 0.0035, 0.00275]),
         ("copper", [0.006, 0.004, 0.00475]),
     ]:
-        m.add_point_probe(name, xyz)
+        m.add_observation(upper if split and xyz[2] >= 0.004 else 0, name, xyz)
     return m
 
 
@@ -100,10 +99,10 @@ def test_package_layout_recompile_and_snapshot_lifetime(fluid):
         )
         again.close()
     assert c.info.state_count == c.info.cell_count == 960
-    assert c.info.domain_count == c.info.field_count == 1
-    assert c.domains[0].cell_count == 960
+    assert c.info.component_count == c.info.field_count == 1
+    assert c.components[0].cell_count == 960
     field = c.field_layouts[0]
-    assert (field.domain, field.quantity, field.support, field.offset) == (
+    assert (field.component, field.quantity, field.support, field.offset) == (
         0,
         FieldQuantity.TEMPERATURE,
         EntitySupport.CELL,
@@ -165,14 +164,15 @@ def test_gl02_anisotropic_solid_and_fluid_share_one_temperature_field():
 def test_gl04_matched_foms_equal_monolith_operators_states_and_probes():
     with package() as m, package(split=True) as split:
         for definition in (m, split):
-            definition.add_point_probe(
-                "near_lower_interface", [0.00625, 0.00425, 0.0039]
+            definition.add_observation(
+                0, "near_lower_interface", [0.00625, 0.00425, 0.0039]
             )
-            definition.add_point_probe(
+            definition.add_observation(
+                1 if definition is split else 0,
                 "near_upper_interface", [0.00625, 0.00425, 0.0041]
             )
         a, b = m.compile(), split.compile()
-    assert [d.cell_count for d in b.domains] == [768, 192]
+    assert [d.cell_count for d in b.components] == [768, 192]
     xa = (a.fields.cell_min + a.fields.cell_max) / 2
     xb = (b.fields.cell_min + b.fields.cell_max) / 2
     permutation = np.array(
@@ -214,7 +214,7 @@ def test_gl04_matched_foms_equal_monolith_operators_states_and_probes():
 def test_gl05_coarse_upper_fom_ncc_reaches_conservative_steady_and_transient():
     with package(split=True, coarse=True) as m:
         compiled = m.compile()
-    assert [d.cell_count for d in compiled.domains] == [768, 48]
+    assert [d.cell_count for d in compiled.components] == [768, 48]
     for study in [Study(), Study(StudyType.TRANSIENT, 300, 2, 0.1)]:
         solution = compiled.solve(
             study,
