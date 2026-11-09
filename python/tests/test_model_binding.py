@@ -27,7 +27,7 @@ def _model(*, transient: bool = False) -> metahotspot.Model:
 
 def test_model_native_calls_compile_and_assemble():
     model = _model()
-    
+
 
     compiled = model.compile()
     assert compiled.cell_count == 1
@@ -48,18 +48,23 @@ def test_model_native_calls_compile_and_assemble():
 def test_model_native_boundary_and_function_calls():
     model = _model()
     region = [SurfaceRegion(Axis.Z, 0.0, 0.0, 0.001, 0.0, 0.001)]
-    model.add_thermal_boundary(region, model.library.add_thermal_boundary(metahotspot.Dirichlet("300")))
-    model.add_thermal_boundary(region, model.library.add_thermal_boundary(metahotspot.Neumann("0")))
-    model.add_thermal_boundary(region, model.library.add_thermal_boundary(metahotspot.Convection("10", "300")))
-    model.set_default_thermal_boundary(model.library.add_thermal_boundary(metahotspot.Dirichlet("300")))
-    
-    model.set_default_thermal_boundary(model.library.add_thermal_boundary(metahotspot.Convection("10", "300")))
+    for law in (
+        metahotspot.Dirichlet("300"),
+        metahotspot.Neumann("0"),
+        metahotspot.Convection("10", "300"),
+    ):
+        model.add_thermal_boundary(region, model.library.add_thermal_boundary(law))
+    model.set_default_thermal_boundary(
+        model.library.add_thermal_boundary(metahotspot.Convection("10", "300"))
+    )
     model.add_variable("x0", "0")
     model.library.add_function_expr("constant", "1")
     model.library.add_function_gauss("gauss", 1.0, 1.0, 0.0)
     model.library.add_function_sine("sine", 1.0, 1.0, 0.0)
     model.library.add_function_double_exponential("double_exp", 1.0, 1.0, 2.0)
-    model.library.add_function_piecewise("piecewise", np.array([[0.0, 0.0], [1.0, 1.0]]))
+    model.library.add_function_piecewise(
+        "piecewise", np.array([[0.0, 0.0], [1.0, 1.0]])
+    )
     model.library.add_function_periodic_piecewise_constant(
         "periodic", np.array([0.0, 0.001]), 1.0
     )
@@ -73,7 +78,7 @@ def test_model_native_boundary_and_function_calls():
 
 def test_solution_views_derive_from_one_native_snapshot():
     model = _model(transient=True)
-    
+
     model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
 
     study = metahotspot.Study(StudyType.TRANSIENT, 300.0, 1.0, 0.5)

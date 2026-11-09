@@ -4,7 +4,8 @@ Usage::
 
     import metahotspot
 
-    library = metahotspot.Library()\n    model = metahotspot.Model(library)
+    library = metahotspot.Library()
+    model = metahotspot.Model(library)
     # Construct SI volumes and mesh axes before compiling.
     compiled = model.compile()
     solution = compiled.solve()
@@ -17,7 +18,15 @@ from metahotspot._error import MetaHotspotError
 from metahotspot._lib import library_version
 from metahotspot.compiled import Compiled, SolveOptions
 from metahotspot.logging import get_log_level, set_log_level
-from metahotspot.model import Convection, Dirichlet, Library, Model, Neumann, Study, SurfaceRegion
+from metahotspot.model import (
+    Convection,
+    Dirichlet,
+    Library,
+    Model,
+    Neumann,
+    Study,
+    SurfaceRegion,
+)
 from metahotspot.solution import Solution
 
 # Reported by the library this module binds, so it can never drift from it.
@@ -25,18 +34,18 @@ __version__ = library_version()
 
 __all__ = [
     "Compiled",
-    "MetaHotspotError",
-    "Library",
-    "Dirichlet",
-    "Neumann",
     "Convection",
+    "Dirichlet",
+    "enums",
+    "get_log_level",
+    "Library",
+    "MetaHotspotError",
     "Model",
+    "Neumann",
     "Operators",
+    "set_log_level",
     "Solution",
     "SolveOptions",
     "Study",
     "SurfaceRegion",
-    "enums",
-    "get_log_level",
-    "set_log_level",
 ]

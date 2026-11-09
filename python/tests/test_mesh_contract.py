@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from test_model_binding import _model
 
-from metahotspot import SurfaceRegion
+from metahotspot import Convection, SurfaceRegion
 
 
 def test_subcell_sources_keep_independent_power_columns():
@@ -48,7 +48,8 @@ def test_cartesian_fluid_model_recompiles_consistently(case):
         volume = model.add_volume(material, 0)
         model.add_box(volume, [0, 0, 0], [0.001, 0.001, 0.001])
         model.set_cartesian_mesh(*(np.linspace(0, 0.001, 4) for _ in range(3)))
-        model.set_default_thermal_boundary(model.library.add_thermal_boundary(metahotspot.Convection("10", "300")))
+        cooling = model.library.add_thermal_boundary(Convection("10", "300"))
+        model.set_default_thermal_boundary(cooling)
         model.add_fluid_boundary(
             [SurfaceRegion(0, 0, 0, 0.001, 0, 0.001)],
             model.library.add_fluid_boundary(1, 100 if case == 1 else 200, 300),

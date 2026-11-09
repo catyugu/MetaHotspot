@@ -13,7 +13,15 @@ from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
 from metahotspot.enums import Axis, FluidBC, GeometryOp, StudyType
-from metahotspot.types import MhsLibrary, MhsModel, MhsStudy, MhsSurfaceRegion, MhsThermalBoundary, Point2D, Rect2D
+from metahotspot.types import (
+    MhsLibrary,
+    MhsModel,
+    MhsStudy,
+    MhsSurfaceRegion,
+    MhsThermalBoundary,
+    Point2D,
+    Rect2D,
+)
 
 if TYPE_CHECKING:
     from metahotspot.compiled import Compiled
@@ -79,7 +87,9 @@ def _surface_regions(regions: Sequence[SurfaceRegion]) -> tuple[object, int]:
 def _add_piecewise(dll, handle, name, points) -> None:
     native = (Point2D * len(points))(*[Point2D(x, y) for x, y in points])
     check(
-        dll.mhs_library_add_function_piecewise(handle, _text(name), native, len(points)),
+        dll.mhs_library_add_function_piecewise(
+            handle, _text(name), native, len(points)
+        ),
         "add_function_piecewise",
     )
 
@@ -221,19 +231,34 @@ class Library(OwnedHandle):
         elif isinstance(condition, Neumann):
             native = MhsThermalBoundary(1, _text(condition.heat_flux), None)
         elif isinstance(condition, Convection):
-            native = MhsThermalBoundary(2, _text(condition.coefficient), _text(condition.ambient_temperature))
+            native = MhsThermalBoundary(
+                2, _text(condition.coefficient), _text(condition.ambient_temperature)
+            )
         else:
             raise TypeError("expected Dirichlet, Neumann or Convection")
         identifier = ctypes.c_uint32()
-        self._call("mhs_library_add_thermal_boundary", ctypes.byref(native), ctypes.byref(identifier))
+        self._call(
+            "mhs_library_add_thermal_boundary",
+            ctypes.byref(native),
+            ctypes.byref(identifier),
+        )
         return identifier.value
 
-    def add_fluid_boundary(self, kind: FluidBC, value: float, inlet_temperature: float | None = None) -> int:
-        temperature = None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
+    def add_fluid_boundary(
+        self, kind: FluidBC, value: float, inlet_temperature: float | None = None
+    ) -> int:
+        temperature = (
+            None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
+        )
         identifier = ctypes.c_uint32()
-        self._call("mhs_library_add_fluid_boundary", int(kind), value,
-                   None if temperature is None else ctypes.byref(temperature),
-                   ctypes.byref(identifier), ctx="add_fluid_boundary")
+        self._call(
+            "mhs_library_add_fluid_boundary",
+            int(kind),
+            value,
+            None if temperature is None else ctypes.byref(temperature),
+            ctypes.byref(identifier),
+            ctx="add_fluid_boundary",
+        )
         return identifier.value
 
 
@@ -309,7 +334,9 @@ class Model(OwnedHandle):
             ctx="add_box",
         )
 
-    def add_thermal_boundary(self, regions: Sequence[SurfaceRegion], condition: int) -> None:
+    def add_thermal_boundary(
+        self, regions: Sequence[SurfaceRegion], condition: int
+    ) -> None:
         native, count = _surface_regions(regions)
         self._call("mhs_model_add_thermal_boundary", native, count, condition)
 
@@ -330,7 +357,9 @@ class Model(OwnedHandle):
             ctx="add_point_probe",
         )
 
-    def add_fluid_boundary(self, regions: Sequence[SurfaceRegion], condition: int) -> None:
+    def add_fluid_boundary(
+        self, regions: Sequence[SurfaceRegion], condition: int
+    ) -> None:
         native, count = _surface_regions(regions)
         self._call("mhs_model_add_fluid_boundary", native, count, condition)
 
