@@ -1,7 +1,6 @@
 add_library(mhs_solver STATIC
     assembler.cpp
     nonlinear_solver.cpp
-    probe_recorder.cpp
     solve.cpp
     thermal_reconstruction.cpp
 )

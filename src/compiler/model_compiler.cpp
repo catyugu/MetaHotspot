@@ -72,7 +72,7 @@ namespace mhs::compiler {
 
         auto symbols = build_symbol_table(definition);
         for (const auto& p : definition.point_probes)
-            model.point_probes.push_back({p.name, p.x, p.y, p.z});
+            model.point_probes.push_back({p.name, {p.x, p.y, p.z}});
 
         // Compile material properties in ModelDefinition::materials order.
         model.material_table.resize(definition.materials.size());

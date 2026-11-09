@@ -54,9 +54,8 @@ namespace mhs::model {
 
     struct PointProbe {
         std::string name;
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
+        Vec3 point {};
+        CellId cell = mhs::core::invalid_id;
     };
 
     struct Model {
