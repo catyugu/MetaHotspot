@@ -167,9 +167,6 @@ def build_model(
     m = model
 
     m.set_reference_temperature(T_AMB)
-    m.set_default_thermal_boundary(
-        m.library.add_thermal_boundary(metahotspot.Neumann("0"))
-    )
 
     # -- Mesh: full sink XY extent, 4 Z layers --
     z_chip = np.linspace(0, T_CHIP, NZ_CHIP + 1, endpoint=True)

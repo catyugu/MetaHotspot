@@ -141,15 +141,12 @@ def _band_for_z(bands, z_mm: float):
 
 
 def build_geometry(cfg: AttachConfig, *, detail: bool, macro: bool):
-    """Assemble the full stacked model with an explicit adiabatic default."""
+    """Assemble the full stacked model with the adiabatic default boundary."""
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
     model = metahotspot.Model(metahotspot.Library())
     model.set_reference_temperature(cfg.ambient_K)
     model.set_cartesian_mesh(cube_axis_mm() * 1e-3, cube_axis_mm() * 1e-3, _z_full_mm(cfg) * 1e-3)
-    model.set_default_thermal_boundary(
-        model.library.add_thermal_boundary(metahotspot.Neumann("0"))
-    )
     copper = model.library.add_material("Copper (Pure)", *COPPER)
     H = cfg.ext_thickness_mm
 

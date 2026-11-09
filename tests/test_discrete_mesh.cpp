@@ -20,7 +20,6 @@ static mhs::model::ModelDefinition cube_definition()
     mat.density = mat.specific_heat = "1";
     d.library().materials.push_back({"solid", mat});
     d.library().sources = {"0"};
-    d.default_thermal_boundary = d.library().add_thermal_boundary(mhs::model::NeumannBoundary {});
     d.volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
     return d;
 }

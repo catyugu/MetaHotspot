@@ -226,7 +226,7 @@ namespace mhs::model {
         mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<VolumeSpec> volumes;
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
-        BoundaryConditionId default_thermal_boundary = mhs::core::invalid_id;
+        BoundaryConditionId default_thermal_boundary = mhs::core::invalid_id; // built-in Neumann(0)
         mhs::core::Vector<PointProbeSpec> point_probes;
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
 

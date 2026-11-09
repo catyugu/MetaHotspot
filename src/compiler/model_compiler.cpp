@@ -117,9 +117,14 @@ namespace mhs::compiler {
         auto compiled_boundaries
             = compile_thermal_boundaries(definition.thermal_boundaries, boundary_conditions.size());
 
-        const auto default_thermal_boundary = definition.default_thermal_boundary;
-        if (default_thermal_boundary >= boundary_conditions.size())
+        auto default_thermal_boundary = definition.default_thermal_boundary;
+        if (default_thermal_boundary == mhs::core::invalid_id) {
+            default_thermal_boundary = static_cast<mhs::model::BoundaryConditionId>(boundary_conditions.size());
+            boundary_conditions.push_back(compile_thermal_boundary(mhs::model::NeumannBoundary {}, symbols));
+        }
+        else if (default_thermal_boundary >= boundary_conditions.size()) {
             throw std::out_of_range("default thermal boundary condition ID out of range");
+        }
         for (const auto& boundary : definition.fluid_boundaries)
             if (boundary.condition >= library.fluid_boundaries.size())
                 throw std::out_of_range("fluid boundary condition ID out of range");

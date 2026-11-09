@@ -31,7 +31,6 @@ namespace {
         mat.density = mat.specific_heat = "1";
         mat.dynamic_viscosity = "1";
         d.model.library().materials.push_back({"fluid", mat});
-        d.model.default_thermal_boundary = d.model.library().add_thermal_boundary(NeumannBoundary {});
         mhs::app::pta::LayerSpec layer;
         layer.thickness = "1";
         mhs::app::pta::BlockSpec block;

@@ -29,9 +29,6 @@ def _build_operators(nx=2, ny=2, nz=3):
     source = model.library.add_source("1e6")
     volume = model.add_volume(material, source)
     model.add_box(volume, [0, 0, 0], [nx * 1e-3, ny * 1e-3, nz * 1e-3])
-    model.set_default_thermal_boundary(
-        model.library.add_thermal_boundary(metahotspot.Neumann("0"))
-    )
     compiled = model.compile()
     ops = compiled.assemble()
     return model, compiled, ops

@@ -22,9 +22,6 @@ def _model(*, transient: bool = False) -> metahotspot.Model:
     source = model.library.add_source("1e6")
     volume = model.add_volume(material, source)
     model.add_box(volume, [0, 0, 0], [0.001, 0.001, 0.001])
-    model.set_default_thermal_boundary(
-        model.library.add_thermal_boundary(metahotspot.Neumann("0"))
-    )
     return model
 
 
