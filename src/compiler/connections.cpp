@@ -2,6 +2,7 @@
 #include "compiler/geometry_compiler.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <set>
 #include <stdexcept>
 
@@ -27,19 +28,19 @@ namespace mhs::compiler {
         using namespace model;
         const auto ndom = definition.components.size();
         core::Vector<core::Vector<Facets>> ports(ndom);
-        core::Vector<core::Vector<bool>> connected(ndom);
+        core::Vector<core::Vector<std::uint8_t>> connected(ndom);
         for (std::size_t d = 0; d < ndom; ++d) {
             const auto count = definition.components[d].ports.size();
             ports[d].resize(count);
-            connected[d].resize(count, false);
+            connected[d].resize(count, 0);
         }
         for (const auto& spec : definition.connections) {
             if (spec.a.domain == spec.b.domain || spec.a.domain >= ndom || spec.b.domain >= ndom)
                 throw std::invalid_argument("connection must join two different domains");
             if (connected.at(spec.a.domain).at(spec.a.port) || connected.at(spec.b.domain).at(spec.b.port))
                 throw std::invalid_argument("port is connected more than once");
-            connected[spec.a.domain][spec.a.port] = true;
-            connected[spec.b.domain][spec.b.port] = true;
+            connected[spec.a.domain][spec.a.port] = 1;
+            connected[spec.b.domain][spec.b.port] = 1;
         }
 
         // Every component validates the same named physical-port contract.
@@ -204,7 +205,7 @@ namespace mhs::compiler {
         // exterior boundary law; an otherwise unused ROM port is adiabatic.
         for (const auto& field : compiled.layout.fields)
             if (field.quantity == FieldQuantity::Temperature
-                && std::find(connected[field.domain].begin(), connected[field.domain].end(), false)
+                && std::find(connected[field.domain].begin(), connected[field.domain].end(), 0)
                     != connected[field.domain].end())
                 throw std::invalid_argument("every declared FOM port must be connected");
 
