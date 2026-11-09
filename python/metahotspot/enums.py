@@ -30,6 +30,11 @@ class GeometryOp(enum.IntEnum):
     SUB = 1
 
 
+class MaterialKind(enum.IntEnum):
+    SOLID = 0
+    FLUID = 1
+
+
 class SolverType(enum.IntEnum):
     PARDISO = 0
     AMG = 1

@@ -54,7 +54,7 @@ _CORE_FUNC_SIGS = [
     (
         "mhs_model_add_material",
         I32,
-        [P(MhsModel), Text, Text, Text, Text, Text, Text, Text, P(ctypes.c_uint32)],
+        [P(MhsModel), Text, Text, Text, Text, Text, Text, I32, Text, P(ctypes.c_uint32)],
     ),
     ("mhs_model_add_source", I32, [P(MhsModel), Text, P(ctypes.c_uint32)]),
     (

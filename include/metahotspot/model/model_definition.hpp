@@ -73,6 +73,7 @@ namespace mhs::model {
     using ThermalBoundarySpec = SurfaceConditionSpec<ThermalBoundary>;
 
     struct MaterialSpec {
+        MaterialKind kind = MaterialKind::Solid;
         Expression conductivity_x = "0.0";
         Expression conductivity_y = "0.0";
         Expression conductivity_z = "0.0";

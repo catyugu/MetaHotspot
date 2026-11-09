@@ -4,12 +4,11 @@
 #include "model/model_definition.hpp"
 
 #include "core/vector.hpp"
-#include <optional>
 
 namespace mhs::compiler::fluid {
 
     struct FluidMaterialData {
-        mhs::core::Vector<std::optional<double>> initial_viscosity;
+        mhs::core::Vector<double> initial_viscosity;
     };
 
     // Build the assembly-ready frozen flow domain. Geometry, pressure-system,

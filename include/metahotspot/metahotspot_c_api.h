@@ -82,6 +82,9 @@ enum { MHS_AXIS_X = 0, MHS_AXIS_Y = 1, MHS_AXIS_Z = 2 };
 typedef int32_t mhs_geometry_op_t;
 enum { MHS_GEOM_ADD = 0, MHS_GEOM_SUB = 1 };
 
+typedef int32_t mhs_material_kind_t;
+enum { MHS_MATERIAL_SOLID = 0, MHS_MATERIAL_FLUID = 1 };
+
 typedef int32_t mhs_solver_type_t;
 enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
 
@@ -247,9 +250,10 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 /*  Model construction  —  materials, sources, volumes           */
 /* ------------------------------------------------------------------ */
 
-/** NULL dynamic_viscosity selects a solid; a non-NULL expression selects a fluid. */
+/** Material kind is explicit. Fluids require a non-NULL dynamic_viscosity; solids require NULL. */
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
-    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id);
+    const char* kz, const char* rho, const char* c, mhs_material_kind_t kind, const char* dynamic_viscosity,
+    mhs_index_t* out_id);
 
 /** Geometry, mesh coordinates and probes use SI metres. Expressions use canonical x/y/z/T/t.
  * Later volumes override earlier volumes. MHS_INVALID_INDEX omits the heat source. */

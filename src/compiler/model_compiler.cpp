@@ -5,7 +5,6 @@
 #include "core/vector.hpp"
 #include "expression/expression.hpp"
 
-#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <stdexcept>
@@ -77,24 +76,28 @@ namespace mhs::compiler {
         // Compile material properties in ModelDefinition::materials order.
         model.material_table.resize(definition.materials.size());
         mhs::compiler::fluid::FluidMaterialData fluid_materials;
-        fluid_materials.initial_viscosity.assign(definition.materials.size(), std::nullopt);
+        fluid_materials.initial_viscosity.resize(definition.materials.size());
 
         for (size_t m = 0; m < definition.materials.size(); m++) {
             const auto& mat = definition.materials[m].value;
             auto compile_mat = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
             auto& props = model.material_table[m];
+            props.kind = mat.kind;
             props.kx = compile_mat(mat.conductivity_x);
             props.ky = compile_mat(mat.conductivity_y);
             props.kz = compile_mat(mat.conductivity_z);
             props.rho = compile_mat(mat.density);
             props.c = compile_mat(mat.specific_heat);
-            if (mat.dynamic_viscosity.has_value()) {
-                if (mat.dynamic_viscosity->empty()) {
+            if (mat.kind == mhs::model::MaterialKind::Fluid) {
+                if (!mat.dynamic_viscosity || mat.dynamic_viscosity->empty())
                     throw std::runtime_error(
                         "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
-                }
                 fluid_materials.initial_viscosity[m]
                     = compile_mat(*mat.dynamic_viscosity).eval({0, 0, 0, model.reference_temperature, 0});
+            }
+            else if (mat.dynamic_viscosity) {
+                throw std::invalid_argument(
+                    "solid material '" + definition.materials[m].name + "' must not define DynamicViscosity");
             }
         }
 
@@ -130,11 +133,7 @@ namespace mhs::compiler {
                 static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
 
         // Fluid coupling.
-        const bool has_fluid_material = std::any_of(definition.materials.begin(), definition.materials.end(),
-            [](const mhs::model::NamedMaterial& material) { return material.value.dynamic_viscosity.has_value(); });
-        if (has_fluid_material) {
-            mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_materials);
-        }
+        mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_materials);
 
         return model;
     }

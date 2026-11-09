@@ -56,8 +56,10 @@ with Model() as model:
 流体边界同样使用 `add_fluid_boundary(regions, kind, value, inlet_temperature=None)`。
 
 `mhs_model_t` 是可变建模入口，持有 study 设置与点探针。`compile` 创建独立、
-不可变的 compiled handle。内核中的材料以 `dynamic_viscosity` 是否存在区分固体/流体，
-不维护额外布尔标记。PTA 适配器在 app 侧校验 `FluidMaterial`，展开多矩形 FaceKey。
+不可变的 compiled handle。材料通过 `MaterialKind::{Solid, Fluid}` 显式分类；
+`dynamic_viscosity` 只是流体材料的必需物性，不承担类型判定。C ABI 使用
+`mhs_material_kind_t`，Python 使用 `MaterialKind`。PTA 适配器直接把 XML 的
+`FluidMaterial` 映射到该分类，并继续在 app 侧展开多矩形 FaceKey。
 
 几何投影只处理区域与网格的交叠，返回 cell、axis、sign、bounds 和不透明 tag。
 热与流体编译器分别解释 tag；投影算法不依赖热边界 ID 或条件类型。
