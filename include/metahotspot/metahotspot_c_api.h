@@ -175,7 +175,7 @@ typedef struct {
     mhs_index_t* projection_source;
     double* projection_volume;
     double* projection_center;
-} mhs_cell_fields_t;
+} mhs_compiled_fields_t;
 
 /** Evaluate power in each geometric volume-projection term at supplied state/time. */
 MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, const double* state, size_t state_count,
@@ -324,7 +324,7 @@ MHS_API void mhs_compiled_destroy(mhs_compiled_t* c);
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out);
-MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields);
+MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compiled_fields_t* fields);
 MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
     size_t temperature_count, double time, mhs_material_values_t* values);
 

@@ -580,7 +580,7 @@ namespace {
     }
 } // namespace
 
-MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields)
+MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compiled_fields_t* fields)
 {
     CHECK_NULL(c);
     CHECK_NULL(fields);
