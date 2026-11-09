@@ -36,7 +36,7 @@ def test_model_native_calls_compile_and_assemble():
     operators = compiled.assemble()
 
     assert compiled.cell_count == 1
-    assert compiled.info.face_count == 6
+    assert compiled.info.facet_count == 6
     assert operators.K.format == operators.C.format == "csr"
     assert operators.K.shape == (1, 1)
     assert operators.C.shape == (1, 1)

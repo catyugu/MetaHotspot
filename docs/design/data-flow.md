@@ -16,21 +16,21 @@
 | 阶段 | 输入 | 输出与规则 |
 | --- | --- | --- |
 | 几何解析 | Layer / Block / Rect 和几何表达式 | SI 米下的区域；同层后出现的 Block 覆盖前者 |
-| 网格输入 | Cartesian 坐标轴与物理区域 | `DiscreteMesh`：单元边界、唯一有向面片和单元—面片 CSR 关联 |
-| 网格契约 | 控制体与面片几何、连接 | 验证坐标轴有限且严格递增；生成控制体、有向面片与 CSR 关联 |
+| 网格输入 | Cartesian 坐标轴与物理区域 | `DiscreteMesh`：单元边界、初始有向 Facet 几何 |
+| 网格契约 | 控制体与面片几何、连接 | 验证坐标轴有限且严格递增；生成控制体及有向面片，边界细分后统一构建 CSR 关联 |
 | 体积投影 | 网格与物理区域 | `cell_material` 和 `source_terms`；调用者保证控制体与材料及物理域边界对齐，编译器不校验 |
-| 边界投影 | 外露面片与有序 `TaggedSurfaceRegion` | 纯几何投影生成 `ProjectedSurfacePatch`，只携带 caller tag；热编译器转换为 `boundary_faces`，引用 `BoundaryCondition`；后出现的区域覆盖前者，未覆盖部分使用默认边界 |
+| 边界细分与绑定 | 外露 Facet 与热、流体边界区域 | 在几何编译阶段共同切分外部 Facet，统一构建 Cell–Facet 关联；热学、流体边界分别按 FacetId 绑定，区域后者覆盖前者 |
 | 表达式编译 | 材料、源、边界表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
-| 流体预处理 | 流体材料、连接和流体边界 | 独立按面积投影流体边界；临时压力解转换为内部面体积流量、边界片质量通量与入口温度、流固换热因子 |
+| 流体预处理 | 流体材料、规范化 Facet 与流体边界赋值 | 共享 FacetId 和面积，求解临时压力场后生成逐 Facet 的流量、质量通量与入口温度及流固换热因子 |
 | 容量与体热源装配 | 单元几何、材料、体积投影、状态和时间 | `rho c V` 及各投影片上的热源积分 |
 | 面片装配 | 面片、两侧物理类型、边界描述 | 内部面只装配一次；外边界迹由统一局部方程求解并凝聚到单元系统 |
 | 流体能量装配 | 冻结流量、状态和材料 | 上风对流和入口能量贡献，直接追加到主装配的矩阵条目与 RHS；复用容量装配求值的 rho/cp，无中间增量对象 |
 
 当前 TPFA 适用于轴对齐长方体、相邻中心沿面法向对齐及对角导热张量。数值内核消费已有网格，不生成或加密网格。
 
-`SourceTerm` 仅保存 CellId、源表索引、体积权重和积分点；一个控制体可以接收多个源。常数体热源按体积守恒，空间表达式在各交叠片上采用中点积分。材料归属仅保存每单元一个材料索引，取该单元切分遍历中最后命中的材料；未命中物理区域的片段不贡献热源。这不能代替材料混合离散，调用者必须保证材料对齐。热与流体边界分别采用后出现条件覆盖前者的面积投影，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取初始温度。
+`SourceTerm` 仅保存 CellId、源表索引、体积权重和积分点；一个控制体可以接收多个源。常数体热源按体积守恒，空间表达式在各交叠片上采用中点积分。材料归属仅保存每单元一个材料索引，取该单元切分遍历中最后命中的材料；未命中物理区域的片段不贡献热源。这不能代替材料混合离散，调用者必须保证材料对齐。热与流体边界在共同的几何切分上分别采用后出现条件覆盖前者的绑定，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取初始温度。
 
-`FluidBoundaryTerm` 保存 FaceId 和内联的 `FluidBoundaryCondition = variant<FluidInflow, FluidOutflow>`。两种记录均保存非负的质量流率（kg/s），仅 `FluidInflow` 保存流入温度；按压力解得到的实际流向选择类型，而非输入的入口/出口标签，因此压力边界反向流动时仍采用该边界的流入温度。零流量归入 `FluidOutflow`，能量贡献为零。这些记录只有数值和内联判别信息，无动态分配；每片的冻结流量独立，不需要额外条件表。
+`FluidBoundaryTerm` 保存 FacetId 和内联的 `FluidBoundaryCondition = variant<FluidInflow, FluidOutflow>`。两种记录均保存非负的质量流率（kg/s），仅 `FluidInflow` 保存流入温度；按压力解得到的实际流向选择类型，而非输入的入口/出口标签，因此压力边界反向流动时仍采用该边界的流入温度。零流量归入 `FluidOutflow`，能量贡献为零。这些记录只有数值和内联判别信息，无动态分配；每片的冻结流量独立，不需要额外条件表。
 
 ## 求解与输出
 
@@ -41,11 +41,11 @@
 ## 输入与数组约定
 
 - C++ 的 `ModelDefinition::mesh`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Model.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
-- C/Python 网格导出使用 `face_minus`、`face_plus`、`face_axis` 和 `face_bounds`。前三者为 `(face_count,)`，bounds 为 `(face_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量沿 axis 从 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
-- 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 minus 的 max 或 plus 的 min 得到。外法向由缺失的一侧确定。一个 cell side 可有多个积分 patch，支持轴对齐的非匹配界面。cell→faces 仅保留一套 CSR 索引，编译器直接构建。
+- C/Python 网格导出使用 `facet_minus`、`facet_plus`、`facet_axis`、`facet_coordinate` 和 `facet_bounds`。前四者为 `(facet_count,)`，bounds 为 `(facet_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量由 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
+- Facet 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 `facet_coordinate` 给出，外法向由缺失的一侧确定。一个 cell side 可有多个外边界 Facet。跨子域非匹配连接尚未实现。单元至 Facet 只保留一套 CSR 关联索引。
 - 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。
 - `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
-- `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FaceId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
+- `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FacetId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
 
 函数在编译阶段统一构造求值器：分段线性要求至少两个点，按横坐标排序，并拒绝重复横坐标和非有限值；周期分段常数要求非空值和有限正周期。表达式解析失败立即抛出异常，不保存失败求值器。所有探针值共用 `Solution::snapshot_times`；XML 输出显式接收这份时间序列。
 

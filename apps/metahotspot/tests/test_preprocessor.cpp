@@ -10,24 +10,25 @@ using namespace mhs::compiler;
 
 enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 
-// Helpers for testing patch-based BC assignment.
-
-/// Find a boundary integration face on `cell_idx` with direction `dir`.
-/// Returns nullptr for an internal face without a boundary face.
-static const mhs::model::BoundaryFace* find_face_bc(const Model& model, std::size_t cell_idx, FaceDir dir)
+// Select a canonical exterior facet by its owner cell and outward direction.
+static FacetId find_boundary_facet(const Model& model, std::size_t cell_idx, FaceDir dir)
 {
-    for (const auto& term : model.boundary_faces)
-        if (term.cell == cell_idx && static_cast<int>(term.axis) == static_cast<int>(dir) / 2
-            && term.sign == (static_cast<int>(dir) % 2 ? 1 : -1))
-            return &term;
-    return nullptr;
+    for (auto id : model.discrete.incident_facets(static_cast<CellId>(cell_idx))) {
+        const auto& facet = model.discrete.facets[id];
+        if (facet.exterior() && static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
+            && facet.outward_sign() == (static_cast<int>(dir) % 2 ? 1 : -1))
+            return id;
+    }
+    return mhs::core::invalid_id;
 }
 
 template <typename Condition>
 static const Condition* find_condition(const Model& model, std::size_t cell_idx, FaceDir dir)
 {
-    const auto* term = find_face_bc(model, cell_idx, dir);
-    return term ? std::get_if<Condition>(&model.boundary_conditions[term->condition]) : nullptr;
+    const auto facet = find_boundary_facet(model, cell_idx, dir);
+    return facet == mhs::core::invalid_id
+        ? nullptr
+        : std::get_if<Condition>(&model.boundary_conditions[model.facet_thermal_condition[facet]]);
 }
 
 static SourceId source_id(const Model& model, std::size_t cell)
@@ -318,9 +319,9 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     const auto compact_inner = input_cell(model, io.model.mesh, idx_inner);
     ASSERT_NE(compact_inner, mhs::core::invalid_id);
 
-    EXPECT_EQ(find_face_bc(model, compact_inner, FaceDir::XM), nullptr);
-    EXPECT_EQ(find_face_bc(model, compact_inner, FaceDir::YM), nullptr);
-    EXPECT_EQ(find_face_bc(model, compact_inner, FaceDir::ZM), nullptr);
+    EXPECT_EQ(find_boundary_facet(model, compact_inner, FaceDir::XM), mhs::core::invalid_id);
+    EXPECT_EQ(find_boundary_facet(model, compact_inner, FaceDir::YM), mhs::core::invalid_id);
+    EXPECT_EQ(find_boundary_facet(model, compact_inner, FaceDir::ZM), mhs::core::invalid_id);
     EXPECT_NE(find_condition<Neumann>(model, compact_inner, FaceDir::XP), nullptr);
     EXPECT_NE(find_condition<Neumann>(model, compact_inner, FaceDir::YP), nullptr);
     EXPECT_NE(find_condition<Neumann>(model, compact_inner, FaceDir::ZP), nullptr);

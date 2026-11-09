@@ -43,7 +43,7 @@ int main(int argc, char* argv[])
 
         auto model = mhs::compiler::build_model(definition.model);
 
-        MHS_LOG_INFO("Compiled {} cells and {} face patches", model.discrete.cells.size(), model.discrete.faces.size());
+        MHS_LOG_INFO("Compiled {} cells and {} facets", model.discrete.cells.size(), model.discrete.facets.size());
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");

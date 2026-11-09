@@ -52,14 +52,16 @@ namespace mhs::solver {
 
     } // namespace
 
-    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition, const mhs::model::Vec3& p,
-        double area, double normal_distance, double cell_temperature, double normal_conductivity, double time)
+    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition,
+        mhs::expression::FieldContext cell_context, double area, double conductive)
     {
-        using namespace mhs::core;
         using namespace mhs::model;
-        using namespace mhs::expression;
-        const double conductive = normal_conductivity * area / normal_distance;
-        auto context = [&](double trace) { return FieldContext {p[0], p[1], p[2], trace, time}; };
+        const double cell_temperature = cell_context.T;
+        auto context = [&](double trace) {
+            auto result = cell_context;
+            result.T = trace;
+            return result;
+        };
         return std::visit(
             [&](const auto& law) -> BoundaryTrace {
                 using C = std::decay_t<decltype(law)>;

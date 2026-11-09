@@ -59,15 +59,15 @@ namespace mhs::compiler {
                             if ((neighbor != mhs::core::invalid_id) && neighbor < c)
                                 continue;
                             const auto& cell = model.discrete.cells[c];
-                            FacePatch f;
+                            Facet f;
                             f.minus = sign > 0 ? c : neighbor;
                             f.plus = sign > 0 ? neighbor : c;
                             f.axis = static_cast<Axis>(a);
+                            f.coordinate = sign > 0 ? cell.max[a] : cell.min[a];
                             const int t = a == 0 ? 1 : 0, u = a == 2 ? 1 : 2;
                             f.bounds = {cell.min[t], cell.max[t], cell.min[u], cell.max[u]};
-                            model.discrete.faces.push_back(f);
+                            model.discrete.facets.push_back(f);
                         }
                 }
-        build_cell_face_incidence(model.discrete);
     }
 } // namespace mhs::compiler

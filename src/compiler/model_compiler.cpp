@@ -127,13 +127,28 @@ namespace mhs::compiler {
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())
                 throw std::out_of_range("cell has no valid material assignment");
-        for (const auto& patch :
-            project_exterior_surface_regions(model.discrete, compiled_boundaries, default_thermal_boundary))
-            model.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
-                static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
 
-        // Fluid coupling.
-        mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_materials);
+        // Canonical geometric partition shared by all boundary physics.
+        mhs::core::Vector<mhs::model::SurfaceRegion> cuts;
+        for (const auto& boundary : compiled_boundaries)
+            cuts.push_back(boundary.region);
+        mhs::core::Vector<TaggedSurfaceRegion> fluid_regions;
+        for (std::size_t id = 0; id < definition.fluid_boundaries.size(); ++id)
+            for (const auto& region : definition.fluid_boundaries[id].regions) {
+                cuts.push_back(region);
+                fluid_regions.push_back({region, id});
+            }
+        refine_exterior_facets(model.discrete, cuts);
+        build_cell_facet_incidence(model.discrete);
+
+        auto thermal_tags = assign_exterior_regions(model.discrete, compiled_boundaries, default_thermal_boundary);
+        model.facet_thermal_condition.reserve(thermal_tags.size());
+        for (auto tag : thermal_tags)
+            model.facet_thermal_condition.push_back(static_cast<mhs::model::BoundaryConditionId>(tag));
+
+        // Hydraulic boundary assignments share the same canonical FacetIds.
+        auto fluid_tags = assign_exterior_regions(model.discrete, fluid_regions);
+        mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_tags, fluid_materials);
 
         return model;
     }

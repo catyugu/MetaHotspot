@@ -151,24 +151,26 @@ typedef struct {
 
 /** Explicit compiled geometry sizes. State order is CellId order. */
 typedef struct {
-    size_t cell_count, face_count, projection_count, source_count;
+    size_t cell_count, facet_count, projection_count, source_count;
     double reference_temperature;
 } mhs_compiled_info_t;
 
 /** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
- * Face bounds are (face_count,4) in ascending
+ * Facet bounds are (facet_count,4) in ascending
  * tangential axes: YZ for X, XZ for Y, XY for Z, each [a_min,a_max,b_min,b_max].
- * Positive flux runs face_minus -> face_plus along face_axis. Exterior patches
+ * Facet coordinates are (facet_count,) in the normal axis. Positive flux
+ * runs facet_minus -> facet_plus along facet_axis. Exterior facets
  * have exactly one MHS_INVALID_INDEX cell; the missing side determines the normal. */
 typedef struct {
-    size_t cell_count, face_count, projection_count;
+    size_t cell_count, facet_count, projection_count;
     double* cell_min;
     double* cell_max;
     mhs_index_t* material_id;
-    mhs_index_t* face_minus;
-    mhs_index_t* face_plus;
-    mhs_axis_t* face_axis;
-    double* face_bounds;
+    mhs_index_t* facet_minus;
+    mhs_index_t* facet_plus;
+    mhs_axis_t* facet_axis;
+    double* facet_coordinate;
+    double* facet_bounds;
     mhs_index_t* projection_cell;
     mhs_index_t* projection_source;
     double* projection_volume;

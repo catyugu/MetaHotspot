@@ -535,7 +535,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(c);
     CHECK_NULL(out);
     out->cell_count = c->model.discrete.cells.size();
-    out->face_count = c->model.discrete.faces.size();
+    out->facet_count = c->model.discrete.facets.size();
     out->projection_count = c->model.source_terms.size();
     out->source_count = c->model.heat_source_table.size();
     out->reference_temperature = c->model.reference_temperature;
@@ -586,7 +586,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
     CHECK_NULL(fields);
     const auto& model = c->model;
     const auto& mesh = model.discrete;
-    if (fields->cell_count != mesh.cells.size() || fields->face_count != mesh.faces.size()
+    if (fields->cell_count != mesh.cells.size() || fields->facet_count != mesh.facets.size()
         || fields->projection_count != model.source_terms.size()) {
         SET_ERR("CellFields buffer sizes do not match compiled model");
         return MHS_ERROR;
@@ -595,9 +595,10 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         SET_ERR("NULL cell field buffer");
         return MHS_ERROR;
     }
-    if (fields->face_count
-        && (!fields->face_minus || !fields->face_plus || !fields->face_axis || !fields->face_bounds)) {
-        SET_ERR("NULL face field buffer");
+    const bool missing_facet_buffer = !fields->facet_minus || !fields->facet_plus || !fields->facet_axis
+        || !fields->facet_coordinate || !fields->facet_bounds;
+    if (fields->facet_count && missing_facet_buffer) {
+        SET_ERR("NULL facet field buffer");
         return MHS_ERROR;
     }
     if (fields->projection_count
@@ -613,13 +614,14 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         }
         fields->material_id[cidx] = model.cell_material[cidx];
     }
-    for (size_t id = 0; id < mesh.faces.size(); ++id) {
-        const auto& face = mesh.faces[id];
-        fields->face_minus[id] = face.minus;
-        fields->face_plus[id] = face.plus;
-        fields->face_axis[id] = static_cast<mhs_axis_t>(face.axis);
+    for (size_t id = 0; id < mesh.facets.size(); ++id) {
+        const auto& facet = mesh.facets[id];
+        fields->facet_minus[id] = facet.minus;
+        fields->facet_plus[id] = facet.plus;
+        fields->facet_axis[id] = static_cast<mhs_axis_t>(facet.axis);
+        fields->facet_coordinate[id] = facet.coordinate;
         for (size_t a = 0; a < 4; ++a)
-            fields->face_bounds[4 * id + a] = face.bounds[a];
+            fields->facet_bounds[4 * id + a] = facet.bounds[a];
     }
     for (size_t id = 0; id < model.source_terms.size(); ++id) {
         const auto& term = model.source_terms[id];

@@ -103,7 +103,7 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
             return (boundary,)
 
     fields = compiled.fields
-    axes = fields.face_axis[boundary.face_ids]
+    axes = fields.facet_axis[boundary.facet_ids]
     half = CellGeometry(fields).half_sizes[boundary.cells, axes]
     expected = np.average(1000 / (1 + 1000 * half), weights=boundary.areas)
     np.testing.assert_allclose(Ports().physical_to_effective([1000]), [expected])
