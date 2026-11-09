@@ -8,8 +8,8 @@ from __future__ import annotations
 import ctypes
 
 from metahotspot.types import (
-    MhsCompiledFields,
     MhsCompiled,
+    MhsCompiledFields,
     MhsCompiledInfo,
     MhsMaterialValues,
     MhsModel,

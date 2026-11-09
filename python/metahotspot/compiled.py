@@ -17,8 +17,8 @@ from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot.enums import SolverType
 from metahotspot.types import (
-    MhsCompiledFields,
     MhsCompiled,
+    MhsCompiledFields,
     MhsCompiledInfo,
     MhsMaterialValues,
     MhsOperators,
