@@ -54,7 +54,7 @@ class CellGeometry:
             coordinate = (
                 f.cell_min[:, axis].min() if sign < 0 else f.cell_max[:, axis].max()
             )
-        ids = ids[np.isclose(f.facet_coordinate[ids], coordinate, atol=1e-12, rtol=0)]
+        ids = ids[np.isclose(f.facet_coordinate[ids], coordinate, atol=1e-9, rtol=0)]
         bounds = f.facet_bounds[ids]
         areas = (bounds[:, 1] - bounds[:, 0]) * (bounds[:, 3] - bounds[:, 2])
         return BoundarySurface(cells[ids].astype(np.int64), areas, ids.astype(np.int64))

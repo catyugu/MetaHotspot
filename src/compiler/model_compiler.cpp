@@ -92,8 +92,7 @@ namespace mhs::compiler {
 
         // Compile material properties in ModelDefinition::materials order.
         model.material_table.resize(definition.materials.size());
-        mhs::compiler::fluid::FluidMaterialData fluid_materials;
-        fluid_materials.initial_viscosity.resize(definition.materials.size());
+        mhs::core::Vector<double> initial_viscosity(definition.materials.size());
 
         for (size_t m = 0; m < definition.materials.size(); m++) {
             const auto& mat = definition.materials[m].value;
@@ -109,7 +108,7 @@ namespace mhs::compiler {
                 if (!mat.dynamic_viscosity || mat.dynamic_viscosity->empty())
                     throw std::runtime_error(
                         "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
-                fluid_materials.initial_viscosity[m]
+                initial_viscosity[m]
                     = compile_mat(*mat.dynamic_viscosity).eval({0, 0, 0, model.reference_temperature, 0});
             }
             else if (mat.dynamic_viscosity) {
@@ -153,19 +152,17 @@ namespace mhs::compiler {
         for (std::size_t id = 0; id < definition.fluid_boundaries.size(); ++id)
             for (const auto& region : definition.fluid_boundaries[id].regions) {
                 cuts.push_back(region);
-                fluid_regions.push_back({region, id});
+                fluid_regions.push_back({region, static_cast<SurfaceTag>(id)});
             }
         refine_exterior_facets(model.discrete, cuts);
         build_cell_facet_incidence(model.discrete);
 
-        auto thermal_tags = assign_exterior_regions(model.discrete, compiled_boundaries, default_thermal_boundary);
-        model.facet_thermal_condition.reserve(thermal_tags.size());
-        for (auto tag : thermal_tags)
-            model.facet_thermal_condition.push_back(static_cast<mhs::model::BoundaryConditionId>(tag));
+        model.facet_thermal_condition
+            = assign_exterior_regions(model.discrete, compiled_boundaries, default_thermal_boundary);
 
         // Hydraulic boundary assignments share the same canonical FacetIds.
         auto fluid_tags = assign_exterior_regions(model.discrete, fluid_regions);
-        mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_tags, fluid_materials);
+        mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_tags, initial_viscosity);
 
         return model;
     }

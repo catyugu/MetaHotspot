@@ -51,26 +51,13 @@ from metahotspot.macromodel.utils import (
 class BoundaryGroup:
     """A physical surface controlled by one affine Robin parameter.
 
-    Selected FaceIds supply normals and owner distances; projected areas may
+    Selected FacetIds supply normals and owner distances; projected areas may
     contain several contributions to the same physical CellId. ``h_range`` is
     the physical HTC range; material conductivity comes from ``cell_layout``.
     """
 
     surface: BoundarySurface
     h_range: tuple[float, float] = (1.0, 1.0e6)
-
-    @property
-    def cells(self):
-        return self.surface.cell_ids
-
-    @property
-    def areas(self):
-        return self.surface.areas
-
-    @property
-    def facet_ids(self):
-        return self.surface.facet_ids
-
 
 @dataclass(frozen=True)
 class CellLayout:
@@ -259,8 +246,8 @@ class AffineParametricModel:
             diagonal = np.zeros(n)
             np.add.at(
                 diagonal,
-                np.asarray(group.cells, dtype=np.int64),
-                group.areas,
+                np.asarray(group.surface.cell_ids, dtype=np.int64),
+                group.surface.areas,
             )
             terms.append(sp.diags(diagonal))
         return terms
@@ -294,8 +281,8 @@ class AffineParametricModel:
     def _effective_per_patch(self, group, h_phys: float) -> np.ndarray:
         """Series-condensed coefficient on each selected native surface patch."""
         fields = self.geometry.fields
-        faces = np.asarray(group.facet_ids, dtype=np.intp)
-        cells = np.asarray(group.cells, dtype=np.intp)
+        faces = np.asarray(group.surface.facet_ids, dtype=np.intp)
+        cells = np.asarray(group.surface.cell_ids, dtype=np.intp)
         axes = fields.facet_axis[faces]
         k = self.cell_layout.conductivity[cells, axes]
         half = self.geometry.half_sizes[cells, axes]
@@ -315,7 +302,7 @@ class AffineParametricModel:
         out = np.empty(len(groups), dtype=np.float64)
         for k, group in enumerate(groups):
             p_cell = self._effective_per_patch(group, float(physical_h[k]))
-            areas = np.asarray(group.areas, dtype=np.float64)
+            areas = np.asarray(group.surface.areas, dtype=np.float64)
             out[k] = self._area_weighted(p_cell, areas)
         return out
 
@@ -336,7 +323,7 @@ class AffineParametricModel:
             lo, hi = g.h_range
             p_lo = self._effective_per_patch(g, lo)
             p_hi = self._effective_per_patch(g, hi)
-            areas = np.asarray(g.areas, dtype=np.float64)
+            areas = np.asarray(g.surface.areas, dtype=np.float64)
             s_lo = self._area_weighted(p_lo, areas)
             s_hi = self._area_weighted(p_hi, areas)
             out.append((min(s_lo, s_hi), max(s_lo, s_hi)))

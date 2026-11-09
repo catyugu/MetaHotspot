@@ -1,5 +1,6 @@
 #pragma once
 #include "core/vector.hpp"
+#include "model/constants.hpp"
 #include "model/types.hpp"
 #include <array>
 #include <cmath>
@@ -43,7 +44,7 @@ namespace mhs::model {
         }
         bool contains(const Vec3& p) const
         {
-            constexpr double eps = 1e-12;
+            constexpr double eps = geometry_eps;
             const auto a = static_cast<std::size_t>(axis);
             const auto u = a == 0 ? 1 : 0, v = a == 2 ? 1 : 2;
             const bool on_plane = std::abs(p[a] - coordinate) <= eps;
