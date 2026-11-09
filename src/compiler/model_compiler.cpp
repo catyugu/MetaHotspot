@@ -76,10 +76,10 @@ namespace mhs::compiler {
         // Compile material properties in ModelDefinition::materials order.
         model.material_table.resize(library.materials.size());
         mhs::compiler::fluid::FluidMaterialData fluid_materials;
-        fluid_materials.initial_viscosity.assign(definition.materials.size(), std::nullopt);
+        fluid_materials.initial_viscosity.assign(library.materials.size(), std::nullopt);
 
-        for (size_t m = 0; m < definition.materials.size(); m++) {
-            const auto& mat = definition.materials[m].value;
+        for (size_t m = 0; m < library.materials.size(); m++) {
+            const auto& mat = library.materials[m].value;
             auto compile_mat = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
             auto& props = model.material_table[m];
             props.kx = compile_mat(mat.conductivity_x);
@@ -90,7 +90,7 @@ namespace mhs::compiler {
             if (mat.dynamic_viscosity.has_value()) {
                 if (mat.dynamic_viscosity->empty()) {
                     throw std::runtime_error(
-                        "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
+                        "fluid material '" + library.materials[m].name + "' is missing DynamicViscosity");
                 }
                 fluid_materials.initial_viscosity[m]
                     = compile_mat(*mat.dynamic_viscosity).eval({0, 0, 0, model.reference_temperature, 0});
@@ -100,9 +100,9 @@ namespace mhs::compiler {
         for (const auto& source : library.sources)
             model.heat_source_table.push_back(mhs::expression::parse(source, symbols));
         for (const auto& volume : definition.volumes) {
-            if (volume.material >= definition.materials.size())
+            if (volume.material >= library.materials.size())
                 throw std::out_of_range("volume material ID out of range");
-            if (volume.source != mhs::core::invalid_id && volume.source >= definition.sources.size())
+            if (volume.source != mhs::core::invalid_id && volume.source >= library.sources.size())
                 throw std::out_of_range("volume source ID out of range");
             for (const auto& box : volume.geometry)
                 for (int a = 0; a < 3; ++a)
@@ -139,7 +139,7 @@ namespace mhs::compiler {
                 static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
 
         // Fluid coupling.
-        const bool has_fluid_material = std::any_of(definition.materials.begin(), definition.materials.end(),
+        const bool has_fluid_material = std::any_of(library.materials.begin(), library.materials.end(),
             [](const mhs::model::NamedMaterial& material) { return material.value.dynamic_viscosity.has_value(); });
         if (has_fluid_material) {
             mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, library, fluid_materials);

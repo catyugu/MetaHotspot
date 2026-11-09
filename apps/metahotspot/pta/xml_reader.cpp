@@ -460,9 +460,9 @@ namespace mhs::app::pta {
                     if ((pressure_inlet_type
                             && !std::holds_alternative<mhs::model::PressureInlet>(condition))
                         || (mass_flow_inlet_type
-                            && !std::holds_alternative<mhs::model::MassFlowInlet>(fluid_boundary.condition))
+                            && !std::holds_alternative<mhs::model::MassFlowInlet>(condition))
                         || (outlet_type
-                            && !std::holds_alternative<mhs::model::PressureOutlet>(fluid_boundary.condition)))
+                            && !std::holds_alternative<mhs::model::PressureOutlet>(condition)))
                         throw std::runtime_error(
                             "fluid boundary fields do not match ThermalBoundary i:type: " + type_str);
                     if (fluid_boundary.regions.empty())

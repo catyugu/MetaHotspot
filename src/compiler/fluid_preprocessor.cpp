@@ -153,7 +153,7 @@ namespace mhs::compiler::fluid {
         for (std::size_t t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
             const auto i = fluid.global_to_fluid[term.cell];
-            const auto& condition = boundaries[term.tag].condition;
+            const auto& condition = library.fluid_boundaries[boundaries[term.tag].condition];
             const double mass = std::visit(
                 [&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
