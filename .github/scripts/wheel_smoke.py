@@ -38,11 +38,13 @@ from metahotspot import SolveOptions
 # source with fixed-temperature boundaries gives a finite, positive rise.
 model = metahotspot.Model()
 model.set_cartesian_mesh(*(np.linspace(0, 0.01, 26) for _ in range(3)))
-material = model.add_material("solid", "1", "1", "1", "1000", "500")
-source = model.add_source("1e6")
+material = model.library.add_material("solid", "1", "1", "1", "1000", "500")
+source = model.library.add_source("1e6")
 volume = model.add_volume(material, source)
 model.add_box(volume, [0, 0, 0], [0.01, 0.01, 0.01])
-model.set_default_dirichlet("300")
+model.set_default_thermal_boundary(
+    model.library.add_thermal_boundary(metahotspot.Dirichlet("300"))
+)
 solution = model.compile().solve(opts=SolveOptions(linear_solver="Amg"))
 assert solution.state.size == 15625, solution.state.size
 assert np.isfinite(solution.state).all()
