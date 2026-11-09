@@ -1,6 +1,8 @@
 #include "compiler/geometry_compiler.hpp"
 #include "pta_test_utils.hpp"
 #include "solver/assembler.hpp"
+#include "solver/thermal_geometry.hpp"
+#include "solver/thermal_physics.hpp"
 #include "solver/thermal_reconstruction.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>

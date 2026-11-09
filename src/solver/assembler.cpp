@@ -1,6 +1,7 @@
 #include "solver/assembler.hpp"
 #include "core/vector.hpp"
-#include "thermal_reconstruction.hpp"
+#include "thermal_geometry.hpp"
+#include "thermal_physics.hpp"
 #include <numeric>
 #include <stdexcept>
 #include <type_traits>
@@ -104,24 +105,26 @@ namespace mhs::solver {
                 continue;
             const auto i = f.minus;
             const auto row = static_cast<SparseIndex>(f.minus);
-            const auto ki = conductivity_[i][static_cast<std::size_t>(f.axis)];
+            const auto axis = static_cast<std::size_t>(f.axis);
+            const auto ki = conductivity_[i][axis];
             const auto j = f.plus;
             const auto col = static_cast<SparseIndex>(f.plus);
-            const auto kj = conductivity_[j][static_cast<std::size_t>(f.axis)];
-            const auto axis = static_cast<std::size_t>(f.axis);
-            const double d_minus = model.discrete.cells[f.minus].size()[axis] / 2;
-            const double d_plus = model.discrete.cells[f.plus].size()[axis] / 2;
-            auto resistance = d_minus / ki + d_plus / kj;
-            const auto fi = fluid_index(f.minus), fj = fluid_index(f.plus);
-            if ((fi == mhs::core::invalid_id) != (fj == mhs::core::invalid_id)) {
-                const auto fluid = (fi != mhs::core::invalid_id) ? fi : fj;
-                const double kfluid = (fi != mhs::core::invalid_id) ? ki : kj;
-                const double ksolid = (fi != mhs::core::invalid_id) ? kj : ki;
-                const double distance = (fi != mhs::core::invalid_id) ? d_plus : d_minus;
-                const double h = model.fluid.interface_heat_transfer_factor[fluid] * kfluid;
-                resistance = distance / ksolid + 1.0 / h;
+            const auto kj = conductivity_[j][axis];
+            const auto fi = fluid_index(i), fj = fluid_index(j);
+            const double d_minus = model.discrete.cells[i].size()[axis] / 2;
+            const double d_plus = model.discrete.cells[j].size()[axis] / 2;
+            double r_minus = side_thermal_resistance(d_minus, ki);
+            double r_plus = side_thermal_resistance(d_plus, kj);
+            double r_film = 0.0;
+            if (fi != mhs::core::invalid_id && fj == mhs::core::invalid_id) {
+                r_minus = 0.0;
+                r_film = fluid_film_resistance(model.fluid.interface_heat_transfer_factor[fi], ki);
             }
-            const double g = f.area() / resistance;
+            else if (fj != mhs::core::invalid_id && fi == mhs::core::invalid_id) {
+                r_plus = 0.0;
+                r_film = fluid_film_resistance(model.fluid.interface_heat_transfer_factor[fj], kj);
+            }
+            const double g = f.area() / (r_minus + r_film + r_plus);
             const auto ij = slot(row, col), ji = slot(col, row);
             values[diagonal_positions_[i]] += g;
             values[ij] -= g;

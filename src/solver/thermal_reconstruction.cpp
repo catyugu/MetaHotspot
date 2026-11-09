@@ -1,14 +1,11 @@
 #include "thermal_reconstruction.hpp"
-#include <numeric>
-
+#include "thermal_geometry.hpp"
+#include "thermal_physics.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <optional>
 #include <span>
-#include <stdexcept>
-#include <tuple>
-#include <type_traits>
 
 namespace mhs::solver {
     mhs::model::CellId locate_cell(const mhs::model::DiscreteMesh& mesh, const mhs::model::Vec3& p)
@@ -39,46 +36,6 @@ namespace mhs::solver {
             return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval(ctx);
         }
 
-        // Bracketed bisection on the trace temperature. The condensed
-        // coefficients only need the trace to a few digits beyond the global
-        // nonlinear tolerance, so the loop stops on relative trace width rather
-        // than on a residual whose unit changes between the boundary laws.
-        template <class Residual> double solve_trace(Residual&& residual, double guess, double scale)
-        {
-            constexpr double trace_tolerance = 1e-9;
-            double step = std::max(1.0, 0.05 * std::max(std::abs(guess), std::abs(scale)));
-            double lo = guess - step, hi = guess + step;
-            double flo = residual(lo), fhi = residual(hi);
-            for (int i = 0; i < 24 && std::signbit(flo) == std::signbit(fhi); ++i) {
-                step *= 2.0;
-                lo = guess - step;
-                hi = guess + step;
-                flo = residual(lo);
-                fhi = residual(hi);
-            }
-            if (!std::isfinite(flo) || !std::isfinite(fhi))
-                throw std::runtime_error("non-finite boundary trace residual");
-            if (std::signbit(flo) == std::signbit(fhi))
-                throw std::runtime_error("boundary trace equation has no bracketed root");
-            for (int i = 0; i < 64; ++i) {
-                const double mid = std::midpoint(lo, hi);
-                const double fmid = residual(mid);
-                if (!std::isfinite(fmid))
-                    throw std::runtime_error("non-finite boundary trace residual");
-                if (fmid == 0.0 || std::abs(hi - lo) <= trace_tolerance * std::max(1.0, std::abs(mid)))
-                    return mid;
-                if (std::signbit(fmid) == std::signbit(flo)) {
-                    lo = mid;
-                    flo = fmid;
-                }
-                else {
-                    hi = mid;
-                    fhi = fmid;
-                }
-            }
-            return std::midpoint(lo, hi);
-        }
-
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
         // use the same two-point thermal-resistance law as the diffusion assembly.
         mhs::model::Vec3 reconstruct_cell_gradient(
@@ -89,16 +46,34 @@ namespace mhs::solver {
             const Vec3 k {conductivity(model, temperature, cell, time, 0),
                 conductivity(model, temperature, cell, time, 1), conductivity(model, temperature, cell, time, 2)};
             Vec3 gradient {};
+            const auto fluid_index = [&](CellId c) {
+                return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
+            };
             for (auto id : model.discrete.incident_faces(cell)) {
                 const auto& f = model.discrete.faces[id];
                 if (f.exterior())
                     continue;
                 const auto axis = static_cast<std::size_t>(f.axis);
                 const auto neighbor = f.minus == cell ? f.plus : f.minus;
-                const double a = (model.discrete.cells[cell].size()[axis] / 2) / k[axis];
-                const double b = (model.discrete.cells[neighbor].size()[axis] / 2)
-                    / conductivity(model, temperature, neighbor, time, static_cast<int>(f.axis));
-                const double trace = (b * temperature[cell] + a * temperature[neighbor]) / (a + b);
+                const double k_neighbor = conductivity(model, temperature, neighbor, time, static_cast<int>(f.axis));
+                double a = side_thermal_resistance(model.discrete.cells[cell].size()[axis] / 2, k[axis]);
+                double b = side_thermal_resistance(model.discrete.cells[neighbor].size()[axis] / 2, k_neighbor);
+                const auto fi = fluid_index(cell), fj = fluid_index(neighbor);
+                double r_film = 0.0;
+                if (fi != mhs::core::invalid_id && fj == mhs::core::invalid_id) {
+                    a = 0.0;
+                    r_film = fluid_film_resistance(model.fluid.interface_heat_transfer_factor[fi], k[axis]);
+                }
+                else if (fj != mhs::core::invalid_id && fi == mhs::core::invalid_id) {
+                    b = 0.0;
+                    r_film = fluid_film_resistance(model.fluid.interface_heat_transfer_factor[fj], k_neighbor);
+                }
+                // The film spans the fluid bulk temperature and the shared wall temperature.
+                const double r_cell_to_wall = a + (fi != mhs::core::invalid_id ? r_film : 0.0);
+                const double r_neighbor_to_wall = b + (fj != mhs::core::invalid_id ? r_film : 0.0);
+                const double weighted_temperature
+                    = r_neighbor_to_wall * temperature[cell] + r_cell_to_wall * temperature[neighbor];
+                const double trace = weighted_temperature / (a + b + r_film);
                 gradient[axis] += (f.minus == cell ? 1 : -1) * f.area() * trace;
             }
             for (const auto& term : boundary_faces_on_cell(model, cell)) {
@@ -126,16 +101,6 @@ namespace mhs::solver {
         return {first, last};
     }
 
-    mhs::model::Vec3 boundary_center(const mhs::model::CellGeometry& cell, const mhs::model::BoundaryFace& term)
-    {
-        mhs::model::Vec3 point {};
-        const auto axis = static_cast<std::size_t>(term.axis);
-        point[axis] = term.sign > 0 ? cell.max[axis] : cell.min[axis];
-        point[axis == 0 ? 1 : 0] = (term.bounds[0] + term.bounds[1]) / 2;
-        point[axis == 2 ? 1 : 2] = (term.bounds[2] + term.bounds[3]) / 2;
-        return point;
-    }
-
     bool boundary_contains(
         const mhs::model::CellGeometry& cell, const mhs::model::BoundaryFace& term, const mhs::model::Vec3& point)
     {
@@ -145,65 +110,6 @@ namespace mhs::solver {
         const double coordinate = term.sign > 0 ? cell.max[axis] : cell.min[axis];
         return std::abs(point[axis] - coordinate) <= eps && point[a] >= term.bounds[0] - eps
             && point[a] <= term.bounds[1] + eps && point[b] >= term.bounds[2] - eps && point[b] <= term.bounds[3] + eps;
-    }
-
-    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition, const mhs::model::Vec3& p,
-        double area, double normal_distance, double cell_temperature, double normal_conductivity, double time)
-    {
-        using namespace mhs::core;
-        using namespace mhs::model;
-        using namespace mhs::expression;
-        const double conductive = normal_conductivity * area / normal_distance;
-        auto context = [&](double trace) { return FieldContext {p[0], p[1], p[2], trace, time}; };
-        return std::visit(
-            [&](const auto& law) -> BoundaryTrace {
-                using C = std::decay_t<decltype(law)>;
-                if constexpr (std::is_same_v<C, Dirichlet>) {
-                    // The compiler rejects temperature-dependent Dirichlet data,
-                    // so the prescribed trace is evaluated once.
-                    const double trace = law.temperature.eval(context(cell_temperature));
-                    return {trace, conductive, conductive * trace};
-                }
-                else if constexpr (std::is_same_v<C, Neumann>) {
-                    auto flux = [&](double trace) { return law.heat_flux.eval(context(trace)); };
-                    const double initial_flux = flux(cell_temperature);
-                    double trace = cell_temperature + area * initial_flux / conductive;
-                    if (!law.heat_flux.depends_on_temperature())
-                        return {trace, 0.0, area * initial_flux};
-                    trace = solve_trace(
-                        [&](double value) { return conductive * (cell_temperature - value) + area * flux(value); },
-                        trace, cell_temperature);
-                    const double q = flux(trace);
-                    return {trace, 0.0, area * q};
-                }
-                else {
-                    static_assert(std::is_same_v<C, Convection>);
-                    auto values = [&](double trace) {
-                        const auto ctx = context(trace);
-                        return std::pair {law.coefficient.eval(ctx), law.ambient_temperature.eval(ctx)};
-                    };
-                    auto [h, ambient] = values(cell_temperature);
-                    double convective = h * area;
-                    double trace = (conductive * cell_temperature + convective * ambient) / (conductive + convective);
-                    if (!law.coefficient.depends_on_temperature()
-                        && !law.ambient_temperature.depends_on_temperature()) {
-                        const double condensed = conductive * convective / (conductive + convective);
-                        return {trace, condensed, condensed * ambient};
-                    }
-                    trace = solve_trace(
-                        [&](double value) {
-                            const auto [coefficient, external_temperature] = values(value);
-                            return conductive * (cell_temperature - value)
-                                - area * coefficient * (value - external_temperature);
-                        },
-                        trace, cell_temperature);
-                    std::tie(h, ambient) = values(trace);
-                    convective = h * area;
-                    const double condensed = conductive * convective / (conductive + convective);
-                    return {trace, condensed, condensed * ambient};
-                }
-            },
-            condition);
     }
 
     std::optional<double> boundary_value_at(const mhs::model::Model& model, std::span<const double> temperature,
