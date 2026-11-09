@@ -4,7 +4,8 @@
 /*
  * MetaHotspot C API — opaque-pointer model construction, compilation, and solve.
  *
- * Four independently owned opaque handles:
+ * Five owned opaque handles:
+ *   mhs_library_t  — reusable physical attributes
  *   mhs_model_t     — mutable construction (add volumes, sources, BCs, materials)
  *   mhs_compiled_t  — read-only compiled runtime model (reusable for repeated solves)
  *   mhs_solution_t  — read-only result (temperature field + probe traces)
@@ -65,6 +66,7 @@ typedef uint32_t mhs_index_t;
 typedef int32_t mhs_sparse_index_t;
 #define MHS_INVALID_INDEX UINT32_MAX
 
+typedef struct mhs_library_t mhs_library_t;
 typedef struct mhs_model_t mhs_model_t;
 typedef struct mhs_compiled_t mhs_compiled_t;
 typedef struct mhs_solution_t mhs_solution_t;
@@ -84,6 +86,9 @@ enum { MHS_GEOM_ADD = 0, MHS_GEOM_SUB = 1 };
 
 typedef int32_t mhs_solver_type_t;
 enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
+
+typedef int32_t mhs_thermal_bc_kind_t;
+enum { MHS_THERMAL_DIRICHLET = 0, MHS_THERMAL_NEUMANN = 1, MHS_THERMAL_CONVECTION = 2 };
 
 typedef int32_t mhs_fluid_bc_t;
 enum { MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
@@ -124,6 +129,12 @@ typedef struct {
     double coordinate;
     mhs_rect2d_t rectangle;
 } mhs_surface_region_t;
+
+typedef struct {
+    mhs_thermal_bc_kind_t kind;
+    const char* expression;
+    const char* ambient_temperature;
+} mhs_thermal_bc_t;
 
 /** Study/run configuration. Populate with mhs_study_default(). */
 typedef struct {
@@ -225,7 +236,9 @@ MHS_API const char* mhs_last_error(void);
 /*  Model life-cycle                                                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
+MHS_API mhs_status_t mhs_library_create(mhs_library_t** out);
+MHS_API void mhs_library_destroy(mhs_library_t* l);
+MHS_API mhs_status_t mhs_model_create(mhs_library_t* library, mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
 
 /* ------------------------------------------------------------------ */
@@ -248,52 +261,41 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 /* ------------------------------------------------------------------ */
 
 /** NULL dynamic_viscosity selects a solid; a non-NULL expression selects a fluid. */
-MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
+MHS_API mhs_status_t mhs_library_add_material(mhs_library_t* l, const char* name, const char* kx, const char* ky,
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id);
 
 /** Geometry, mesh coordinates and probes use SI metres. Expressions use canonical x/y/z/T/t.
  * Later volumes override earlier volumes. MHS_INVALID_INDEX omits the heat source. */
-MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_library_add_source(mhs_library_t* l, const char* expression, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_add_volume(
     mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_volume_add_box(
     mhs_model_t* m, mhs_index_t volume, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3]);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  atomic boundary conditions                 */
+/*  Library boundary laws and spatial assignments                       */
 /* ------------------------------------------------------------------ */
-
-/** Surface conditions require a nonempty array of SI rectangles. Later regions
- * override earlier ones; uncovered exterior faces use the default thermal BC. */
-MHS_API mhs_status_t mhs_model_add_dirichlet(
-    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature);
-
-MHS_API mhs_status_t mhs_model_add_neumann(
-    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux);
-
-MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    const char* coefficient, const char* ambient_temperature);
-
-MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char* temperature);
-MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* heat_flux);
-MHS_API mhs_status_t mhs_model_set_default_convection(
-    mhs_model_t* m, const char* coefficient, const char* ambient_temperature);
+MHS_API mhs_status_t mhs_library_add_thermal_boundary(
+    mhs_library_t* l, const mhs_thermal_bc_t* bc, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_add_thermal_boundary(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t count, mhs_index_t condition);
+MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(mhs_model_t* m, mhs_index_t condition);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  function library                            */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression);
-MHS_API mhs_status_t mhs_model_add_function_gauss(
-    mhs_model_t* m, const char* name, double amplitude, double tau, double center);
-MHS_API mhs_status_t mhs_model_add_function_sine(
-    mhs_model_t* m, const char* name, double amplitude, double angular_frequency, double phase);
-MHS_API mhs_status_t mhs_model_add_function_double_exponential(
-    mhs_model_t* m, const char* name, double amplitude, double alpha, double beta);
-MHS_API mhs_status_t mhs_model_add_function_piecewise(
-    mhs_model_t* m, const char* name, const mhs_point2d_t* points, size_t count);
-MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
-    mhs_model_t* m, const char* name, const double* values, size_t count, double period);
+MHS_API mhs_status_t mhs_library_add_function_expr(mhs_library_t* l, const char* name, const char* expression);
+MHS_API mhs_status_t mhs_library_add_function_gauss(
+    mhs_library_t* l, const char* name, double amplitude, double tau, double center);
+MHS_API mhs_status_t mhs_library_add_function_sine(
+    mhs_library_t* l, const char* name, double amplitude, double angular_frequency, double phase);
+MHS_API mhs_status_t mhs_library_add_function_double_exponential(
+    mhs_library_t* l, const char* name, double amplitude, double alpha, double beta);
+MHS_API mhs_status_t mhs_library_add_function_piecewise(
+    mhs_library_t* l, const char* name, const mhs_point2d_t* points, size_t count);
+MHS_API mhs_status_t mhs_library_add_function_periodic_piecewise_constant(
+    mhs_library_t* l, const char* name, const double* values, size_t count, double period);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  probes and fluid boundaries                */
@@ -301,10 +303,11 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 
 /** Named point probe, with three finite SI coordinates copied into the model. */
 MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3]);
-/* Same region layout as thermal boundaries. NULL inlet_temperature selects the
- * model reference temperature; outlets ignore it. value is pressure (Pa), or mass flow (kg/s). */
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    mhs_fluid_bc_t kind, double value, const double* inlet_temperature);
+/* Reusable fluid law, assigned independently to model surface regions. */
+MHS_API mhs_status_t mhs_library_add_fluid_boundary(mhs_library_t* l, mhs_fluid_bc_t kind,
+    double value, const double* inlet_temperature, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t count, mhs_index_t condition);
 
 /* ------------------------------------------------------------------ */
 /*  Compilation                                                        */
