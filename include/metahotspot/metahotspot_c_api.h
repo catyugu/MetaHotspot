@@ -175,8 +175,8 @@ typedef struct {
  * are flattened (count,3). Cell IDs in this export include the component cell offset;
  * Field support-entity IDs remain local to their component; each field owns a
  * contiguous global DOF range reported by mhs_field_info_t.
- * Exported material_index and projection_source_index use dense compiled attribute-table indices,
- * not Library registration IDs. Their ordering follows the Library's per-kind insertion order.
+ * Each Library resource kind has its own zero-based dense ID space. Exported
+ * material_index and projection_source_index preserve those MaterialId and SourceId values.
  * Face bounds are (face_count,4) in ascending
  * tangential axes: YZ for X, XZ for Y, XY for Z, each [a_min,a_max,b_min,b_max].
  * Positive flux runs face_minus -> face_plus along face_axis. Exterior patches

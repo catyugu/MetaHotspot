@@ -44,8 +44,7 @@ namespace mhs::compiler {
             if (fom)
                 for (const auto& boundary : component.thermal_boundaries)
                     for (const auto& region : boundary.regions)
-                        regions.push_back(
-                            {region, definition.library().index(boundary.condition, LibraryKind::ThermalBoundary)});
+                        regions.push_back({region, boundary.condition});
             for (std::size_t p = 0; p < component.ports.size(); ++p) {
                 const auto& port = component.ports[p];
                 const auto& r = port.region;
@@ -97,8 +96,7 @@ namespace mhs::compiler {
             if (!fom)
                 continue;
             const auto id = definition.fom(static_cast<DomainId>(d)).default_thermal_boundary;
-            const auto fallback = id == core::invalid_id ? core::invalid_id
-                                                         : definition.library().index(id, LibraryKind::ThermalBoundary);
+            const auto fallback = id;
             const auto projection = project_exterior_surface_regions(fom->discrete, regions, fallback);
             for (const auto& patch : projection) {
                 if (patch.tag == core::invalid_id || patch.tag < port_offset) {

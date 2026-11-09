@@ -33,7 +33,7 @@ Component metadata includes its numerical representation kind.
 Geometry, evaluated materials and source projections concatenate domains in
 DomainId order. Exported geometry cell references include that domain's cell
 offset; field support-entity IDs remain domain-local. State and operators use
-the canonical contiguous global DOF ranges. Source IDs retain their model-global identity.
+the canonical contiguous global DOF ranges. Each Library resource kind has an independent zero-based dense ID space; source IDs are preserved directly in compiled projections.
 
 ## Thermal connections
 

@@ -106,17 +106,18 @@ namespace mhs::model {
         std::variant<FomDomain, RomDomain> physics;
         core::Vector<PortDefinition> ports;
         core::Vector<ObservationDefinition> observations;
-        std::shared_ptr<const CompiledLibrary> library;
     };
 
     // Published as a const snapshot by the API; solve workspaces own all flow state.
     struct CompiledModel {
         mhs::core::Vector<CompiledComponent> components;
+        CompiledLibrary library_data;
 
         FomDomain& fom(DomainId id) { return std::get<FomDomain>(components.at(id).physics); }
         const FomDomain& fom(DomainId id) const { return std::get<FomDomain>(components.at(id).physics); }
         const RomDomain& rom(DomainId id) const { return std::get<RomDomain>(components.at(id).physics); }
-        const CompiledLibrary& library() const { return *components.front().library; }
+        CompiledLibrary& library() { return library_data; }
+        const CompiledLibrary& library() const { return library_data; }
 
         StateLayout layout;
         core::Vector<ThermalConnection> connections;
