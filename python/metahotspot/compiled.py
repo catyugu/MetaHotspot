@@ -162,9 +162,7 @@ def _compiled_fields(dll, handle, info: CompiledInfo) -> CompiledFields:
             for name, ctype, _, _, _ in _COMPILED_FIELD_SPECS
         },
     )
-    check(
-        dll.mhs_compiled_copy_fields(handle, ctypes.byref(native)), "cell_fields"
-    )
+    check(dll.mhs_compiled_copy_fields(handle, ctypes.byref(native)), "cell_fields")
     return CompiledFields(**arrays)
 
 
