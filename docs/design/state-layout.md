@@ -14,7 +14,9 @@ ordering, plus `StateLayout`, probes and compiled thermal connections.
 `FomDomain` owns immutable geometry, material expressions, source quadrature,
 thermal boundary patches, fluid membership and fluid boundary projections.
 Projection records retain subdivisions rather than collapsing them into mesh faces.
-No mutable definition references survive compilation.
+No mutable definition references survive compilation. ROM affine terms are
+folded into fixed operators, ports use runtime trace records, and observations
+store resolved FieldId/CellId mappings rather than authoring definitions.
 
 Each `FieldLayout` identifies a domain and physical quantity and owns one
 contiguous global DOF range `[offset, offset + count)`. Support kind is derived

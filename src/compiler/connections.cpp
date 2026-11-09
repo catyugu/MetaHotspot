@@ -69,7 +69,7 @@ namespace mhs::compiler {
                 if (port.outward_sign != 1 && port.outward_sign != -1)
                     throw std::invalid_argument("ROM outward port sign must be +1 or -1");
                 double total = 0;
-                const auto order = rom->order;
+                const auto order = rom->f.size();
                 const auto finite = [](double x) { return std::isfinite(x); };
                 for (std::size_t j = 0; j < port.patches.size(); ++j) {
                     const auto& patch = port.patches[j];
@@ -134,7 +134,7 @@ namespace mhs::compiler {
             if (a.axis != b.axis || a.coordinate != b.coordinate || surface_bounds(a) != surface_bounds(b)
                 || pa.front().sign == pb.front().sign)
                 throw std::invalid_argument("connection ports must coincide and have opposing outward normals");
-            ThermalConnection conn {spec.a, spec.b, a.axis, false, {}};
+            ThermalConnection conn {{spec.a.domain, spec.a.port}, {spec.b.domain, spec.b.port}, a.axis, false, {}};
             for (const auto& left : pa)
                 for (const auto& right : pb) {
                     const auto rect = intersect_bounds(left.bounds, right.bounds);
@@ -166,11 +166,11 @@ namespace mhs::compiler {
                 const auto* rom = std::get_if<RomDomain>(&compiled.components.at(ref.domain).physics);
                 if (!rom)
                     continue;
-                const auto& port = compiled.components[ref.domain].ports.at(ref.port);
+                const auto& port = rom->ports.at(ref.port);
                 for (const auto& facet : conn.patches) {
                     const auto index = side == 0 ? facet.a : facet.b;
-                    for (const auto& row : port.patches.at(index).tangential_gradient)
-                        if (row.size() != rom->order)
+                    for (const auto& row : port.at(index).tangential_gradient)
+                        if (row.size() != rom->f.size())
                             throw std::invalid_argument("nonmatching ROM port requires NCC gradient maps");
                 }
             }

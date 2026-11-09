@@ -71,7 +71,7 @@ namespace mhs::solver {
         if (state.size() != compiled.layout.state_count)
             throw std::invalid_argument("connection flux requires a complete state");
         const auto axis = static_cast<std::size_t>(connection.axis);
-        auto side = [&](model::PortReference ref, model::CellId index) -> Side {
+        auto side = [&](model::ConnectionEndpoint ref, model::Id index) -> Side {
             Side result;
             const auto& value = compiled.components.at(ref.domain).physics;
             if (const auto* fom = std::get_if<model::FomDomain>(&value)) {
@@ -81,8 +81,7 @@ namespace mhs::solver {
                 const auto center = box.center();
                 const auto& mat = compiled.library().material_table.at(domain.cell_material.at(cell));
                 const auto& law = axis == 0 ? mat.kx : axis == 1 ? mat.ky : mat.kz;
-                const auto& field
-                    = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::Temperature));
+                const auto& field = compiled.layout.field(compiled.components.at(ref.domain).state_field);
                 const auto temperatures = state.subspan(field.offset, field.count);
                 const double temperature = temperatures[cell];
                 const double k = law.eval({center[0], center[1], center[2], temperature, time});
@@ -102,14 +101,13 @@ namespace mhs::solver {
             }
             else {
                 const auto& rom = std::get<model::RomDomain>(value);
-                const auto& facet = compiled.components.at(ref.domain).ports.at(ref.port).patches.at(index);
-                const auto& field
-                    = compiled.layout.field(compiled.layout.find(ref.domain, model::FieldQuantity::ReducedCoordinate));
+                const auto& facet = rom.ports.at(ref.port).at(index);
+                const auto& field = compiled.layout.field(compiled.components.at(ref.domain).state_field);
                 result.resistance = facet.half_resistance;
                 result.offset = facet.offset;
                 result.temperature = dot(facet.trace, state, field) + facet.offset;
                 result.center = facet.center;
-                for (std::size_t j = 0; j < rom.order; ++j)
+                for (std::size_t j = 0; j < facet.trace.size(); ++j)
                     if (facet.trace[j] != 0.0)
                         result.weights.push_back({field.dof(j), facet.trace[j]});
                 for (std::size_t t = 0; t < 2; ++t)

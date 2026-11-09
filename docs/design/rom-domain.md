@@ -20,11 +20,12 @@ The initial ROM coordinate vector is specified independently of
 `Study.initial_temperature`, which initializes FOM temperatures.
 
 An affine parameter term stores a name, a finite scalar coefficient and its
-projected stiffness/load contributions. Each immutable compiled snapshot fixes
-these coefficients. A caller can compile another model using the **same ROM
-matrices and port maps** with different coefficients; this does not involve
-re-extracting the ROM. Arbitrary time-varying coefficients are not yet part of
-the reduced-domain contract.
+projected stiffness/load contributions. Compilation folds all affine terms into
+the runtime K/f arrays, so parameter names and term matrices do not survive in
+the compiled model. Recompiling the same ROM definition with different
+coefficients therefore produces a new immutable snapshot without re-extracting
+the ROM. Arbitrary time-varying coefficients are not yet part of the
+reduced-domain contract.
 
 ## Physical thermal ports
 
@@ -59,6 +60,7 @@ common-patch TPFA without NCC is not an accepted substitute.
 Local refinement **within one FOM** continues to use TPFA rather than NCC,
 as specified by the generic-layout tracking document.
 
+ROM ports and observations are lowered to runtime-only records before solve.
 ROM observations map reduced coordinates to physical temperatures through
 explicit `weights` and an optional offset. A named point probe can reference
 such an observation; it does not read a nonexistent ROM cell.

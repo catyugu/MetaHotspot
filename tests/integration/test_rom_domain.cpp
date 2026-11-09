@@ -115,7 +115,7 @@ TEST(RomDomain, FullBasisGalerkinsOperatorsAndTransientMatchFom)
     EXPECT_EQ(fom.layout.state_count, 3u);
     EXPECT_EQ(rom.layout.state_count, 3u);
     ASSERT_EQ(rom.components.size(), 2u);
-    EXPECT_EQ(rom.rom(1).order, 2u);
+    EXPECT_EQ(rom.rom(1).f.size(), 2u);
     const auto init_fom = mhs::core::Vector<double> {300, 300, 300};
     const auto init_rom = mhs::core::Vector<double> {300, 300 / q, 0};
     const auto a = mhs::solver::assemble_thermal(fom, init_fom, 0);

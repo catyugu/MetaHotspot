@@ -11,8 +11,6 @@
 
 namespace mhs::solver {
 
-    mhs::model::CellId locate_cell(const mhs::model::DiscreteMesh& mesh, const mhs::model::Vec3& point);
-
     // Boundary terms sorted by cell in the compiled model.
     std::span<const mhs::model::BoundaryFace> boundary_faces_on_cell(
         const mhs::model::FomDomain& model, mhs::model::CellId cell);

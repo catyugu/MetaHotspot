@@ -275,70 +275,49 @@ namespace mhs::solver {
             return assembler.assemble(current, time);
         };
 
-        // The model directly owns the physical observation mapping.
-        struct ObservationSlot {
-            model::DomainId domain = core::invalid_id;
-            model::CellId cell = core::invalid_id;
-            const model::ObservationDefinition* reduced = nullptr;
-            model::Vec3 point {};
-            ProbeTrace trace;
-        };
-        core::Vector<ObservationSlot> observations;
-        for (std::size_t d = 0; d < compiled.components.size(); ++d) {
-            const auto& component = compiled.components[d];
-            const auto* fom = std::get_if<model::FomDomain>(&component.physics);
-            for (const auto& obs : component.observations) {
-                ObservationSlot slot;
-                slot.domain = static_cast<model::DomainId>(d);
-                slot.point = {obs.point.x, obs.point.y, obs.point.z};
-                slot.trace.name = obs.point.name;
-                if (fom) {
-                    slot.cell = locate_cell(fom->discrete, slot.point);
-                    if (slot.cell == core::invalid_id)
-                        throw std::invalid_argument("observation lies outside its Cartesian component");
-                }
-                else
-                    slot.reduced = &obs;
-                observations.push_back(std::move(slot));
-            }
-        }
+        core::Vector<ProbeTrace> probes;
+        probes.reserve(compiled.observations.size());
+        for (const auto& observation : compiled.observations)
+            probes.push_back({observation.name, {}});
 
         StateObserver observe = [&](double t, std::span<const double> accepted_state) {
-            if (observations.empty())
+            if (compiled.observations.empty())
                 return;
             core::Vector<core::Vector<SurfaceTrace>> traces(compiled.components.size());
             for (const auto& connection : compiled.connections) {
                 const auto flux = evaluate_connection_flux(compiled, connection, accepted_state, t);
                 for (std::size_t p = 0; p < connection.patches.size(); ++p) {
                     const auto& patch = connection.patches[p];
-                    if (std::holds_alternative<model::FomDomain>(compiled.components.at(connection.a.domain).physics))
-                        traces[connection.a.domain].push_back(
-                            {{patch.a, connection.axis, connection.sign_a, core::invalid_id, patch.bounds},
-                                flux[p].interface_temperature});
-                    if (std::holds_alternative<model::FomDomain>(compiled.components.at(connection.b.domain).physics))
-                        traces[connection.b.domain].push_back(
-                            {{patch.b, connection.axis, static_cast<std::int8_t>(-connection.sign_a), core::invalid_id,
-                                 patch.bounds},
-                                flux[p].interface_temperature});
+                    const bool fom_a
+                        = std::holds_alternative<model::FomDomain>(compiled.components.at(connection.a.domain).physics);
+                    const bool fom_b
+                        = std::holds_alternative<model::FomDomain>(compiled.components.at(connection.b.domain).physics);
+                    if (fom_a) {
+                        model::BoundaryFace face {static_cast<model::CellId>(patch.a), connection.axis,
+                            connection.sign_a, core::invalid_id, patch.bounds};
+                        traces[connection.a.domain].push_back({face, flux[p].interface_temperature});
+                    }
+                    if (fom_b) {
+                        model::BoundaryFace face {static_cast<model::CellId>(patch.b), connection.axis,
+                            static_cast<std::int8_t>(-connection.sign_a), core::invalid_id, patch.bounds};
+                        traces[connection.b.domain].push_back({face, flux[p].interface_temperature});
+                    }
                 }
             }
-            for (auto& slot : observations) {
-                const auto quantity
-                    = slot.reduced ? model::FieldQuantity::ReducedCoordinate : model::FieldQuantity::Temperature;
-                const auto& field = compiled.layout.field(compiled.layout.find(slot.domain, quantity));
-                double temperature = 0.0;
-                if (slot.reduced) {
-                    temperature = slot.reduced->offset;
-                    for (std::size_t j = 0; j < slot.reduced->weights.size(); ++j)
-                        temperature += slot.reduced->weights[j] * accepted_state[field.dof(j)];
+            for (std::size_t i = 0; i < compiled.observations.size(); ++i) {
+                const auto& observation = compiled.observations[i];
+                const auto& field = compiled.layout.field(compiled.components[observation.domain].state_field);
+                double temperature = observation.offset;
+                if (field.quantity == model::FieldQuantity::ReducedCoordinate) {
+                    for (std::size_t j = 0; j < observation.weights.size(); ++j)
+                        temperature += observation.weights[j] * accepted_state[field.dof(j)];
                 }
                 else {
                     const auto cells = accepted_state.subspan(field.offset, field.count);
-                    const auto& interfaces = traces[slot.domain];
-                    temperature = sample_point(
-                        compiled.fom(slot.domain), compiled.library(), cells, t, slot.cell, slot.point, interfaces);
+                    temperature = sample_point(compiled.fom(field.domain), compiled.library(), cells, t,
+                        observation.cell, observation.point, traces[field.domain]);
                 }
-                slot.trace.values.push_back(temperature);
+                probes[i].values.push_back(temperature);
             }
         };
 
@@ -354,8 +333,7 @@ namespace mhs::solver {
                     break;
                 }
         auto sol = solve_system(study, assemble, std::move(state), effective_options, observe);
-        for (auto& slot : observations)
-            sol.probe_traces.push_back(std::move(slot.trace));
+        sol.probe_traces = std::move(probes);
         return sol;
     }
 

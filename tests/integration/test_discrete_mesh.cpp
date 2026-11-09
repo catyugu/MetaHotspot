@@ -195,6 +195,6 @@ TEST(DiscreteMesh, MissingReferencesRemainInvalid)
     mesh.faces.push_back(face);
     mhs::compiler::build_cell_face_incidence(mesh);
     EXPECT_EQ(mesh.incident_faces(0).size(), 1u);
-    EXPECT_EQ(mhs::solver::locate_cell(mesh, {2, 2, 2}), invalid_id);
-    EXPECT_EQ(mhs::solver::locate_cell(mesh, {0.5, 0.5, 0.5}), 0u);
+    EXPECT_EQ(mesh.locate({2, 2, 2}), invalid_id);
+    EXPECT_EQ(mesh.locate({0.5, 0.5, 0.5}), 0u);
 }
