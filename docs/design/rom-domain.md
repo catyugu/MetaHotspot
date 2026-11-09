@@ -60,7 +60,7 @@ common-patch TPFA without NCC is not an accepted substitute.
 Local refinement **within one FOM** continues to use TPFA rather than NCC,
 as specified by the generic-layout tracking document.
 
-ROM ports and observations are lowered to runtime-only records before solve.
+ROM ports, observations, and exposed boundary integration geometry are lowered to runtime-only records before solve.
 ROM observations map reduced coordinates to physical temperatures through
 explicit `weights` and an optional offset. A named point probe can reference
 such an observation; it does not read a nonexistent ROM cell.

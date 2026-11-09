@@ -281,19 +281,9 @@ namespace mhs::solver {
             double temperature = facet.offset;
             for (std::size_t i = 0; i < rom.f.size(); ++i)
                 temperature += facet.trace[i] * state[field.dof(i)];
-            const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
-            model::Vec3 center {};
-            const auto axis = static_cast<std::size_t>(term.axis);
-            center[axis] = term.coordinate;
-            std::size_t tangent = 0;
-            for (std::size_t d = 0; d < 3; ++d)
-                if (d != axis) {
-                    center[d] = (term.bounds[2 * tangent] + term.bounds[2 * tangent + 1]) / 2;
-                    ++tangent;
-                }
             const auto& condition = model_.library().boundary_conditions.at(term.condition);
             const auto trace
-                = evaluate_boundary(condition, center, area, facet.half_resistance, temperature, 1.0, time);
+                = evaluate_boundary(condition, term.center, term.area, facet.half_resistance, temperature, 1.0, time);
             core::Vector<WeightedDof> weights;
             for (std::size_t i = 0; i < rom.f.size(); ++i)
                 if (facet.trace[i] != 0.0)

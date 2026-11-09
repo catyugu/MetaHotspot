@@ -108,10 +108,9 @@ namespace mhs::model {
         DomainId domain = core::invalid_id;
         PortId port = core::invalid_id;
         std::size_t patch = 0;
-        Axis axis = Axis::X;
-        double coordinate = 0.0;
         ThermalBoundaryIndex condition = core::invalid_id;
-        std::array<double, 4> bounds {};
+        Vec3 center {};
+        double area = 0.0;
     };
 
     struct CompiledObservation {

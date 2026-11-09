@@ -302,55 +302,6 @@ namespace mhs::compiler {
         }
         compile_connections(definition, compiled);
 
-        // Boundary laws on exposed ROM ports are assembled through their
-        // physical trace maps, not through HTC-specific affine ROM operators.
-        // Subdivide each port patch by the ordinary surface-condition regions.
-        for (std::size_t d = 0; d < definition.components.size(); ++d) {
-            const auto* value = std::get_if<model::RomDomainDefinition>(&definition.components[d].physics);
-            if (!value)
-                continue;
-            const auto& ports = definition.components[d].ports;
-            const auto& boundaries = definition.components[d].thermal_boundaries;
-            const auto domain_id = static_cast<model::DomainId>(d);
-            core::Vector<core::Vector<TaggedBounds>> per_port(ports.size());
-            for (const auto& boundary : boundaries) {
-                (void)library.thermal_boundary(boundary.condition);
-                const auto condition = static_cast<model::ThermalBoundaryIndex>(boundary.condition);
-                for (const auto& region : boundary.regions) {
-                    const auto rectangle = surface_bounds(region.rectangle);
-                    validate_surface_region(region);
-                    // One declared boundary rectangle may cover multiple
-                    // adjacent ROM ports on the same physical plane.
-                    double covered = 0.0;
-                    for (std::size_t p = 0; p < ports.size(); ++p) {
-                        const auto& port = ports[p];
-                        if (region.axis != port.region.axis || region.coordinate != port.region.coordinate)
-                            continue;
-                        const auto outer = surface_bounds(port.region.rectangle);
-                        const auto intersection = intersect_bounds(rectangle, outer);
-                        if (!positive_bounds(intersection))
-                            continue;
-                        for (const auto& connection : definition.connections)
-                            if ((connection.a.domain == domain_id && connection.a.port == p)
-                                || (connection.b.domain == domain_id && connection.b.port == p))
-                                throw std::invalid_argument("ROM thermal boundary overlaps a connected port");
-                        per_port[p].push_back({intersection, condition});
-                        covered += surface_area(intersection);
-                    }
-                    const double requested = surface_area(rectangle);
-                    if (std::abs(covered - requested) > 1e-10 * requested)
-                        throw std::invalid_argument("ROM thermal boundary must be covered by exposed ports");
-                }
-            }
-
-            for (std::size_t p = 0; p < ports.size(); ++p)
-                for (std::size_t j = 0; j < ports[p].patches.size(); ++j) {
-                    const auto original = surface_bounds(ports[p].patches[j].rectangle);
-                    for (const auto& tagged : partition_surface_bounds(original, per_port[p]))
-                        compiled.rom_boundary_terms.push_back({domain_id, static_cast<model::PortId>(p), j,
-                            ports[p].region.axis, ports[p].region.coordinate, tagged.tag, tagged.bounds});
-                }
-        }
         return compiled;
     }
 

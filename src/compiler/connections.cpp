@@ -27,7 +27,20 @@ namespace mhs::compiler {
         using namespace model;
         const auto ndom = definition.components.size();
         core::Vector<core::Vector<Facets>> ports(ndom);
-        core::Vector<core::Vector<bool>> used(ndom);
+        core::Vector<core::Vector<bool>> connected(ndom);
+        for (std::size_t d = 0; d < ndom; ++d) {
+            const auto count = definition.components[d].ports.size();
+            ports[d].resize(count);
+            connected[d].resize(count, false);
+        }
+        for (const auto& spec : definition.connections) {
+            if (spec.a.domain == spec.b.domain || spec.a.domain >= ndom || spec.b.domain >= ndom)
+                throw std::invalid_argument("connection must join two different domains");
+            if (connected.at(spec.a.domain).at(spec.a.port) || connected.at(spec.b.domain).at(spec.b.port))
+                throw std::invalid_argument("port is connected more than once");
+            connected[spec.a.domain][spec.a.port] = true;
+            connected[spec.b.domain][spec.b.port] = true;
+        }
 
         // Every component validates the same named physical-port contract.
         // Cartesian faces are projected once for both boundary laws and ports;
@@ -36,8 +49,6 @@ namespace mhs::compiler {
             const auto& component = definition.component(static_cast<DomainId>(d));
             const auto* rom = std::get_if<RomDomain>(&compiled.components[d].physics);
             auto* fom = rom ? nullptr : &compiled.fom(static_cast<DomainId>(d));
-            used[d].resize(component.ports.size(), false);
-            ports[d].resize(component.ports.size());
             std::set<std::string> names;
             core::Vector<TaggedSurfaceRegion> regions;
             const auto port_offset = static_cast<core::EntityIndex>(compiled.library().boundary_conditions.size());
@@ -93,8 +104,53 @@ namespace mhs::compiler {
                 if (port.patches.empty() || std::abs(total - required) > 1e-10 * required)
                     throw std::invalid_argument("ROM port patches must exactly cover the port");
             }
-            if (!fom)
+            if (!fom) {
+                const auto domain = static_cast<DomainId>(d);
+                core::Vector<core::Vector<TaggedBounds>> per_port(component.ports.size());
+                for (const auto& boundary : component.thermal_boundaries) {
+                    (void)definition.library().thermal_boundary(boundary.condition);
+                    for (const auto& region : boundary.regions) {
+                        validate_surface_region(region);
+                        const auto requested = surface_bounds(region);
+                        const double requested_area = surface_area(requested);
+                        double covered = 0.0;
+                        for (std::size_t p = 0; p < component.ports.size(); ++p) {
+                            const auto& candidate = component.ports[p];
+                            if (region.axis != candidate.region.axis
+                                || region.coordinate != candidate.region.coordinate)
+                                continue;
+                            const auto intersection = intersect_bounds(requested, surface_bounds(candidate.region));
+                            if (!positive_bounds(intersection))
+                                continue;
+                            if (connected[d][p])
+                                throw std::invalid_argument("ROM thermal boundary overlaps a connected port");
+                            per_port[p].push_back({intersection, boundary.condition});
+                            covered += surface_area(intersection);
+                        }
+                        if (std::abs(covered - requested_area) > 1e-10 * requested_area)
+                            throw std::invalid_argument("ROM thermal boundary must be covered by exposed ports");
+                    }
+                }
+                for (std::size_t p = 0; p < component.ports.size(); ++p) {
+                    const auto& port = component.ports[p];
+                    for (std::size_t j = 0; j < port.patches.size(); ++j)
+                        for (const auto& tagged :
+                            partition_surface_bounds(surface_bounds(port.patches[j].rectangle), per_port[p])) {
+                            Vec3 center {};
+                            const auto axis = static_cast<std::size_t>(port.region.axis);
+                            center[axis] = port.region.coordinate;
+                            std::size_t tangent = 0;
+                            for (std::size_t a = 0; a < 3; ++a)
+                                if (a != axis) {
+                                    center[a] = (tagged.bounds[2 * tangent] + tagged.bounds[2 * tangent + 1]) / 2;
+                                    ++tangent;
+                                }
+                            compiled.rom_boundary_terms.push_back(
+                                {domain, static_cast<PortId>(p), j, tagged.tag, center, surface_area(tagged.bounds)});
+                        }
+                }
                 continue;
+            }
             const auto id = definition.fom(static_cast<DomainId>(d)).default_thermal_boundary;
             const auto fallback = id;
             const auto projection = project_exterior_surface_regions(fom->discrete, regions, fallback);
@@ -124,12 +180,8 @@ namespace mhs::compiler {
 
         auto region = [&](PortReference x) { return definition.component(x.domain).ports.at(x.port).region; };
         for (const auto& spec : definition.connections) {
-            if (spec.a.domain == spec.b.domain || spec.a.domain >= ndom || spec.b.domain >= ndom)
-                throw std::invalid_argument("connection must join two different domains");
             const auto& pa = ports.at(spec.a.domain).at(spec.a.port);
             const auto& pb = ports.at(spec.b.domain).at(spec.b.port);
-            if (used.at(spec.a.domain).at(spec.a.port) || used.at(spec.b.domain).at(spec.b.port))
-                throw std::invalid_argument("port is connected more than once");
             const auto a = region(spec.a), b = region(spec.b);
             if (a.axis != b.axis || a.coordinate != b.coordinate || surface_bounds(a) != surface_bounds(b)
                 || pa.front().sign == pb.front().sign)
@@ -146,14 +198,14 @@ namespace mhs::compiler {
             if (conn.patches.empty())
                 throw std::invalid_argument("connection has no common interface area");
             conn.sign_a = pa.front().sign;
-            used[spec.a.domain][spec.a.port] = used[spec.b.domain][spec.b.port] = true;
             compiled.connections.push_back(std::move(conn));
         }
         // Only FOM ports require Connection. A ROM port can instead carry an
         // exterior boundary law; an otherwise unused ROM port is adiabatic.
         for (const auto& field : compiled.layout.fields)
             if (field.quantity == FieldQuantity::Temperature
-                && std::find(used[field.domain].begin(), used[field.domain].end(), false) != used[field.domain].end())
+                && std::find(connected[field.domain].begin(), connected[field.domain].end(), false)
+                    != connected[field.domain].end())
                 throw std::invalid_argument("every declared FOM port must be connected");
 
         // A nonmatching ROM connection needs a projected tangential gradient
