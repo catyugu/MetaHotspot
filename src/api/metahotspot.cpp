@@ -129,17 +129,22 @@ static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double co
     return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}};
 }
 
+static mhs::core::Vector<mhs::model::SurfaceRegion> _copy_surface_regions(
+    const mhs_surface_region_t* regions, size_t count)
+{
+    mhs::core::Vector<mhs::model::SurfaceRegion> result;
+    result.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+        result.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+    return result;
+}
+
 template <typename Boundary> static void _add_thermal_boundary(
     mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, Boundary condition)
 {
     if (!n_regions)
         throw std::invalid_argument("surface regions must not be empty");
-    mhs::model::ThermalBoundarySpec bp;
-    bp.condition = std::move(condition);
-    bp.regions.reserve(n_regions);
-    for (size_t i = 0; i < n_regions; ++i)
-        bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    m->def.thermal_boundaries.push_back(std::move(bp));
+    m->def.thermal_boundaries.push_back({_copy_surface_regions(regions, n_regions), std::move(condition)});
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -484,8 +489,7 @@ MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surf
         if (!n_regions || !std::isfinite(value) || (inlet_temperature && !std::isfinite(*inlet_temperature)))
             throw std::invalid_argument("fluid boundary requires regions and finite values");
         mhs::model::FluidBoundarySpec fb;
-        for (size_t i = 0; i < n_regions; ++i)
-            fb.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+        fb.regions = _copy_surface_regions(regions, n_regions);
         const auto temperature = inlet_temperature ? std::optional<double>(*inlet_temperature) : std::nullopt;
         switch (kind) {
         case MHS_FLUID_PRESSURE_INLET:
@@ -738,18 +742,7 @@ MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, mhs_
 MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count)
 {
     CHECK_NULL(operators);
-    const auto expected_count = operators->operators.f.size();
-    if (count != expected_count) {
-        SET_ERR("rhs count must equal " << expected_count);
-        return MHS_ERROR;
-    }
-    if (count > 0 && !out) {
-        SET_ERR("NULL pointer: out");
-        return MHS_ERROR;
-    }
-    std::copy_n(operators->operators.f.data(), count, out);
-    mhs_detail_clear_last_error();
-    return MHS_OK;
+    return copy_vector(operators->operators.f, out, count, "rhs");
 }
 
 /* ------------------------------------------------------------------ */
@@ -809,16 +802,9 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study
             throw std::invalid_argument("initial state must be NULL/0 or have cell_count entries");
         const std::span<const double> init_span(state, state_count);
 
-        auto sol = mhs::solver::solve(c->model, run, init_span, so);
-
-        auto* s = new (std::nothrow) mhs_solution_t;
-        if (!s) {
-            *out = nullptr;
-            SET_ERR("memory allocation failed");
-            return MHS_ERROR;
-        }
-        s->sol = std::move(sol);
-        *out = s;
+        auto result = std::make_unique<mhs_solution_t>();
+        result->sol = mhs::solver::solve(c->model, run, init_span, so);
+        *out = result.release();
     });
 }
 
