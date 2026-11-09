@@ -59,6 +59,7 @@ class BoundaryGroup:
     surface: BoundarySurface
     h_range: tuple[float, float] = (1.0, 1.0e6)
 
+
 @dataclass(frozen=True)
 class CellLayout:
     """Geometry and reference conductivity in physical CellId order.
