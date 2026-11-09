@@ -7,6 +7,7 @@
 #include "solver/thermal_reconstruction.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
+#include <limits>
 #include <numeric>
 
 using namespace mhs::core;
@@ -125,6 +126,16 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
         return total;
     };
     EXPECT_NEAR(exterior_area(model.discrete), exterior_area(base), 1e-14);
+    mhs::core::Vector<int> incidence(model.discrete.facets.size(), 0);
+    for (std::size_t c = 0; c < model.discrete.cells.size(); ++c)
+        for (const auto id : model.discrete.incident_facets(static_cast<CellId>(c))) {
+            ASSERT_LT(id, model.discrete.facets.size());
+            const auto& facet = model.discrete.facets[id];
+            EXPECT_TRUE(facet.minus == c || facet.plus == c);
+            ++incidence[id];
+        }
+    for (std::size_t id = 0; id < incidence.size(); ++id)
+        EXPECT_EQ(incidence[id], model.discrete.facets[id].exterior() ? 1 : 2);
     double assigned_area = 0;
     for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
         const auto& facet = model.discrete.facets[id];
@@ -196,4 +207,23 @@ TEST(DiscreteMesh, MissingReferencesRemainInvalid)
     EXPECT_EQ(mesh.incident_facets(0).size(), 1u);
     EXPECT_EQ(mhs::solver::locate_cell(mesh, {2, 2, 2}), invalid_id);
     EXPECT_EQ(mhs::solver::locate_cell(mesh, {0.5, 0.5, 0.5}), 0u);
+}
+
+TEST(DiscreteMesh, InvalidSurfaceRegionsAreRejectedByCppCompiler)
+{
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const mhs::model::SurfaceRegion invalid[] {
+        {Axis::X, nan, {0, 1, 0, 1}},
+        {Axis::X, 0, {0, nan, 0, 1}},
+        {Axis::X, 0, {1, 0, 0, 1}},
+        {static_cast<Axis>(3), 0, {0, 1, 0, 1}},
+    };
+    for (const auto& region : invalid) {
+        auto thermal = cube_definition();
+        thermal.thermal_boundaries.push_back({{region}, mhs::model::NeumannBoundary {"0"}});
+        EXPECT_THROW(mhs::compiler::build_model(thermal), std::invalid_argument);
+        auto fluid = cube_definition();
+        fluid.fluid_boundaries.push_back({{region}, mhs::model::PressureOutlet {0}});
+        EXPECT_THROW(mhs::compiler::build_model(fluid), std::invalid_argument);
+    }
 }

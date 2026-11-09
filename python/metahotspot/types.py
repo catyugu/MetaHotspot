@@ -72,7 +72,7 @@ class MhsCompiledInfo(ctypes.Structure):
     ]
 
 
-class MhsCellFields(ctypes.Structure):
+class MhsCompiledFields(ctypes.Structure):
     _fields_ = [
         ("cell_count", ctypes.c_size_t),
         ("facet_count", ctypes.c_size_t),

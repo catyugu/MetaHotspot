@@ -25,10 +25,14 @@ static FacetId find_boundary_facet(const Model& model, std::size_t cell_idx, Fac
 template <typename Condition>
 static const Condition* find_condition(const Model& model, std::size_t cell_idx, FaceDir dir)
 {
-    const auto facet = find_boundary_facet(model, cell_idx, dir);
-    return facet == mhs::core::invalid_id
-        ? nullptr
-        : std::get_if<Condition>(&model.boundary_conditions[model.facet_thermal_condition[facet]]);
+    for (auto id : model.discrete.incident_facets(static_cast<CellId>(cell_idx))) {
+        const auto& facet = model.discrete.facets[id];
+        if (facet.exterior() && static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
+            && facet.outward_sign() == (static_cast<int>(dir) % 2 ? 1 : -1))
+            if (auto* condition = std::get_if<Condition>(&model.boundary_conditions[model.facet_thermal_condition[id]]))
+                return condition;
+    }
+    return nullptr;
 }
 
 static SourceId source_id(const Model& model, std::size_t cell)

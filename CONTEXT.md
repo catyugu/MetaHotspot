@@ -23,13 +23,8 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 - `solve_system` 只负责非线性迭代、时间推进和输出时刻；它通过
   `SystemAssembler(state, time)` 请求整个系统的当前线性化，不理解 FVM、
   端口或耦合拓扑。
-- 模型降阶（BCI-FANTASTIC）在 `python/metahotspot/macromodel` 与 `playground/`
-  用例中以纯 Python 实现：目标是逼近**全场传递算子** `X(p, s) = A(p, s)^-1 G`
-  （功率端口到整场温度分布的状态级算子），热源区作为端口、边界组作为仿射 Robin 项，
-  降阶基由功率输入驱动，在线用 scipy 固定步 BDF1 求解，不依赖 C++ 端口耦合。
-- 瞬态只保留 `Adaptive` 与 `Fixed` 两种步进。二者都会在输出时刻和终止
-  时刻截短当前步，observer 只接收真实积分状态；禁止对包含模态系数的
-  全局状态做时间插值。
+- Python 宏模型原型位于 `python/metahotspot/macromodel` 与 `playground/`，分别处理源端口、边界参数和可嵌入接口；其降阶误差与接口模型假设由各实验独立验证。
+- 核心瞬态采用 AdaptiveTimeStepper 自适应 BDF1/2；输出时刻可由稠密插值采样，终点为真实积分状态。
 - 模态瞬态宏模型必须在同一基底下提供完整的 `K_r`、`C_r`、`f_r` 和一致
   初态。静态端口柔度的 SVD 只验证稳态端口响应，不能单独证明瞬态降阶精度；
   瞬态 ROM 需要动态模态或时域快照及时间步收敛验证。

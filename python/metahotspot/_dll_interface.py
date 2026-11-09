@@ -8,8 +8,8 @@ from __future__ import annotations
 import ctypes
 
 from metahotspot.types import (
-    MhsCellFields,
     MhsCompiled,
+    MhsCompiledFields,
     MhsCompiledInfo,
     MhsMaterialValues,
     MhsModel,
@@ -111,7 +111,7 @@ _CORE_FUNC_SIGS = [
     ("mhs_model_compile", I32, [P(MhsModel), P(P(MhsCompiled))]),
     ("mhs_compiled_destroy", None, [P(MhsCompiled)]),
     ("mhs_compiled_get_info", I32, [P(MhsCompiled), P(MhsCompiledInfo)]),
-    ("mhs_compiled_copy_cell_fields", I32, [P(MhsCompiled), P(MhsCellFields)]),
+    ("mhs_compiled_copy_fields", I32, [P(MhsCompiled), P(MhsCompiledFields)]),
     (
         "mhs_compiled_eval_materials",
         I32,

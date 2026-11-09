@@ -43,6 +43,21 @@ def test_model_native_calls_compile_and_assemble():
     assert operators.f.shape == (1,)
     assert operators.f[0] == pytest.approx(1.0e-3)
     assert compiled.fields is compiled.fields
+    fields = compiled.fields
+    assert fields.facet_coordinate.shape == (compiled.info.facet_count,)
+    for axis in range(3):
+        ids = np.flatnonzero(fields.facet_axis == axis)
+        owners = np.where(
+            fields.facet_minus[ids] == np.iinfo(np.uint32).max,
+            fields.facet_plus[ids],
+            fields.facet_minus[ids],
+        )
+        expected = np.where(
+            fields.facet_minus[ids] == np.iinfo(np.uint32).max,
+            fields.cell_min[owners, axis],
+            fields.cell_max[owners, axis],
+        )
+        np.testing.assert_allclose(fields.facet_coordinate[ids], expected)
 
 
 def test_model_native_boundary_and_function_calls():

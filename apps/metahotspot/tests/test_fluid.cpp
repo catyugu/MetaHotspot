@@ -148,7 +148,26 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     thermal.condition = NeumannBoundary {"0"};
     thermal.regions.push_back({Axis::X, 0, {0, 0.15, 0, 1}});
     d.model.thermal_boundaries.push_back(thermal);
-    verify(test_pta::build_model(d));
+    const auto refined = test_pta::build_model(d);
+    verify(refined);
+
+    // One physical X- side is split by both hydraulic and thermal rectangles.
+    // Each sub-facet participates in cell incidence exactly once.
+    std::size_t side_facets = 0;
+    double side_area = 0.0;
+    bool has_cross_cut = false;
+    for (auto id : refined.discrete.incident_facets(0)) {
+        const auto& facet = refined.discrete.facets[id];
+        if (!facet.exterior() || facet.axis != Axis::X || facet.outward_sign() != -1)
+            continue;
+        ++side_facets;
+        side_area += facet.area();
+        has_cross_cut = has_cross_cut || (facet.bounds[0] == 0.1 && facet.bounds[1] == 0.15);
+    }
+    EXPECT_EQ(side_facets, 5u);
+    EXPECT_NEAR(side_area, 1.0, 1e-14);
+    EXPECT_TRUE(has_cross_cut);
+    EXPECT_EQ(refined.fluid.boundary_terms.size(), 5u);
 }
 
 TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
