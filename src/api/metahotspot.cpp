@@ -296,9 +296,7 @@ MHS_API mhs_status_t mhs_library_add_source(mhs_library_t* l, const char* expres
     CHECK_NULL(l);
     CHECK_NULL(expression);
     CHECK_NULL(out_id);
-    MHS_TRY({
-        *out_id = l->def->add_source(expression);
-    });
+    MHS_TRY({ *out_id = l->def->add_source(expression); });
 }
 MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
 {
@@ -339,8 +337,8 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
 /*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_library_add_thermal_boundary(
-    mhs_library_t* l, const mhs_thermal_bc_t* bc, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_library_add_thermal_boundary(mhs_library_t* l, const mhs_thermal_bc_t* bc,
+    mhs_index_t* out_id)
 {
     CHECK_NULL(l);
     CHECK_NULL(bc);
@@ -392,8 +390,7 @@ MHS_API mhs_status_t mhs_library_add_function_sine(
 {
     CHECK_NULL(l);
     CHECK_NULL(name);
-    MHS_TRY(
-        { l->def->add_function({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}}); });
+    MHS_TRY({ l->def->add_function({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}}); });
 }
 
 MHS_API mhs_status_t mhs_library_add_function_double_exponential(
@@ -401,8 +398,7 @@ MHS_API mhs_status_t mhs_library_add_function_double_exponential(
 {
     CHECK_NULL(l);
     CHECK_NULL(name);
-    MHS_TRY(
-        { l->def->add_function({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}}); });
+    MHS_TRY({ l->def->add_function({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}}); });
 }
 
 MHS_API mhs_status_t mhs_library_add_function_piecewise(

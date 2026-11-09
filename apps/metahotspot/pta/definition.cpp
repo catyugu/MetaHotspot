@@ -89,9 +89,7 @@ namespace mhs::app::pta {
             for (auto& block : layer.blocks) {
                 const auto& functions = def.model.library().functions;
                 const bool names_function = std::any_of(functions.begin(), functions.end(),
-                    [&](const mhs::model::NamedFunction& function) {
-                        return function.name == block.volumetric_heat_source;
-                    });
+                    [&](const auto& function) { return function.name == block.volumetric_heat_source; });
                 if (names_function)
                     block.volumetric_heat_source += "(t)";
                 else
