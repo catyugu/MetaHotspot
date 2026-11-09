@@ -144,16 +144,16 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
     std::filesystem::remove(path);
 
     ASSERT_EQ(definition.model.volumes.size(), 2u);
-    EXPECT_EQ(definition.model.materials[definition.model.volumes[0].material].name, "background");
-    EXPECT_EQ(definition.model.materials[definition.model.volumes[1].material].name, "foreground");
+    EXPECT_EQ(definition.model.library().materials[definition.model.volumes[0].material].name, "background");
+    EXPECT_EQ(definition.model.library().materials[definition.model.volumes[1].material].name, "foreground");
     ASSERT_EQ(definition.model.volumes[0].geometry.size(), 2u);
     EXPECT_EQ(definition.model.volumes[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
     EXPECT_EQ(definition.model.volumes[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
     ASSERT_EQ(definition.model.thermal_boundaries.size(), 2u);
     EXPECT_TRUE(
-        std::holds_alternative<mhs::model::DirichletBoundary>(definition.model.thermal_boundaries[0].condition));
+        std::holds_alternative<mhs::model::DirichletBoundary>(definition.model.library().thermal_boundaries[definition.model.thermal_boundaries[0].condition]));
     EXPECT_TRUE(
-        std::holds_alternative<mhs::model::ConvectionBoundary>(definition.model.thermal_boundaries[1].condition));
+        std::holds_alternative<mhs::model::ConvectionBoundary>(definition.model.library().thermal_boundaries[definition.model.thermal_boundaries[1].condition]));
 }
 
 TEST(IoTest, WriteXmlEmitsResult0DTransient)

@@ -487,7 +487,7 @@ namespace mhs::app::pta {
                         if (const XMLElement* q = child_by_local_name(thermal, "HeatFlux")) {
                             bc.heat_flux = get_text(q);
                         }
-                        boundary.condition = std::move(bc);
+                        boundary.condition = def.model.library().add_thermal_boundary(std::move(bc));
                     }
                     else if (type_str.find("ThirdType") != std::string::npos) {
                         mhs::model::ConvectionBoundary bc;
@@ -497,7 +497,7 @@ namespace mhs::app::pta {
                         if (const XMLElement* t = child_by_local_name(thermal, "EnvironmentTemperature")) {
                             bc.ambient_temperature = get_text(t);
                         }
-                        boundary.condition = std::move(bc);
+                        boundary.condition = def.model.library().add_thermal_boundary(std::move(bc));
                     }
                     else {
                         throw std::runtime_error("unknown Boundary ThermalBoundary i:type: " + type_str);
