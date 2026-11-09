@@ -457,12 +457,9 @@ namespace mhs::app::pta {
                     const bool pressure_inlet_type = type_str.find("PressureInletBoundary") != std::string::npos;
                     const bool mass_flow_inlet_type = type_str.find("MassFlowInletBoundary") != std::string::npos;
                     const bool outlet_type = type_str.find("OutletBoundary") != std::string::npos;
-                    if ((pressure_inlet_type
-                            && !std::holds_alternative<mhs::model::PressureInlet>(condition))
-                        || (mass_flow_inlet_type
-                            && !std::holds_alternative<mhs::model::MassFlowInlet>(condition))
-                        || (outlet_type
-                            && !std::holds_alternative<mhs::model::PressureOutlet>(condition)))
+                    if ((pressure_inlet_type && !std::holds_alternative<mhs::model::PressureInlet>(condition))
+                        || (mass_flow_inlet_type && !std::holds_alternative<mhs::model::MassFlowInlet>(condition))
+                        || (outlet_type && !std::holds_alternative<mhs::model::PressureOutlet>(condition)))
                         throw std::runtime_error(
                             "fluid boundary fields do not match ThermalBoundary i:type: " + type_str);
                     if (fluid_boundary.regions.empty())
@@ -577,7 +574,8 @@ namespace mhs::app::pta {
             }
         }
 
-        def.model.default_thermal_boundary = def.model.library().add_thermal_boundary(std::move(default_thermal_boundary));
+        def.model.default_thermal_boundary
+            = def.model.library().add_thermal_boundary(std::move(default_thermal_boundary));
         return {study, normalize(std::move(def))};
     }
 

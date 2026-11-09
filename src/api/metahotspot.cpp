@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <memory>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -137,13 +136,16 @@ static mhs::model::ThermalBoundary _thermal_law(const mhs_thermal_bc_t& bc)
     if (!bc.expression)
         throw std::invalid_argument("thermal boundary expression is required");
     switch (bc.kind) {
-    case MHS_THERMAL_DIRICHLET: return mhs::model::DirichletBoundary {bc.expression};
-    case MHS_THERMAL_NEUMANN: return mhs::model::NeumannBoundary {bc.expression};
+    case MHS_THERMAL_DIRICHLET:
+        return mhs::model::DirichletBoundary {bc.expression};
+    case MHS_THERMAL_NEUMANN:
+        return mhs::model::NeumannBoundary {bc.expression};
     case MHS_THERMAL_CONVECTION:
         if (!bc.ambient_temperature)
             throw std::invalid_argument("convection ambient temperature is required");
         return mhs::model::ConvectionBoundary {bc.expression, bc.ambient_temperature};
-    default: throw std::invalid_argument("invalid thermal boundary kind");
+    default:
+        throw std::invalid_argument("invalid thermal boundary kind");
     }
 }
 
@@ -339,14 +341,16 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
 /*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_library_add_thermal_boundary(mhs_library_t* l,
-    const mhs_thermal_bc_t* bc, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_library_add_thermal_boundary(
+    mhs_library_t* l, const mhs_thermal_bc_t* bc, mhs_index_t* out_id)
 {
-    CHECK_NULL(l); CHECK_NULL(bc); CHECK_NULL(out_id);
+    CHECK_NULL(l);
+    CHECK_NULL(bc);
+    CHECK_NULL(out_id);
     MHS_TRY({ *out_id = l->def->add_thermal_boundary(_thermal_law(*bc)); });
 }
-MHS_API mhs_status_t mhs_model_add_thermal_boundary(mhs_model_t* m,
-    const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
+MHS_API mhs_status_t mhs_model_add_thermal_boundary(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
 {
     CHECK_NULL(m);
     MHS_TRY({
@@ -447,26 +451,34 @@ MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name,
     });
 }
 
-MHS_API mhs_status_t mhs_library_add_fluid_boundary(mhs_library_t* l,
-    mhs_fluid_bc_t kind, double value, const double* inlet_temperature, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_library_add_fluid_boundary(
+    mhs_library_t* l, mhs_fluid_bc_t kind, double value, const double* inlet_temperature, mhs_index_t* out_id)
 {
-    CHECK_NULL(l); CHECK_NULL(out_id);
+    CHECK_NULL(l);
+    CHECK_NULL(out_id);
     MHS_TRY({
         if (!std::isfinite(value) || (inlet_temperature && !std::isfinite(*inlet_temperature)))
             throw std::invalid_argument("fluid boundary values must be finite");
         const auto temp = inlet_temperature ? std::optional<double>(*inlet_temperature) : std::nullopt;
         mhs::model::FluidBoundaryCondition bc;
         switch (kind) {
-        case MHS_FLUID_PRESSURE_INLET: bc = mhs::model::PressureInlet {value, temp}; break;
-        case MHS_FLUID_MASS_FLOW_INLET: bc = mhs::model::MassFlowInlet {value, temp}; break;
-        case MHS_FLUID_OUTLET: bc = mhs::model::PressureOutlet {value}; break;
-        default: throw std::invalid_argument("invalid fluid boundary kind");
+        case MHS_FLUID_PRESSURE_INLET:
+            bc = mhs::model::PressureInlet {value, temp};
+            break;
+        case MHS_FLUID_MASS_FLOW_INLET:
+            bc = mhs::model::MassFlowInlet {value, temp};
+            break;
+        case MHS_FLUID_OUTLET:
+            bc = mhs::model::PressureOutlet {value};
+            break;
+        default:
+            throw std::invalid_argument("invalid fluid boundary kind");
         }
         *out_id = l->def->add_fluid_boundary(std::move(bc));
     });
 }
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m,
-    const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
 {
     CHECK_NULL(m);
     MHS_TRY({

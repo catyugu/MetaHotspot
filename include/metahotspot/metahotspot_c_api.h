@@ -304,8 +304,8 @@ MHS_API mhs_status_t mhs_library_add_function_periodic_piecewise_constant(
 /** Named point probe, with three finite SI coordinates copied into the model. */
 MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3]);
 /* Reusable fluid law, assigned independently to model surface regions. */
-MHS_API mhs_status_t mhs_library_add_fluid_boundary(mhs_library_t* l, mhs_fluid_bc_t kind,
-    double value, const double* inlet_temperature, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_library_add_fluid_boundary(
+    mhs_library_t* l, mhs_fluid_bc_t kind, double value, const double* inlet_temperature, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_add_fluid_boundary(
     mhs_model_t* m, const mhs_surface_region_t* regions, size_t count, mhs_index_t condition);
 

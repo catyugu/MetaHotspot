@@ -102,7 +102,8 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
 TEST(DiscreteMesh, TemperatureDependentDirichletTemperatureIsRejected)
 {
     auto d = cube_definition();
-    d.thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, d.library().add_thermal_boundary(mhs::model::DirichletBoundary {"300 + 0.1*T"})}};
+    d.thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}},
+        d.library().add_thermal_boundary(mhs::model::DirichletBoundary {"300 + 0.1*T"})}};
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
 }
 

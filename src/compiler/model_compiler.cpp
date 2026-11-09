@@ -114,7 +114,8 @@ namespace mhs::compiler {
         auto& boundary_conditions = model.boundary_conditions;
         for (const auto& condition : library.thermal_boundaries)
             boundary_conditions.push_back(compile_thermal_boundary(condition, symbols));
-        auto compiled_boundaries = compile_thermal_boundaries(definition.thermal_boundaries, boundary_conditions.size());
+        auto compiled_boundaries
+            = compile_thermal_boundaries(definition.thermal_boundaries, boundary_conditions.size());
 
         auto default_thermal_boundary = definition.default_thermal_boundary;
         if (default_thermal_boundary == mhs::core::invalid_id) {

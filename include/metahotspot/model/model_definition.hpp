@@ -7,8 +7,8 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
-#include <utility>
 #include <string>
+#include <utility>
 #include <variant>
 
 namespace mhs::model {

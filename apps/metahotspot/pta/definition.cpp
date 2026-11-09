@@ -84,10 +84,11 @@ namespace mhs::app::pta {
         };
         for (auto& condition : def.model.library().thermal_boundaries)
             normalize_boundary(condition);
- 
+
         for (auto& layer : def.layers)
             for (auto& block : layer.blocks) {
-                const bool names_function = std::any_of(def.model.library().functions.begin(), def.model.library().functions.end(),
+                const bool names_function = std::any_of(
+                    def.model.library().functions.begin(), def.model.library().functions.end(),
                     [&](const mhs::model::NamedFunction& function) {
                         return function.name == block.volumetric_heat_source;
                     });
@@ -123,8 +124,8 @@ namespace mhs::app::pta {
             const auto& layer = pta.layers[l];
             mhs::core::Vector<mhs::model::VolumeSpec> volumes;
             for (const auto& b : layer.blocks) {
-                auto mat = std::find_if(
-                    out.library().materials.begin(), out.library().materials.end(), [&](const auto& m) { return m.name == b.material; });
+                auto mat = std::find_if(out.library().materials.begin(), out.library().materials.end(),
+                    [&](const auto& m) { return m.name == b.material; });
                 if (mat == out.library().materials.end())
                     throw std::invalid_argument("unknown material: " + b.material);
                 mhs::model::VolumeSpec v;

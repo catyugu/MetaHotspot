@@ -132,10 +132,11 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
 {
     using namespace mhs::model;
     auto d = single_fluid_cell();
-    d.model.fluid_boundaries = {
-        {{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}}, d.model.library().add_fluid_boundary(MassFlowInlet {2, 280})},
-        {{{Axis::X, 0, {0.8, 1, 0, 1}}}, d.model.library().add_fluid_boundary(MassFlowInlet {3, 320})},
-        {{{Axis::X, 1, {0, 1, 0, 1}}}, d.model.library().add_fluid_boundary(PressureOutlet {0})}};
+    d.model.fluid_boundaries
+        = {{{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}},
+               d.model.library().add_fluid_boundary(MassFlowInlet {2, 280})},
+            {{{Axis::X, 0, {0.8, 1, 0, 1}}}, d.model.library().add_fluid_boundary(MassFlowInlet {3, 320})},
+            {{{Axis::X, 1, {0, 1, 0, 1}}}, d.model.library().add_fluid_boundary(PressureOutlet {0})}};
     auto verify = [&](const mhs::model::Model& model) {
         const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
@@ -158,7 +159,7 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     // outlet supplies fluid when its pressure is higher than the inlet's.
     d.model.fluid_boundaries
         = {{{{Axis::X, 0, {0, 1, 0, 1}}}, d.model.library().add_fluid_boundary(PressureInlet {0, 280})},
-           {{{Axis::X, 1, {0, 1, 0, 1}}}, d.model.library().add_fluid_boundary(PressureOutlet {1})}};
+            {{{Axis::X, 1, {0, 1, 0, 1}}}, d.model.library().add_fluid_boundary(PressureOutlet {1})}};
     auto reverse = test_pta::build_model(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {
@@ -176,7 +177,8 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     };
     verify_reverse(reverse, 300);
 
-    std::get<PressureOutlet>(d.model.library().fluid_boundaries[d.model.fluid_boundaries.back().condition]).pressure = 0;
+    std::get<PressureOutlet>(d.model.library().fluid_boundaries[d.model.fluid_boundaries.back().condition]).pressure
+        = 0;
     const auto stagnant = test_pta::build_model(d);
     const auto zero = mhs::solver::assemble_thermal(stagnant, mhs::core::Vector<double> {300}, 0);
     EXPECT_DOUBLE_EQ(zero.f[0], 0);
