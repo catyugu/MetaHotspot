@@ -142,13 +142,13 @@ def _int32_ptr(array: np.ndarray):
 _CELL_FIELD_SPECS = (
     ("cell_min", ctypes.c_double, np.float64, "cell_count", 3),
     ("cell_max", ctypes.c_double, np.float64, "cell_count", 3),
-    ("material_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
+    ("material_index", ctypes.c_uint32, np.uint32, "cell_count", 1),
     ("face_minus", ctypes.c_uint32, np.uint32, "face_count", 1),
     ("face_plus", ctypes.c_uint32, np.uint32, "face_count", 1),
     ("face_axis", ctypes.c_int32, np.int32, "face_count", 1),
     ("face_bounds", ctypes.c_double, np.float64, "face_count", 4),
     ("projection_cell", ctypes.c_uint32, np.uint32, "projection_count", 1),
-    ("projection_source", ctypes.c_uint32, np.uint32, "projection_count", 1),
+    ("projection_source_index", ctypes.c_uint32, np.uint32, "projection_count", 1),
     ("projection_volume", ctypes.c_double, np.float64, "projection_count", 1),
     ("projection_center", ctypes.c_double, np.float64, "projection_count", 3),
 )
@@ -424,7 +424,7 @@ class Compiled(OwnedHandle):
                 values,
                 (
                     self._cell_dofs()[fields.projection_cell],
-                    fields.projection_source,
+                    fields.projection_source_index,
                 ),
             ),
             shape=(self.info.state_count, self.info.source_count),

@@ -6,6 +6,7 @@ import pytest
 from metahotspot import (
     Convection,
     Dirichlet,
+    Library,
     Model,
     Neumann,
     RomPortPatch,
@@ -16,7 +17,7 @@ from metahotspot.enums import Axis, StudyType
 
 
 def test_rom_only_state_layout_initialization_and_steady_solve():
-    model = Model()
+    model = Model(Library())
     rom = model.add_reduced_component(
         np.array([[2.0]]),
         np.array([[1.0]]),
@@ -38,14 +39,17 @@ def test_rom_only_state_layout_initialization_and_steady_solve():
 
 
 def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
-    model = Model()
+    model = Model(Library())
     assert model.add_cartesian_component() == 0
     model.set_cartesian_mesh([0, 1], [0, 1], [0, 1])
-    solid = model.add_material("solid", "1", "1", "1", "1", "1")
+    solid = model.library.add_material("solid", "1", "1", "1", "1", "1")
     volume = model.add_volume(solid)
     model.add_box(volume, (0, 0, 0), (1, 1, 1))
-    model.set_default_thermal_boundary(Neumann("0"))
-    model.add_thermal_boundary([SurfaceRegion(Axis.X, 0, 0, 1, 0, 1)], Dirichlet("300"))
+    model.set_default_thermal_boundary(model.library.add_thermal_boundary(Neumann("0")))
+    model.add_thermal_boundary(
+        [SurfaceRegion(Axis.X, 0, 0, 1, 0, 1)],
+        model.library.add_thermal_boundary(Dirichlet("300")),
+    )
     a = model.add_port(0, "fom-join", SurfaceRegion(Axis.X, 1, 0, 1, 0, 1))
     rom = model.add_reduced_component(
         np.array([[2.0]]),
@@ -68,7 +72,9 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
     model.set_cartesian_mesh([3, 4], [0, 1], [0, 1], component=extra)
     extra_volume = model.add_volume(solid, component=extra)
     model.add_box(extra_volume, (3, 0, 0), (4, 1, 1), component=extra)
-    model.set_default_thermal_boundary(Dirichlet("300"), component=extra)
+    model.set_default_thermal_boundary(
+        model.library.add_thermal_boundary(Dirichlet("300")), component=extra
+    )
 
     compiled = model.compile()
     assert compiled.info.component_count == 3
@@ -96,7 +102,7 @@ def test_fom_rom_connection_conserves_flux_and_reconstructs_probe():
 
 @pytest.mark.parametrize("htc", [100.0, 200.0])
 def test_rom_exposed_port_uses_regular_convection(htc):
-    model = Model()
+    model = Model(Library())
     domain = model.add_reduced_component(
         np.array([[2.0]]), np.array([[1.0]]), np.array([0.0])
     )
@@ -109,7 +115,7 @@ def test_rom_exposed_port_uses_regular_convection(htc):
     )
     model.add_thermal_boundary(
         [SurfaceRegion(Axis.Z, 1, 0, 0.1, 0, 0.1)],
-        Convection(str(htc), "300"),
+        model.library.add_thermal_boundary(Convection(str(htc), "300")),
         component=domain,
     )
     compiled = model.compile()

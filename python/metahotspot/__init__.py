@@ -4,7 +4,8 @@ Usage::
 
     import metahotspot
 
-    model = metahotspot.Model()
+    library = metahotspot.Library()
+    model = metahotspot.Model(library)
     model.add_cartesian_component()
     # Construct SI volumes and mesh axes before compiling.
     compiled = model.compile()
@@ -21,6 +22,7 @@ from metahotspot.logging import get_log_level, set_log_level
 from metahotspot.model import (
     Convection,
     Dirichlet,
+    Library,
     Model,
     Neumann,
     RomPortPatch,
@@ -36,6 +38,7 @@ __all__ = [
     "Compiled",
     "Convection",
     "Dirichlet",
+    "Library",
     "MetaHotspotError",
     "Model",
     "Neumann",

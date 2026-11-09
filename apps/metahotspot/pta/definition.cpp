@@ -54,7 +54,7 @@ namespace mhs::app::pta {
 
     static void normalize_pta_expressions(Definition& def)
     {
-        for (auto& named : def.model.materials) {
+        for (auto& named : def.model.library().edit_materials()) {
             auto& material = named.value;
             material.conductivity_x = rewrite_formal_argument(material.conductivity_x, "T");
             material.conductivity_y = rewrite_formal_argument(material.conductivity_y, "T");
@@ -82,16 +82,17 @@ namespace mhs::app::pta {
                 },
                 boundary);
         };
-        normalize_boundary(def.model.fom(0).default_thermal_boundary);
-        for (auto& boundary : def.model.component(0).thermal_boundaries)
-            normalize_boundary(boundary.condition);
+        auto& library = def.model.library();
+        for (auto& boundary : library.edit_thermal_boundaries())
+            normalize_boundary(boundary);
 
+        const auto& functions = library.functions();
         for (auto& layer : def.layers)
             for (auto& block : layer.blocks) {
-                const bool names_function = std::any_of(def.model.functions.begin(), def.model.functions.end(),
-                    [&](const mhs::model::NamedFunction& function) {
-                        return function.name == block.volumetric_heat_source;
-                    });
+                const bool names_function
+                    = std::any_of(functions.begin(), functions.end(), [&](const mhs::model::NamedFunction& function) {
+                          return function.name == block.volumetric_heat_source;
+                      });
                 if (names_function)
                     block.volumetric_heat_source += "(t)";
                 else
@@ -124,14 +125,9 @@ namespace mhs::app::pta {
             const auto& layer = pta.layers[l];
             mhs::core::Vector<mhs::model::VolumeSpec> volumes;
             for (const auto& b : layer.blocks) {
-                auto mat = std::find_if(
-                    out.materials.begin(), out.materials.end(), [&](const auto& m) { return m.name == b.material; });
-                if (mat == out.materials.end())
-                    throw std::invalid_argument("unknown material: " + b.material);
                 mhs::model::VolumeSpec v;
-                v.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
-                v.source = static_cast<mhs::model::SourceId>(out.sources.size());
-                out.sources.push_back(b.volumetric_heat_source);
+                v.material = out.library().material_id(b.material);
+                v.source = out.library().add_source(b.volumetric_heat_source);
                 const double x = eval(layer.x_offset) + eval(b.x_offset), y = eval(layer.y_offset) + eval(b.y_offset);
                 const double top = z + ((l == 0 && b.thickness) ? eval(*b.thickness) : thickness[l]);
                 for (const auto& op : b.geometry) {

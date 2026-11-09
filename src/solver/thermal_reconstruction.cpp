@@ -30,12 +30,12 @@ namespace mhs::solver {
     }
 
     namespace {
-        double conductivity(const mhs::model::FomDomain& model, std::span<const double> temperature,
-            mhs::model::CellId cell, double time, int axis)
+        double conductivity(const mhs::model::FomDomain& model, const mhs::model::CompiledLibrary& library,
+            std::span<const double> temperature, mhs::model::CellId cell, double time, int axis)
         {
             const auto p = model.discrete.cells[cell].center();
             const mhs::expression::FieldContext ctx {p[0], p[1], p[2], temperature[cell], time};
-            const auto& m = model.material_table[model.cell_material[cell]];
+            const auto& m = library.material_table[model.cell_material[cell]];
             return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval(ctx);
         }
 
@@ -82,13 +82,14 @@ namespace mhs::solver {
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
         // use the same two-point thermal-resistance law as the diffusion assembly.
         mhs::model::Vec3 reconstruct_cell_gradient(const mhs::model::FomDomain& model,
-            std::span<const double> temperature, double time, mhs::model::CellId cell,
-            std::span<const SurfaceTrace> interfaces)
+            const mhs::model::CompiledLibrary& library, std::span<const double> temperature, double time,
+            mhs::model::CellId cell, std::span<const SurfaceTrace> interfaces)
         {
             using namespace mhs::core;
             using namespace mhs::model;
-            const Vec3 k {conductivity(model, temperature, cell, time, 0),
-                conductivity(model, temperature, cell, time, 1), conductivity(model, temperature, cell, time, 2)};
+            const Vec3 k {conductivity(model, library, temperature, cell, time, 0),
+                conductivity(model, library, temperature, cell, time, 1),
+                conductivity(model, library, temperature, cell, time, 2)};
             Vec3 gradient {};
             for (auto id : model.discrete.incident_faces(cell)) {
                 const auto& f = model.discrete.faces[id];
@@ -98,16 +99,18 @@ namespace mhs::solver {
                 const auto neighbor = f.minus == cell ? f.plus : f.minus;
                 const double a = (model.discrete.cells[cell].size()[axis] / 2) / k[axis];
                 const double b = (model.discrete.cells[neighbor].size()[axis] / 2)
-                    / conductivity(model, temperature, neighbor, time, static_cast<int>(f.axis));
+                    / conductivity(model, library, temperature, neighbor, time, static_cast<int>(f.axis));
                 const double trace = (b * temperature[cell] + a * temperature[neighbor]) / (a + b);
                 gradient[axis] += (f.minus == cell ? 1 : -1) * f.area() * trace;
             }
             for (const auto& term : boundary_faces_on_cell(model, cell)) {
                 const auto axis = static_cast<std::size_t>(term.axis);
                 const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
-                const auto trace = evaluate_boundary(model.boundary_conditions[term.condition],
-                    boundary_center(model.discrete.cells[cell], term), area,
-                    model.discrete.cells[cell].size()[axis] / 2, temperature[cell], k[axis], time);
+                const auto trace = term.condition == mhs::core::invalid_id
+                    ? BoundaryTrace {temperature[cell], 0.0, 0.0}
+                    : evaluate_boundary(library.boundary_conditions[term.condition],
+                          boundary_center(model.discrete.cells[cell], term), area,
+                          model.discrete.cells[cell].size()[axis] / 2, temperature[cell], k[axis], time);
                 gradient[axis] += term.sign * area * trace.temperature;
             }
             for (const auto& trace : interfaces)
@@ -213,23 +216,29 @@ namespace mhs::solver {
             condition);
     }
 
-    std::optional<double> boundary_value_at(const mhs::model::FomDomain& model, std::span<const double> temperature,
-        double time, mhs::model::CellId cell, const mhs::model::Vec3& p)
+    std::optional<double> boundary_value_at(const mhs::model::FomDomain& model,
+        const mhs::model::CompiledLibrary& library, std::span<const double> temperature, double time,
+        mhs::model::CellId cell, const mhs::model::Vec3& p)
     {
         if (cell == mhs::core::invalid_id)
             return std::nullopt;
         const double cell_temperature = temperature[cell];
         double sum = 0, dirichlet_sum = 0;
         size_t count = 0, dirichlet_count = 0;
+        bool adiabatic = false;
         for (const auto& term : boundary_faces_on_cell(model, cell)) {
             const auto axis = static_cast<std::size_t>(term.axis);
             const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
             if (!boundary_contains(model.discrete.cells[term.cell], term, p))
                 continue;
-            const auto& condition = model.boundary_conditions[term.condition];
+            if (term.condition == mhs::core::invalid_id) {
+                adiabatic = true;
+                continue;
+            }
+            const auto& condition = library.boundary_conditions[term.condition];
             const double trace = evaluate_boundary(condition, boundary_center(model.discrete.cells[term.cell], term),
                 area, (model.discrete.cells[cell].size()[axis] / 2), cell_temperature,
-                conductivity(model, temperature, cell, time, static_cast<int>(term.axis)), time)
+                conductivity(model, library, temperature, cell, time, static_cast<int>(term.axis)), time)
                                      .temperature;
             sum += trace;
             ++count;
@@ -242,20 +251,23 @@ namespace mhs::solver {
             return dirichlet_sum / static_cast<double>(dirichlet_count);
         if (count)
             return sum / static_cast<double>(count);
+        if (adiabatic)
+            return cell_temperature;
         return std::nullopt;
     }
 
-    double sample_point(const mhs::model::FomDomain& model, std::span<const double> temperature, double time,
-        mhs::model::CellId cell, const mhs::model::Vec3& p, std::span<const SurfaceTrace> interfaces)
+    double sample_point(const mhs::model::FomDomain& model, const mhs::model::CompiledLibrary& library,
+        std::span<const double> temperature, double time, mhs::model::CellId cell, const mhs::model::Vec3& p,
+        std::span<const SurfaceTrace> interfaces)
     {
         if (cell == mhs::core::invalid_id)
             return std::numeric_limits<double>::quiet_NaN();
-        if (const auto trace = boundary_value_at(model, temperature, time, cell, p))
+        if (const auto trace = boundary_value_at(model, library, temperature, time, cell, p))
             return *trace;
         for (const auto& trace : interfaces)
             if (trace.face.cell == cell && boundary_contains(model.discrete.cells[cell], trace.face, p))
                 return trace.temperature;
-        const auto gradient = reconstruct_cell_gradient(model, temperature, time, cell, interfaces);
+        const auto gradient = reconstruct_cell_gradient(model, library, temperature, time, cell, interfaces);
         const auto center = model.discrete.cells[cell].center();
         return temperature[cell] + gradient[0] * (p[0] - center[0]) + gradient[1] * (p[1] - center[1])
             + gradient[2] * (p[2] - center[2]);

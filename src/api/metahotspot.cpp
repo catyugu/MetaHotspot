@@ -71,8 +71,12 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts);
 /*  Opaque handle structs  (exposed to both core and macromodel TUs)   */
 /* ------------------------------------------------------------------ */
 
+struct mhs_library_t {
+    std::shared_ptr<mhs::model::LibraryDefinition> def = std::make_shared<mhs::model::LibraryDefinition>();
+};
 struct mhs_model_t {
     mhs::model::ModelDefinition def;
+    explicit mhs_model_t(std::shared_ptr<mhs::model::LibraryDefinition> library) : def(std::move(library)) { }
 };
 
 struct mhs_compiled_t {
@@ -121,17 +125,15 @@ static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double co
     return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}};
 }
 
-template <typename Boundary> static void _add_thermal_boundary(
-    mhs_model_t* m, mhs_index_t component, const mhs_surface_region_t* regions, size_t n_regions, Boundary condition)
+static mhs::core::Vector<mhs::model::SurfaceRegion> _surface_regions(const mhs_surface_region_t* regions, size_t count)
 {
-    if (!n_regions)
+    if (!count)
         throw std::invalid_argument("surface regions must not be empty");
-    mhs::model::ThermalBoundarySpec bp;
-    bp.condition = std::move(condition);
-    bp.regions.reserve(n_regions);
-    for (size_t i = 0; i < n_regions; ++i)
-        bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    m->def.component(component).thermal_boundaries.push_back(std::move(bp));
+    mhs::core::Vector<mhs::model::SurfaceRegion> out;
+    out.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+        out.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+    return out;
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -211,20 +213,19 @@ static mhs::model::Study to_study(const mhs_study_t& value)
     return study;
 }
 
-MHS_API mhs_status_t mhs_model_create(mhs_model_t** out)
+MHS_API mhs_status_t mhs_library_create(mhs_library_t** out)
 {
     CHECK_NULL(out);
     *out = nullptr;
-    try {
-        *out = new mhs_model_t {};
-        mhs_detail_clear_last_error();
-        return MHS_OK;
-    }
-    catch (const std::bad_alloc&) {
-        *out = nullptr;
-        SET_ERR("memory allocation failed");
-        return MHS_ERROR;
-    }
+    MHS_TRY({ *out = new mhs_library_t {}; });
+}
+MHS_API void mhs_library_destroy(mhs_library_t* library) { delete library; }
+MHS_API mhs_status_t mhs_model_create(mhs_library_t* library, mhs_model_t** out)
+{
+    CHECK_NULL(out);
+    *out = nullptr;
+    CHECK_NULL(library);
+    MHS_TRY({ *out = new mhs_model_t(library->def); });
 }
 
 MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
@@ -234,9 +235,8 @@ MHS_API mhs_status_t mhs_model_add_cartesian_component(mhs_model_t* m, mhs_index
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        const auto id = static_cast<mhs_index_t>(m->def.components.size());
-        m->def.components.emplace_back();
-        *out_id = id;
+        *out_id = static_cast<mhs_index_t>(m->def.components.size());
+        m->def.add_component();
     });
 }
 MHS_API mhs_status_t mhs_model_add_reduced_component(mhs_model_t* m, size_t order, const double* stiffness,
@@ -251,7 +251,6 @@ MHS_API mhs_status_t mhs_model_add_reduced_component(mhs_model_t* m, size_t orde
         if (!order || order > static_cast<size_t>(std::numeric_limits<mhs_index_t>::max())
             || order > static_cast<size_t>(std::numeric_limits<mhs::core::SparseIndex>::max()) / order)
             throw std::invalid_argument("invalid ROM order");
-        const auto id = static_cast<mhs_index_t>(m->def.components.size());
         mhs::model::RomDomainDefinition rom;
         rom.order = order;
         rom.K.assign(stiffness, stiffness + order * order);
@@ -259,9 +258,8 @@ MHS_API mhs_status_t mhs_model_add_reduced_component(mhs_model_t* m, size_t orde
         rom.f.assign(rhs, rhs + order);
         if (initial)
             rom.initial_state.assign(initial, initial + order);
-        auto& component = m->def.components.emplace_back();
-        component.physics.emplace<mhs::model::RomDomainDefinition>(std::move(rom));
-        *out_id = id;
+        *out_id = static_cast<mhs_index_t>(m->def.components.size());
+        m->def.add_component().physics.emplace<mhs::model::RomDomainDefinition>(std::move(rom));
     });
 }
 
@@ -426,22 +424,24 @@ MHS_API mhs_status_t mhs_model_set_flow_mode(mhs_model_t* m, mhs_index_t compone
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression)
+MHS_API mhs_status_t mhs_library_add_variable(
+    mhs_library_t* library, const char* name, const char* expression, mhs_index_t* out_id)
 {
-    CHECK_NULL(m);
+    CHECK_NULL(library);
     CHECK_NULL(name);
     CHECK_NULL(expression);
-    MHS_TRY({ m->def.variables.push_back({name, expression}); });
+    CHECK_NULL(out_id);
+    MHS_TRY({ *out_id = library->def->add_variable({name, expression}); });
 }
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  materials, sources, volumes           */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
+MHS_API mhs_status_t mhs_library_add_material(mhs_library_t* library, const char* name, const char* kx, const char* ky,
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id)
 {
-    CHECK_NULL(m);
+    CHECK_NULL(library);
     CHECK_NULL(name);
     CHECK_NULL(out_id);
     CHECK_NULL(kx);
@@ -450,31 +450,21 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
     CHECK_NULL(rho);
     CHECK_NULL(c);
     MHS_TRY({
-        mhs::model::MaterialSpec spec;
-        spec.conductivity_x = kx;
-        spec.conductivity_y = ky;
-        spec.conductivity_z = kz;
-        spec.density = rho;
-        spec.specific_heat = c;
-        if (dynamic_viscosity) {
-            if (!dynamic_viscosity[0])
-                throw std::invalid_argument("dynamic viscosity expression must not be empty");
-            spec.dynamic_viscosity = std::string(dynamic_viscosity);
-        }
-        *out_id = static_cast<mhs_index_t>(m->def.materials.size());
-        m->def.materials.push_back({name, std::move(spec)});
+        if (dynamic_viscosity && !dynamic_viscosity[0])
+            throw std::invalid_argument("dynamic viscosity expression must not be empty");
+        mhs::model::MaterialSpec spec {kx, ky, kz, rho, c, std::nullopt};
+        if (dynamic_viscosity)
+            spec.dynamic_viscosity = dynamic_viscosity;
+        *out_id = library->def->add_material({name, std::move(spec)});
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_library_add_source(mhs_library_t* library, const char* expression, mhs_index_t* out_id)
 {
-    CHECK_NULL(m);
+    CHECK_NULL(library);
     CHECK_NULL(expression);
     CHECK_NULL(out_id);
-    MHS_TRY({
-        *out_id = static_cast<mhs_index_t>(m->def.sources.size());
-        m->def.sources.push_back(expression);
-    });
+    MHS_TRY({ *out_id = library->def->add_source(expression); });
 }
 MHS_API mhs_status_t mhs_model_add_volume(
     mhs_model_t* m, mhs_index_t component, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
@@ -482,10 +472,9 @@ MHS_API mhs_status_t mhs_model_add_volume(
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        if (material >= m->def.materials.size())
-            throw std::out_of_range("material ID out of range");
-        if (source != MHS_INVALID_INDEX && source >= m->def.sources.size())
-            throw std::out_of_range("source ID out of range");
+        (void)m->def.library().material(material);
+        if (source != MHS_INVALID_INDEX)
+            (void)m->def.library().source(source);
         *out_id = static_cast<mhs_index_t>(m->def.fom(component).volumes.size());
         m->def.fom(component).volumes.push_back({material, source, {}});
     });
@@ -536,120 +525,130 @@ namespace {
     }
 }
 
-MHS_API mhs_status_t mhs_model_add_thermal_boundary(mhs_model_t* m, mhs_index_t component,
-    const mhs_surface_region_t* regions, size_t count, const mhs_thermal_bc_t* condition)
+MHS_API mhs_status_t mhs_library_add_thermal_boundary(
+    mhs_library_t* library, const mhs_thermal_bc_t* condition, mhs_index_t* out_id)
+{
+    CHECK_NULL(library);
+    CHECK_NULL(condition);
+    CHECK_NULL(out_id);
+    MHS_TRY({ *out_id = library->def->add_thermal_boundary(to_thermal_boundary(*condition)); });
+}
+MHS_API mhs_status_t mhs_model_add_thermal_boundary(
+    mhs_model_t* m, mhs_index_t component, const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
-    CHECK_NULL(condition);
-    MHS_TRY({ _add_thermal_boundary(m, component, regions, count, to_thermal_boundary(*condition)); });
+    MHS_TRY({
+        (void)m->def.library().thermal_boundary(condition);
+        m->def.component(component).thermal_boundaries.push_back({_surface_regions(regions, count), condition});
+    });
 }
 
 MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(
-    mhs_model_t* m, mhs_index_t component, const mhs_thermal_bc_t* condition)
+    mhs_model_t* m, mhs_index_t component, mhs_index_t condition)
 {
     CHECK_NULL(m);
-    CHECK_NULL(condition);
-    MHS_TRY({ m->def.fom(component).default_thermal_boundary = to_thermal_boundary(*condition); });
+    MHS_TRY({
+        (void)m->def.library().thermal_boundary(condition);
+        m->def.fom(component).default_thermal_boundary = condition;
+    });
 }
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  function library                            */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression)
+namespace {
+    template <class Spec>
+    mhs_status_t add_function(mhs_library_t* library, const char* name, Spec spec, mhs_index_t* out_id)
+    {
+        CHECK_NULL(library);
+        CHECK_NULL(name);
+        CHECK_NULL(out_id);
+        MHS_TRY({ *out_id = library->def->add_function({name, std::move(spec)}); });
+    }
+}
+
+MHS_API mhs_status_t mhs_library_add_function_expr(
+    mhs_library_t* library, const char* name, const char* expression, mhs_index_t* out_id)
 {
-    CHECK_NULL(m);
-    CHECK_NULL(name);
     CHECK_NULL(expression);
-    MHS_TRY({ m->def.functions.push_back({name, mhs::model::ExpressionFunctionSpec {expression}}); });
+    return add_function(library, name, mhs::model::ExpressionFunctionSpec {expression}, out_id);
 }
 
-MHS_API mhs_status_t mhs_model_add_function_gauss(
-    mhs_model_t* m, const char* name, double amplitude, double tau, double center)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(name);
-    MHS_TRY({ m->def.functions.push_back({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}}); });
-}
+MHS_API mhs_status_t mhs_library_add_function_gauss(
+    mhs_library_t* library, const char* name, double amplitude, double tau, double center, mhs_index_t* out_id)
+{ return add_function(library, name, mhs::model::GaussFunctionSpec {amplitude, tau, center}, out_id); }
 
-MHS_API mhs_status_t mhs_model_add_function_sine(
-    mhs_model_t* m, const char* name, double amplitude, double angular_frequency, double phase)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(name);
-    MHS_TRY(
-        { m->def.functions.push_back({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}}); });
-}
+MHS_API mhs_status_t mhs_library_add_function_sine(mhs_library_t* library, const char* name, double amplitude,
+    double angular_frequency, double phase, mhs_index_t* out_id)
+{ return add_function(library, name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}, out_id); }
 
-MHS_API mhs_status_t mhs_model_add_function_double_exponential(
-    mhs_model_t* m, const char* name, double amplitude, double alpha, double beta)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(name);
-    MHS_TRY(
-        { m->def.functions.push_back({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}}); });
-}
+MHS_API mhs_status_t mhs_library_add_function_double_exponential(
+    mhs_library_t* library, const char* name, double amplitude, double alpha, double beta, mhs_index_t* out_id)
+{ return add_function(library, name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}, out_id); }
 
-MHS_API mhs_status_t mhs_model_add_function_piecewise(
-    mhs_model_t* m, const char* name, const mhs_point2d_t* points, size_t count)
+MHS_API mhs_status_t mhs_library_add_function_piecewise(
+    mhs_library_t* library, const char* name, const mhs_point2d_t* points, size_t count, mhs_index_t* out_id)
 {
-    CHECK_NULL(m);
-    CHECK_NULL(name);
     CHECK_NULL(points);
-    MHS_TRY({
-        mhs::model::PiecewiseFunctionSpec spec;
-        for (size_t i = 0; i < count; ++i)
-            spec.points.push_back({points[i].x, points[i].y});
-        m->def.functions.push_back({name, std::move(spec)});
-    });
+    mhs::model::PiecewiseFunctionSpec spec;
+    for (size_t i = 0; i < count; ++i)
+        spec.points.push_back({points[i].x, points[i].y});
+    return add_function(library, name, std::move(spec), out_id);
 }
 
-MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
-    mhs_model_t* m, const char* name, const double* values, size_t count, double period)
+MHS_API mhs_status_t mhs_library_add_function_periodic_piecewise_constant(
+    mhs_library_t* library, const char* name, const double* values, size_t count, double period, mhs_index_t* out_id)
 {
-    CHECK_NULL(m);
-    CHECK_NULL(name);
     CHECK_NULL(values);
-    MHS_TRY({
-        mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
-        spec.period = period;
-        spec.values.assign(values, values + count);
-        m->def.functions.push_back({name, std::move(spec)});
-    });
+    mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
+    spec.period = period;
+    spec.values.assign(values, values + count);
+    return add_function(library, name, std::move(spec), out_id);
 }
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  probes and fluid boundaries                */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, mhs_index_t component,
-    const mhs_surface_region_t* regions, size_t n_regions, mhs_fluid_bc_t kind, double value,
-    const double* inlet_temperature)
+MHS_API mhs_status_t mhs_library_add_fluid_boundary(
+    mhs_library_t* library, mhs_fluid_bc_t kind, double value, const double* inlet_temperature, mhs_index_t* out_id)
 {
-    CHECK_NULL(m);
-    CHECK_NULL(regions);
+    CHECK_NULL(library);
+    CHECK_NULL(out_id);
     MHS_TRY({
-        if (!n_regions || !std::isfinite(value) || (inlet_temperature && !std::isfinite(*inlet_temperature)))
+        if (!std::isfinite(value) || (inlet_temperature && !std::isfinite(*inlet_temperature)))
             throw std::invalid_argument("fluid boundary requires regions and finite values");
-        mhs::model::FluidBoundarySpec fb;
-        for (size_t i = 0; i < n_regions; ++i)
-            fb.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+        mhs::model::FluidBoundaryCondition condition;
         const auto temperature = inlet_temperature ? std::optional<double>(*inlet_temperature) : std::nullopt;
         switch (kind) {
         case MHS_FLUID_PRESSURE_INLET:
-            fb.condition = mhs::model::PressureInlet {value, temperature};
+            condition = mhs::model::PressureInlet {value, temperature};
             break;
         case MHS_FLUID_MASS_FLOW_INLET:
-            fb.condition = mhs::model::MassFlowInlet {value, temperature};
+            condition = mhs::model::MassFlowInlet {value, temperature};
             break;
         case MHS_FLUID_OUTLET:
-            fb.condition = mhs::model::PressureOutlet {value, temperature};
+            condition = mhs::model::PressureOutlet {value, temperature};
             break;
         default:
             throw std::invalid_argument("invalid fluid boundary kind");
         }
-        m->def.fom(component).fluid_boundaries.push_back(std::move(fb));
+        *out_id = library->def->add_fluid_boundary(std::move(condition));
+    });
+}
+
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(
+    mhs_model_t* m, mhs_index_t component, const mhs_surface_region_t* regions, size_t n_regions, mhs_index_t condition)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(regions);
+    MHS_TRY({
+        if (!n_regions)
+            throw std::invalid_argument("fluid boundary assignment must have regions");
+        (void)m->def.library().fluid_boundary(condition);
+        m->def.fom(component).fluid_boundaries.push_back({_surface_regions(regions, n_regions), condition});
     });
 }
 
@@ -662,11 +661,7 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     CHECK_NULL(out);
     *out = nullptr;
     CHECK_NULL(m);
-    MHS_TRY({
-        auto c = std::make_unique<mhs_compiled_t>();
-        c->model = mhs::compiler::build_model(m->def);
-        *out = c.release();
-    });
+    MHS_TRY({ *out = new mhs_compiled_t {mhs::compiler::build_model(m->def)}; });
 }
 
 MHS_API void mhs_compiled_destroy(mhs_compiled_t* c) { delete c; }
@@ -746,7 +741,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     for (const auto& field : c->model.layout.fields)
         if (field.quantity == mhs::model::FieldQuantity::Temperature) {
             const auto& fom = c->model.fom(field.domain);
-            out->source_count = fom.heat_source_table.size();
+            out->source_count = c->model.library().heat_source_table.size();
             out->cell_count += fom.discrete.cells.size();
             out->face_count += fom.discrete.faces.size();
             out->projection_count += fom.source_terms.size();
@@ -764,19 +759,7 @@ MHS_API mhs_status_t mhs_compiled_default_state(
 {
     CHECK_NULL(c);
     CHECK_NULL(state);
-    MHS_TRY({
-        if (!std::isfinite(initial_temperature) || state_count != c->model.layout.state_count)
-            throw std::invalid_argument("initial state size or temperature is invalid");
-        std::fill_n(state, state_count, 0.0);
-        for (const auto& field : c->model.layout.fields) {
-            if (field.quantity == mhs::model::FieldQuantity::Temperature)
-                std::fill_n(state + field.offset, field.count, initial_temperature);
-            else if (field.quantity == mhs::model::FieldQuantity::ReducedCoordinate) {
-                const auto& initial = c->model.rom(field.domain).initial_state;
-                std::copy(initial.begin(), initial.end(), state + field.offset);
-            }
-        }
-    });
+    MHS_TRY({ mhs::solver::fill_default_state(c->model, initial_temperature, {state, state_count}); });
 }
 
 namespace {
@@ -826,7 +809,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         SET_ERR("CellFields buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
-    if (fields->cell_count && (!fields->cell_min || !fields->cell_max || !fields->material_id)) {
+    if (fields->cell_count && (!fields->cell_min || !fields->cell_max || !fields->material_index)) {
         SET_ERR("NULL cell field buffer");
         return MHS_ERROR;
     }
@@ -836,7 +819,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         return MHS_ERROR;
     }
     if (fields->projection_count
-        && (!fields->projection_cell || !fields->projection_source || !fields->projection_volume
+        && (!fields->projection_cell || !fields->projection_source_index || !fields->projection_volume
             || !fields->projection_center)) {
         SET_ERR("NULL projection field buffer");
         return MHS_ERROR;
@@ -852,7 +835,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
                 fields->cell_min[3 * (cell_offset + cidx) + a] = mesh.cells[cidx].min[a];
                 fields->cell_max[3 * (cell_offset + cidx) + a] = mesh.cells[cidx].max[a];
             }
-            fields->material_id[cell_offset + cidx] = model.cell_material[cidx];
+            fields->material_index[cell_offset + cidx] = model.cell_material[cidx];
         }
         for (size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& face = mesh.faces[id];
@@ -869,7 +852,7 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         for (size_t id = 0; id < model.source_terms.size(); ++id) {
             const auto& term = model.source_terms[id];
             fields->projection_cell[projection_offset + id] = static_cast<mhs_index_t>(cell_offset + term.cell);
-            fields->projection_source[projection_offset + id] = term.source;
+            fields->projection_source_index[projection_offset + id] = term.source_index;
             fields->projection_volume[projection_offset + id] = term.weight;
             for (size_t a = 0; a < 3; ++a)
                 fields->projection_center[3 * (projection_offset + id) + a] = term.point[a];
@@ -902,8 +885,8 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
             const auto& model = c->model.fom(field.domain);
             for (const auto& term : model.source_terms) {
                 const auto& p = term.point;
-                const auto density
-                    = model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[field.dof(term.cell)], time});
+                const auto density = c->model.library().heat_source_table[term.source_index].eval(
+                    {p[0], p[1], p[2], state[field.dof(term.cell)], time});
                 powers[offset++] = term.weight * density;
             }
         }
@@ -936,7 +919,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(
             const auto& mesh = model.discrete;
             for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
                 const auto p = mesh.cells[cell].center();
-                const auto& props = model.material_table[model.cell_material[cell]];
+                const auto& props = c->model.library().material_table[model.cell_material[cell]];
                 const auto dof = field.dof(cell);
                 const mhs::expression::FieldContext context {p[0], p[1], p[2], state[dof], time};
                 values->conductivity_x[offset + cell] = props.kx.eval(context);
@@ -967,9 +950,8 @@ MHS_API mhs_status_t mhs_compiled_assemble(
             return MHS_ERROR;
         }
 
-        auto result = std::make_unique<mhs_operators_t>();
-        result->operators = mhs::solver::assemble_thermal(c->model, std::span<const double>(state, state_count), time);
-        *out = result.release();
+        *out = new mhs_operators_t {
+            mhs::solver::assemble_thermal(c->model, std::span<const double>(state, state_count), time)};
     });
 }
 
@@ -1059,16 +1041,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study
             throw std::invalid_argument("initial state must be NULL/0 or have state_count entries");
         const std::span<const double> init_span(state, state_count);
 
-        auto sol = mhs::solver::solve(c->model, run, init_span, so);
-
-        auto* s = new (std::nothrow) mhs_solution_t;
-        if (!s) {
-            *out = nullptr;
-            SET_ERR("memory allocation failed");
-            return MHS_ERROR;
-        }
-        s->sol = std::move(sol);
-        *out = s;
+        *out = new mhs_solution_t {mhs::solver::solve(c->model, run, init_span, so)};
     });
 }
 

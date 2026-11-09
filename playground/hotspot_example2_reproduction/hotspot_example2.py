@@ -163,7 +163,7 @@ def build_model(
 ) -> metahotspot.Model:
     """Build the MetaHotSpot model for example2."""
     if model is None:
-        model = metahotspot.Model()
+        model = metahotspot.Model(metahotspot.Library())
     m = model
     m.add_cartesian_component()
 
@@ -186,17 +186,17 @@ def build_model(
     m.set_cartesian_mesh(x=X_VERTS, y=Y_VERTS, z=z_verts)
 
     # Material IDs and explicit SI volumes.
-    silicon = m.add_material(
+    silicon = m.library.add_material(
         "silicon", kx="130", ky="130", kz="130", rho="2330", c="700"
     )
-    tim = m.add_material("tim", kx="4", ky="4", kz="4", rho="1200", c="3333.33")
-    aluminum = m.add_material(
+    tim = m.library.add_material("tim", kx="4", ky="4", kz="4", rho="1200", c="3333.33")
+    aluminum = m.library.add_material(
         "aluminum", kx="237", ky="237", kz="237", rho="2700", c="897"
     )
 
     def box(material, lo, hi, source=None):
         volume = m.add_volume(
-            material, m.add_source(source) if source is not None else 0xFFFFFFFF
+            material, m.library.add_source(source) if source is not None else 0xFFFFFFFF
         )
         m.add_box(volume, lo, hi)
 
@@ -234,7 +234,7 @@ def build_model(
             (S_SINK + CHIP_L) / 2,
         ),
     ]
-    m.add_thermal_boundary(_regions, metahotspot.Convection(str(H_CONV), str(T_AMB)))
+    m.add_thermal_boundary(_regions, m.library.add_thermal_boundary(metahotspot.Convection(str(H_CONV), str(T_AMB))))
 
     # -- Probes at each block centroid (in chip layer z=0+) --
     probe_z = T_CHIP / 2.0  # mid-chip
@@ -375,14 +375,14 @@ def main():
     print("=" * 72)
 
     t0 = _time.perf_counter()
-    transient_model = metahotspot.Model()
+    transient_model = metahotspot.Model(metahotspot.Library())
 
     # Register periodic piecewise-constant functions first.
     # HotSpot ptrace: total power (W). Convert to volumetric density (W/m3).
     for name in EV6_NAMES:
         col = EV6_NAMES.index(name)
         q_vol_samples = ptrace[:, col] / block_volume[name]
-        transient_model.add_function_periodic_piecewise_constant(
+        transient_model.library.add_function_periodic_piecewise_constant(
             name=f"power_{name}",
             values=q_vol_samples,
             period=SAMPLING_INTVL,

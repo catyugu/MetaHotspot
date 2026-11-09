@@ -16,7 +16,8 @@ namespace mhs::solver {
     // overwrites numerical buffers, including explicit zero coefficients.
     class ThermalAssembler {
     public:
-        ThermalAssembler(const mhs::model::FomDomain& model, mhs::solver::FrozenFlow flow);
+        ThermalAssembler(const mhs::model::FomDomain& model, const mhs::model::CompiledLibrary& library,
+            mhs::solver::FrozenFlow flow);
         const Operators& assemble(std::span<const double> temperature, double time);
 
         Operators take_operators() && { return std::move(operators_); }
@@ -24,6 +25,7 @@ namespace mhs::solver {
 
     private:
         const mhs::model::FomDomain& model_;
+        const mhs::model::CompiledLibrary& library_;
         mhs::solver::FrozenFlow flow_;
         Operators operators_;
         mhs::core::Vector<mhs::core::SparseIndex> diagonal_positions_;
@@ -48,8 +50,5 @@ namespace mhs::solver {
     };
 
     Operators assemble_thermal(const mhs::model::CompiledModel& compiled, std::span<const double> state, double time);
-
-    // Owning export for the C API and standalone operator inspection.
-    Operators assemble_thermal(const mhs::model::FomDomain& model, std::span<const double> temperature, double time);
 
 } // namespace mhs::solver

@@ -10,8 +10,9 @@ namespace mhs::solver {
     // Reconstruct the local boundary temperature at a point on the specified
     // cell. Coincident patches use Dirichlet precedence. Interior points have
     // no boundary value. State size and cell ID must match the compiled model.
-    std::optional<double> boundary_value_at(const mhs::model::FomDomain& model, std::span<const double> temperature,
-        double time, mhs::model::CellId cell, const mhs::model::Vec3& point);
+    std::optional<double> boundary_value_at(const mhs::model::FomDomain& model,
+        const mhs::model::CompiledLibrary& library, std::span<const double> temperature, double time,
+        mhs::model::CellId cell, const mhs::model::Vec3& point);
 
     /// Flattened user-facing solver configuration.
     /// Defaults are defined here — C API and Python convert from this struct.
@@ -32,6 +33,9 @@ namespace mhs::solver {
         double time_tolerance = 1e-4;
         std::optional<double> max_time_step; // seconds; unset selects automatic
     };
+
+    // Fill base state; hydraulic Stokes initialization is performed by solve().
+    void fill_default_state(const mhs::model::CompiledModel& model, double temperature, std::span<double> state);
 
     /// Standard thermal solve entry point.
     ///

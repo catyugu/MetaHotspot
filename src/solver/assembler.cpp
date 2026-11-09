@@ -78,8 +78,10 @@ namespace mhs::solver {
         }
     }
 
-    ThermalAssembler::ThermalAssembler(const model::FomDomain& model, FrozenFlow flow)
+    ThermalAssembler::ThermalAssembler(
+        const model::FomDomain& model, const model::CompiledLibrary& library, FrozenFlow flow)
         : model_(model)
+        , library_(library)
         , flow_(std::move(flow))
         , operators_ {core::CSRMatrix<double>(build_thermal_pattern(model.discrete)),
               build_capacity(model.discrete.cells.size()), core::Vector<double>(model.discrete.cells.size())}
@@ -117,7 +119,7 @@ namespace mhs::solver {
             const auto row = static_cast<SparseIndex>(c);
             const auto center = model.discrete.cells[c].center();
             const FieldContext ctx {center[0], center[1], center[2], temperature[row], time};
-            const auto& mat = model.material_table[model.cell_material[c]];
+            const auto& mat = library_.material_table[model.cell_material[c]];
             conductivity_[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto volume = model.discrete.cells[c].volume();
             const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
@@ -132,8 +134,8 @@ namespace mhs::solver {
         for (const auto& term : model.source_terms) {
             const auto row = term.cell;
             const auto& p = term.point;
-            rhs[row]
-                += term.weight * model.heat_source_table[term.source].eval({p[0], p[1], p[2], temperature[row], time});
+            rhs[row] += term.weight
+                * library_.heat_source_table[term.source_index].eval({p[0], p[1], p[2], temperature[row], time});
         }
         auto fluid_index = [&](CellId c) {
             return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
@@ -181,7 +183,9 @@ namespace mhs::solver {
             const auto axis = static_cast<std::size_t>(term.axis);
             const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
             const auto row = static_cast<SparseIndex>(term.cell);
-            const auto trace = evaluate_boundary(model.boundary_conditions[term.condition],
+            if (term.condition == core::invalid_id)
+                continue; // Implicit adiabatic face has zero flux.
+            const auto trace = evaluate_boundary(library_.boundary_conditions[term.condition],
                 boundary_center(model.discrete.cells[term.cell], term), area,
                 (model.discrete.cells[term.cell].size()[axis] / 2), temperature[row], conductivity_[term.cell][axis],
                 time);
@@ -222,12 +226,12 @@ namespace mhs::solver {
             const auto& domain = model.fom(field.domain);
             const auto temperature = initial.subspan(field.offset, field.count);
             if (domain.flow_mode == model::FlowMode::Stokes && !domain.fluid.fluid_to_global.empty()) {
-                workspace.stokes = std::make_unique<StokesAssembler>(domain, model.layout, field.domain);
-                workspace.thermal = std::make_unique<ThermalAssembler>(domain, FrozenFlow {});
+                workspace.stokes = std::make_unique<StokesAssembler>(model, field.domain);
+                workspace.thermal = std::make_unique<ThermalAssembler>(domain, model.library(), FrozenFlow {});
             }
             else
-                workspace.thermal
-                    = std::make_unique<ThermalAssembler>(domain, initialize_frozen_flow(domain, temperature, time));
+                workspace.thermal = std::make_unique<ThermalAssembler>(
+                    domain, model.library(), initialize_frozen_flow(domain, model.library(), temperature, time));
         }
     }
 
@@ -298,7 +302,7 @@ namespace mhs::solver {
                     center[d] = (term.bounds[2 * tangent] + term.bounds[2 * tangent + 1]) / 2;
                     ++tangent;
                 }
-            const auto& condition = model_.rom_boundary_conditions.at(term.condition);
+            const auto& condition = model_.library().boundary_conditions.at(term.condition);
             const auto trace
                 = evaluate_boundary(condition, center, area, facet.half_resistance, temperature, 1.0, time);
             core::Vector<WeightedDof> weights;
@@ -326,13 +330,4 @@ namespace mhs::solver {
         return workspace.assemble(state, time);
     }
 
-    Operators assemble_thermal(const model::FomDomain& model, std::span<const double> temperature, double time)
-    {
-        if (model.flow_mode == model::FlowMode::Stokes)
-            throw std::invalid_argument(
-                "standalone FOM thermal assembly requires frozen flow; use a state layout for Stokes");
-        ThermalAssembler workspace(model, initialize_frozen_flow(model, temperature, time));
-        workspace.assemble(temperature, time);
-        return std::move(workspace).take_operators();
-    }
 } // namespace mhs::solver

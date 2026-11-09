@@ -11,7 +11,6 @@
 namespace mhs::solver {
     namespace {
         using namespace mhs::model;
-        double patch_area(const std::array<double, 4>& b) { return (b[1] - b[0]) * (b[3] - b[2]); }
         bool close_coordinate(double a, double b)
         {
             const double scale = std::max({std::abs(a), std::abs(b), 1e-3});
@@ -19,11 +18,12 @@ namespace mhs::solver {
         }
     }
 
-    StokesAssembler::StokesAssembler(
-        const model::FomDomain& domain, const model::StateLayout& layout, model::DomainId id)
-        : domain_(domain)
+    StokesAssembler::StokesAssembler(const model::CompiledModel& compiled, model::DomainId id)
+        : domain_(compiled.fom(id)), library_(compiled.library())
     {
         using namespace mhs::model;
+        const auto& domain = domain_;
+        const auto& layout = compiled.layout;
         const auto& mesh = domain.discrete;
         const auto& fluid = domain.fluid;
         if (domain.flow_mode != FlowMode::Stokes || fluid.fluid_to_global.empty())
@@ -39,10 +39,6 @@ namespace mhs::solver {
         for (std::size_t i = 0; i < fluid.velocity_faces.size(); ++i)
             face_dof_[fluid.velocity_faces[i]] = velocity.dof(i);
 
-        boundary_area_.assign(domain.fluid_conditions.size(), 0.0);
-        for (const auto& boundary : domain.fluid_boundaries)
-            boundary_area_.at(boundary.condition) += patch_area(boundary.bounds);
-
         // Include prescribed wall and mass-flow faces as zero/known-velocity
         // nodes. Their half-dual volumes provide consistent Dirichlet diffusion
         // contributions to neighbouring unknowns without adding wall DOFs.
@@ -57,7 +53,7 @@ namespace mhs::solver {
             node.dof = face_dof_[f];
             node.minus = minus ? face.minus : core::invalid_id;
             node.plus = plus ? face.plus : core::invalid_id;
-            node.condition = fluid.face_conditions.empty() ? core::invalid_id : fluid.face_conditions[f];
+            node.assignment = fluid.face_assignments.empty() ? core::invalid_id : fluid.face_assignments[f];
             node.component = static_cast<std::size_t>(face.axis);
             const auto axis = node.component;
             // Face plane, not the neighbouring cell's centre.
@@ -74,7 +70,7 @@ namespace mhs::solver {
                     ++t;
                 }
             if (node.dof != core::invalid_id
-                && !((minus && plus) || (face.exterior() && node.condition != core::invalid_id)))
+                && !((minus && plus) || (face.exterior() && node.assignment != core::invalid_id)))
                 throw std::invalid_argument("Stokes velocity DOF is not supported by an open or interior face");
             nodes_.push_back(node);
         }
@@ -160,7 +156,7 @@ namespace mhs::solver {
         core::Vector<double> density(mesh.cells.size(), 0.0), viscosity(mesh.cells.size(), 0.0);
         for (const auto cell : fluid.fluid_to_global) {
             const auto p = mesh.cells[cell].center();
-            const auto& props = domain_.material_table[domain_.cell_material[cell]];
+            const auto& props = library_.material_table[domain_.cell_material[cell]];
             const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[cell], time};
             density[cell] = props.rho.eval(context);
             viscosity[cell] = props.dynamic_viscosity->eval(context);
@@ -184,9 +180,10 @@ namespace mhs::solver {
             if (n.dof != core::invalid_id) {
                 velocity = state[n.dof];
             }
-            else if (n.condition != core::invalid_id) {
-                if (const auto* bc = std::get_if<MassFlowInlet>(&domain_.fluid_conditions[n.condition])) {
-                    const double mass = bc->mass_flow_rate * area / boundary_area_[n.condition];
+            else if (n.assignment != core::invalid_id) {
+                if (const auto* bc = std::get_if<MassFlowInlet>(
+                        &library_.fluid_conditions[domain_.fluid_assignments[n.assignment].condition])) {
+                    const double mass = bc->mass_flow_rate * area / domain_.fluid_assignments[n.assignment].area;
                     velocity = (n.minus != core::invalid_id ? -mass : mass) / (nodal_rho[i] * area);
                 }
             }
@@ -206,8 +203,8 @@ namespace mhs::solver {
                     stiffness.emplace_back(row, static_cast<core::SparseIndex>(pressure_dof_[n.minus]), -area);
                 if (n.plus != core::invalid_id)
                     stiffness.emplace_back(row, static_cast<core::SparseIndex>(pressure_dof_[n.plus]), area);
-                if (n.condition != core::invalid_id) {
-                    const auto& bc = domain_.fluid_conditions[n.condition];
+                if (n.assignment != core::invalid_id) {
+                    const auto& bc = library_.fluid_conditions[domain_.fluid_assignments[n.assignment].condition];
                     if (const auto* inlet_pressure = std::get_if<PressureInlet>(&bc))
                         load[row] += (n.minus == core::invalid_id ? 1.0 : -1.0) * area * inlet_pressure->pressure;
                     else if (const auto* outlet_pressure = std::get_if<PressureOutlet>(&bc))
@@ -224,13 +221,15 @@ namespace mhs::solver {
                     stiffness.emplace_back(static_cast<core::SparseIndex>(pressure_dof_[n.plus]),
                         static_cast<core::SparseIndex>(n.dof), -nodal_rho[i] * area);
             }
-            else if (n.condition != core::invalid_id) {
-                if (const auto* bc = std::get_if<MassFlowInlet>(&domain_.fluid_conditions[n.condition]))
-                    load[pressure_dof_[cell]] += bc->mass_flow_rate * area / boundary_area_[n.condition];
+            else if (n.assignment != core::invalid_id) {
+                if (const auto* bc = std::get_if<MassFlowInlet>(
+                        &library_.fluid_conditions[domain_.fluid_assignments[n.assignment].condition]))
+                    load[pressure_dof_[cell]]
+                        += bc->mass_flow_rate * area / domain_.fluid_assignments[n.assignment].area;
             }
 
-            if (n.condition != core::invalid_id && !two) {
-                const auto& condition = domain_.fluid_conditions[n.condition];
+            if (n.assignment != core::invalid_id && !two) {
+                const auto& condition = library_.fluid_conditions[domain_.fluid_assignments[n.assignment].condition];
                 const double outward_mass = (n.minus != core::invalid_id ? 1.0 : -1.0) * mass;
                 if (outward_mass < 0) {
                     const auto temperature_bc

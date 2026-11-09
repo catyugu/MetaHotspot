@@ -1,4 +1,5 @@
 #include "compiler/model_compiler.hpp"
+#include "library_test_utils.hpp"
 #include "solver/solver.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -8,26 +9,27 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
     // Cube with heat source + Dirichlet on bottom + convective BC on top
     mhs::model::ModelDefinition io;
-    io.components.emplace_back();
+    io.add_component();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.sources = {"1e6"};
-    io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    const auto source_id = io.library().add_source("1e6");
+    io.fom(0).volumes = {{0, source_id, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
-    io.materials.push_back({"copper", mat});
+    const auto material_id = io.library().add_material({"copper", mat});
+    io.fom(0).volumes[0].material = material_id;
 
     // Dirichlet 300K on bottom face (Z=0)
-    mhs::model::ThermalBoundarySpec boundary1;
-    boundary1.condition = mhs::model::DirichletBoundary {"300"};
+    mhs::model::SurfaceAssignment boundary1;
+    boundary1.condition = io.library().add_thermal_boundary(mhs::model::DirichletBoundary {"300"});
     boundary1.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
     io.component(0).thermal_boundaries.push_back(boundary1);
 
-    io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.fom(0).default_thermal_boundary = io.library().add_thermal_boundary(mhs::model::NeumannBoundary {});
 
     auto model = mhs::compiler::build_model(io);
 
@@ -47,22 +49,23 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
     mhs::model::ModelDefinition io;
-    io.components.emplace_back();
+    io.add_component();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.sources = {"1e8"};
-    io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    const auto source_id = io.library().add_source("1e8");
+    io.fom(0).volumes = {{0, source_id, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
     mat.density = "8920";
     mat.specific_heat = "385";
-    io.materials.push_back({"copper", mat});
+    const auto material_id = io.library().add_material({"copper", mat});
+    io.fom(0).volumes[0].material = material_id;
 
-    io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.fom(0).default_thermal_boundary = io.library().add_thermal_boundary(mhs::model::NeumannBoundary {});
 
     mhs::model::PointProbe op1;
     op1.name = "center";
@@ -77,8 +80,8 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     op2.z = 0;
     io.component(0).observations.push_back({op2, {}, 0.0});
 
-    mhs::model::ThermalBoundarySpec boundary;
-    boundary.condition = mhs::model::DirichletBoundary {"500"};
+    mhs::model::SurfaceAssignment boundary;
+    boundary.condition = io.library().add_thermal_boundary(mhs::model::DirichletBoundary {"500"});
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
     io.component(0).thermal_boundaries.push_back(boundary);
 
@@ -115,20 +118,21 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 {
     mhs::model::ModelDefinition io;
-    io.components.emplace_back();
+    io.add_component();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.sources = {"0"};
-    io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    const auto source_id = io.library().add_source("0");
+    io.fom(0).volumes = {{0, source_id, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
-    io.materials.push_back({"copper", mat});
+    const auto material_id = io.library().add_material({"copper", mat});
+    io.fom(0).volumes[0].material = material_id;
 
-    io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.fom(0).default_thermal_boundary = io.library().add_thermal_boundary(mhs::model::NeumannBoundary {});
 
     mhs::model::PointProbe op;
     op.name = "z0_dirichlet";
@@ -137,8 +141,8 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     op.z = 0;
     io.component(0).observations.push_back({op, {}, 0.0});
 
-    mhs::model::ThermalBoundarySpec boundary;
-    boundary.condition = mhs::model::DirichletBoundary {"500 + 100*t"};
+    mhs::model::SurfaceAssignment boundary;
+    boundary.condition = io.library().add_thermal_boundary(mhs::model::DirichletBoundary {"500 + 100*t"});
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
     io.component(0).thermal_boundaries.push_back(boundary);
 
