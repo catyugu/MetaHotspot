@@ -18,8 +18,8 @@ namespace mhs::model {
         CellId cell = mhs::core::invalid_id;
         Axis axis = Axis::X;
         std::int8_t sign = 1;
-        ThermalBoundaryIndex condition = mhs::core::invalid_id; // compiled boundary-table index
-        std::array<double, 4> bounds; // tangential min/max pairs
+        ThermalBoundaryIndex condition = mhs::core::invalid_id;
+        std::array<double, 4> bounds;
     };
 
     struct MaterialProps {
@@ -34,20 +34,15 @@ namespace mhs::model {
     struct Dirichlet {
         mhs::expression::CompiledExpression temperature;
     };
-
     struct Neumann {
         mhs::expression::CompiledExpression heat_flux;
     };
-
     struct Convection {
         mhs::expression::CompiledExpression coefficient;
         mhs::expression::CompiledExpression ambient_temperature;
     };
-
-    // Shared compiled laws; per-face BoundaryFace records store only an index.
     using BoundaryCondition = std::variant<Dirichlet, Neumann, Convection>;
 
-    // Midpoint quadrature on a physical source subvolume.
     struct SourceTerm {
         CellId cell = mhs::core::invalid_id;
         SourceIndex source_index = mhs::core::invalid_id;
@@ -56,17 +51,16 @@ namespace mhs::model {
     };
 
     struct CompiledFluidAssignment {
-        FluidBoundaryIndex condition = core::invalid_id; // dense compiled condition index
-        double area = 0.0; // post-partition exterior surface area
+        FluidBoundaryIndex condition = core::invalid_id;
+        double area = 0.0;
     };
 
     struct FomDomain {
         DiscreteMesh discrete;
         FlowMode flow_mode = FlowMode::Frozen;
-
         mhs::core::Vector<MaterialIndex> cell_material;
         mhs::core::Vector<SourceTerm> source_terms;
-        mhs::core::Vector<BoundaryFace> boundary_faces; // sorted by CellId
+        mhs::core::Vector<BoundaryFace> boundary_faces;
         FluidTopology fluid;
         mhs::core::Vector<FluidBoundaryPatch> fluid_boundaries;
         core::Vector<CompiledFluidAssignment> fluid_assignments;
@@ -79,36 +73,61 @@ namespace mhs::model {
         mhs::core::Vector<FluidBoundaryCondition> fluid_conditions;
     };
 
+    struct RomTracePatch {
+        double half_resistance = 0.0;
+        std::array<double, 2> center {};
+        core::Vector<double> trace;
+        double offset = 0.0;
+        std::array<core::Vector<double>, 2> tangential_gradient;
+    };
+
+    struct RomDomain {
+        core::Vector<double> K, C, f, initial_state;
+        core::Vector<core::Vector<RomTracePatch>> ports;
+    };
+
     struct ConnectionPatch {
-        CellId a = core::invalid_id, b = core::invalid_id;
+        Id a = core::invalid_id, b = core::invalid_id;
         std::array<double, 4> bounds {};
     };
 
+    struct ConnectionEndpoint {
+        DomainId domain = core::invalid_id;
+        PortId port = core::invalid_id;
+    };
+
     struct ThermalConnection {
-        PortReference a, b;
+        ConnectionEndpoint a, b;
         Axis axis = Axis::X;
         bool nonmatching = false;
         core::Vector<ConnectionPatch> patches;
-        std::int8_t sign_a = 1; // Geometric outward normal on side A.
+        std::int8_t sign_a = 1;
     };
 
-    // Exterior ROM subface after intersecting port facets and thermal BCs.
-    // Its physical trace and half-resistance come from the owning port patch.
     struct RomBoundaryTerm {
         DomainId domain = core::invalid_id;
         PortId port = core::invalid_id;
         std::size_t patch = 0;
+        Axis axis = Axis::X;
+        double coordinate = 0.0;
         ThermalBoundaryIndex condition = core::invalid_id;
         std::array<double, 4> bounds {};
     };
 
-    struct CompiledComponent {
-        std::variant<FomDomain, RomDomain> physics;
-        core::Vector<PortDefinition> ports;
-        core::Vector<ObservationDefinition> observations;
+    struct CompiledObservation {
+        std::string name;
+        DomainId domain = core::invalid_id;
+        CellId cell = core::invalid_id;
+        Vec3 point {};
+        core::Vector<double> weights;
+        double offset = 0.0;
     };
 
-    // Published as a const snapshot by the API; solve workspaces own all flow state.
+    struct CompiledComponent {
+        std::variant<FomDomain, RomDomain> physics;
+        FieldId state_field = core::invalid_id;
+    };
+
     struct CompiledModel {
         mhs::core::Vector<CompiledComponent> components;
         CompiledLibrary library_data;
@@ -122,6 +141,7 @@ namespace mhs::model {
         StateLayout layout;
         core::Vector<ThermalConnection> connections;
         core::Vector<RomBoundaryTerm> rom_boundary_terms;
+        core::Vector<CompiledObservation> observations;
     };
 
 } // namespace mhs::model

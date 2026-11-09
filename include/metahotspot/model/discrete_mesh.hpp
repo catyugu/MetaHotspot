@@ -42,5 +42,18 @@ namespace mhs::model {
             return std::span(cell_face_ids)
                 .subspan(cell_face_offsets[c], cell_face_offsets[c + 1] - cell_face_offsets[c]);
         }
+        CellId locate(const Vec3& point) const
+        {
+            CellId result = core::invalid_id;
+            for (std::size_t i = 0; i < cells.size(); ++i) {
+                const auto& cell = cells[i];
+                bool contains = true;
+                for (std::size_t axis = 0; axis < 3; ++axis)
+                    contains = contains && point[axis] >= cell.min[axis] && point[axis] <= cell.max[axis];
+                if (contains && (result == core::invalid_id || cell.min > cells[result].min))
+                    result = static_cast<CellId>(i);
+            }
+            return result;
+        }
     };
 } // namespace mhs::model

@@ -100,10 +100,12 @@ static std::size_t input_cell(const FomDomain& model, const mhs::model::MeshSpec
 {
     const auto ny = input.y_vertices.size() - 1, nz = input.z_vertices.size() - 1;
     const auto x = flat / (ny * nz), y = (flat % (ny * nz)) / nz, z = flat % nz;
-    return mhs::solver::locate_cell(model.discrete,
-        {(input.x_vertices[x] + input.x_vertices[x + 1]) * 0.0005,
-            (input.y_vertices[y] + input.y_vertices[y + 1]) * 0.0005,
-            (input.z_vertices[z] + input.z_vertices[z + 1]) * 0.0005});
+    const mhs::model::Vec3 point {
+        (input.x_vertices[x] + input.x_vertices[x + 1]) * 0.0005,
+        (input.y_vertices[y] + input.y_vertices[y + 1]) * 0.0005,
+        (input.z_vertices[z] + input.z_vertices[z + 1]) * 0.0005,
+    };
+    return model.discrete.locate(point);
 }
 
 TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
@@ -223,9 +225,9 @@ TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)
     auto model = test_pta::build_model(io);
 
     // Layer 0 occupies z=10..30 mm; the substrate occupies z=0..10 mm.
-    EXPECT_TRUE((mhs::solver::locate_cell(model.discrete, {0.025, 0.075, 0.001}) != mhs::core::invalid_id));
-    EXPECT_TRUE((mhs::solver::locate_cell(model.discrete, {0.025, 0.025, 0.0125}) != mhs::core::invalid_id));
-    EXPECT_FALSE((mhs::solver::locate_cell(model.discrete, {0.025, 0.025, 0.009}) != mhs::core::invalid_id));
+    EXPECT_TRUE((model.discrete.locate({0.025, 0.075, 0.001}) != mhs::core::invalid_id));
+    EXPECT_TRUE((model.discrete.locate({0.025, 0.025, 0.0125}) != mhs::core::invalid_id));
+    EXPECT_FALSE((model.discrete.locate({0.025, 0.025, 0.009}) != mhs::core::invalid_id));
 }
 
 // ---- Structured boundary-region tests ----

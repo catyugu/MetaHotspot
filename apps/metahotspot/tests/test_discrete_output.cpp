@@ -77,11 +77,11 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
         EXPECT_NEAR(nodes[v], vertices[found - model.output.points.begin()], 1e-12);
     }
     const Vec3 point {0.2, 0.3, 0.4};
-    EXPECT_NEAR(mhs::solver::sample_point(
-                    model, *model.library, original, 0, mhs::solver::locate_cell(model.discrete, point), point),
-        mhs::solver::sample_point(
-            imported, *imported.library, reordered, 0, mhs::solver::locate_cell(imported.discrete, point), point),
-        1e-12);
+    const auto original_value
+        = mhs::solver::sample_point(model, *model.library, original, 0, model.discrete.locate(point), point);
+    const auto reordered_value
+        = mhs::solver::sample_point(imported, *imported.library, reordered, 0, imported.discrete.locate(point), point);
+    EXPECT_NEAR(original_value, reordered_value, 1e-12);
 }
 
 TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)

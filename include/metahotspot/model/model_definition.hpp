@@ -281,8 +281,6 @@ namespace mhs::model {
         mhs::core::Vector<RomAffineTerm> affine_terms;
     };
 
-    using RomDomain = RomDomainDefinition;
-
     // Numerical formulation and physical exterior are independent concepts.
     struct ComponentDefinition {
         std::variant<FomDomainDefinition, RomDomainDefinition> physics;

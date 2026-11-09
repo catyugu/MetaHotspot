@@ -11,24 +11,6 @@
 #include <type_traits>
 
 namespace mhs::solver {
-    mhs::model::CellId locate_cell(const mhs::model::DiscreteMesh& mesh, const mhs::model::Vec3& p)
-    {
-        using namespace mhs::model;
-        const auto& cells = mesh.cells;
-        // Cache once per probe. Shared-face ties select the lexicographically
-        // greatest lower corner, independent of cell storage/DOF ordering.
-        CellId result = mhs::core::invalid_id;
-        for (std::size_t i = 0; i < cells.size(); ++i) {
-            const auto& cell = cells[i];
-            bool contains = true;
-            for (std::size_t axis = 0; axis < 3; ++axis)
-                contains = contains && p[axis] >= cell.min[axis] && p[axis] <= cell.max[axis];
-            if (contains && (result == mhs::core::invalid_id || cell.min > cells[result].min))
-                result = static_cast<CellId>(i);
-        }
-        return result;
-    }
-
     namespace {
         double conductivity(const mhs::model::FomDomain& model, const mhs::model::CompiledLibrary& library,
             std::span<const double> temperature, mhs::model::CellId cell, double time, int axis)

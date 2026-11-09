@@ -56,9 +56,11 @@ namespace mhs::compiler {
         auto& compiled_library = compiled.library();
         auto append_field = [&](model::DomainId domain, model::FieldQuantity quantity, std::size_t count) {
             core::detail::checked_sparse_size(compiled.layout.state_count + count);
+            const auto id = static_cast<model::FieldId>(compiled.layout.fields.size());
             const auto offset = static_cast<model::DofId>(compiled.layout.state_count);
             compiled.layout.fields.push_back({domain, quantity, offset, count});
             compiled.layout.state_count += count;
+            return id;
         };
         if (definition.components.empty())
             throw std::invalid_argument("model must contain at least one component");
@@ -92,38 +94,62 @@ namespace mhs::compiler {
         for (std::size_t domain_id = 0; domain_id < definition.components.size(); ++domain_id) {
             const auto& component = definition.components[domain_id];
             if (const auto* value = std::get_if<model::RomDomainDefinition>(&component.physics)) {
-                auto rom = *value;
-                const auto n = rom.order;
+                const auto n = value->order;
+                auto rom = model::RomDomain {value->K, value->C, value->f, value->initial_state, {}};
                 if (!n || n > std::numeric_limits<core::SparseIndex>::max() / n || rom.K.size() != n * n
                     || rom.C.size() != n * n || rom.f.size() != n
                     || (!rom.initial_state.empty() && rom.initial_state.size() != n))
                     throw std::invalid_argument("ROM operators or initial state have invalid dimensions");
-                auto finite = [](double value) { return std::isfinite(value); };
+                const auto finite = [](double x) { return std::isfinite(x); };
                 if (!std::all_of(rom.K.begin(), rom.K.end(), finite) || !std::all_of(rom.C.begin(), rom.C.end(), finite)
                     || !std::all_of(rom.f.begin(), rom.f.end(), finite)
                     || !std::all_of(rom.initial_state.begin(), rom.initial_state.end(), finite))
                     throw std::invalid_argument("ROM operators and initial state must be finite");
                 if (rom.initial_state.empty())
                     rom.initial_state.assign(n, 0.0);
-                for (std::size_t j = 0; j < rom.affine_terms.size(); ++j) {
-                    const auto& term = rom.affine_terms[j];
+                for (std::size_t j = 0; j < value->affine_terms.size(); ++j) {
+                    const auto& term = value->affine_terms[j];
                     if (term.name.empty() || !finite(term.value) || term.K.size() != n * n || term.f.size() != n
                         || !std::all_of(term.K.begin(), term.K.end(), finite)
                         || !std::all_of(term.f.begin(), term.f.end(), finite))
                         throw std::invalid_argument("ROM affine term has invalid dimension or values");
                     for (std::size_t previous = 0; previous < j; ++previous)
-                        if (rom.affine_terms[previous].name == term.name)
+                        if (value->affine_terms[previous].name == term.name)
                             throw std::invalid_argument("ROM parameter names must be unique within a domain");
+                    for (std::size_t i = 0; i < n; ++i) {
+                        rom.f[i] += term.value * term.f[i];
+                        for (std::size_t k = 0; k < n; ++k)
+                            rom.K[i * n + k] += term.value * term.K[i * n + k];
+                    }
                 }
+                for (const auto& port : component.ports) {
+                    auto& runtime = rom.ports.emplace_back();
+                    for (const auto& patch : port.patches) {
+                        model::RomTracePatch runtime_patch;
+                        runtime_patch.half_resistance = patch.half_resistance;
+                        runtime_patch.center = patch.center;
+                        runtime_patch.trace = patch.trace;
+                        runtime_patch.offset = patch.offset;
+                        runtime_patch.tangential_gradient = patch.tangential_gradient;
+                        runtime.push_back(std::move(runtime_patch));
+                    }
+                }
+                const auto field
+                    = append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::ReducedCoordinate, n);
                 for (const auto& obs : component.observations) {
                     const auto& point = obs.point;
                     if (obs.weights.size() != n || !std::all_of(obs.weights.begin(), obs.weights.end(), finite)
                         || !finite(obs.offset) || point.name.empty() || !finite(point.x) || !finite(point.y)
                         || !finite(point.z))
                         throw std::invalid_argument("reduced observation has invalid dimension or values");
+                    model::CompiledObservation observation;
+                    observation.name = point.name;
+                    observation.domain = static_cast<model::DomainId>(domain_id);
+                    observation.weights = obs.weights;
+                    observation.offset = obs.offset;
+                    compiled.observations.push_back(std::move(observation));
                 }
-                append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::ReducedCoordinate, n);
-                compiled.components.push_back({std::move(rom), component.ports, component.observations});
+                compiled.components.push_back({std::move(rom), field});
                 continue;
             }
 
@@ -132,7 +158,7 @@ namespace mhs::compiler {
                 if (!obs.weights.empty() || obs.offset != 0.0 || obs.point.name.empty() || !std::isfinite(obs.point.x)
                     || !std::isfinite(obs.point.y) || !std::isfinite(obs.point.z))
                     throw std::invalid_argument("Cartesian observation requires only a finite physical point");
-            compiled.components.push_back({model::FomDomain {}, component.ports, component.observations});
+            compiled.components.push_back({model::FomDomain {}, core::invalid_id});
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
             model.flow_mode = domain.flow_mode;
             for (const auto& volume : domain.volumes) {
@@ -213,7 +239,17 @@ namespace mhs::compiler {
             // Only temperature is an unknown in frozen-flow mode. Hydraulic diagnostics
             // are solve workspace data, not fictitious pressure/velocity state blocks.
             const auto n = model.discrete.cells.size();
-            append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::Temperature, n);
+            const auto field
+                = append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::Temperature, n);
+            compiled.components[domain_id].state_field = field;
+            for (const auto& obs : component.observations) {
+                const model::Vec3 point {obs.point.x, obs.point.y, obs.point.z};
+                const auto cell = model.discrete.locate(point);
+                if (cell == core::invalid_id)
+                    throw std::invalid_argument("observation lies outside its Cartesian component");
+                compiled.observations.push_back(
+                    {obs.point.name, static_cast<model::DomainId>(domain_id), cell, point, {}, 0.0});
+            }
 
             if (model.flow_mode == model::FlowMode::Stokes && !fluid.fluid_to_global.empty()) {
                 fluid.face_assignments.assign(model.discrete.faces.size(), core::invalid_id);
@@ -311,8 +347,8 @@ namespace mhs::compiler {
                 for (std::size_t j = 0; j < ports[p].patches.size(); ++j) {
                     const auto original = surface_bounds(ports[p].patches[j].rectangle);
                     for (const auto& tagged : partition_surface_bounds(original, per_port[p]))
-                        compiled.rom_boundary_terms.push_back(
-                            {domain_id, static_cast<model::PortId>(p), j, tagged.tag, tagged.bounds});
+                        compiled.rom_boundary_terms.push_back({domain_id, static_cast<model::PortId>(p), j,
+                            ports[p].region.axis, ports[p].region.coordinate, tagged.tag, tagged.bounds});
                 }
         }
         return compiled;

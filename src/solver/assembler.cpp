@@ -47,27 +47,18 @@ namespace mhs::solver {
         Operators build_reduced_operators(const model::RomDomain& rom)
         {
             core::Vector<core::Triplet<double>> stiffness, capacity;
-            core::Vector<double> load(rom.order);
-            for (std::size_t i = 0; i < rom.order; ++i) {
-                const auto row = static_cast<core::SparseIndex>(i);
-                double rhs = rom.f[i];
-                for (const auto& term : rom.affine_terms)
-                    rhs += term.value * term.f[i];
-                load[i] = rhs;
-                for (std::size_t j = 0; j < rom.order; ++j) {
-                    const auto col = static_cast<core::SparseIndex>(j);
-                    const auto index = i * rom.order + j;
-                    double k = rom.K[index];
-                    for (const auto& term : rom.affine_terms)
-                        k += term.value * term.K[index];
-                    if (k != 0.0)
-                        stiffness.emplace_back(row, col, k);
+            const auto n = rom.f.size();
+            for (std::size_t i = 0; i < n; ++i)
+                for (std::size_t j = 0; j < n; ++j) {
+                    const auto index = i * n + j;
+                    if (rom.K[index] != 0.0)
+                        stiffness.emplace_back(i, j, rom.K[index]);
                     if (rom.C[index] != 0.0)
-                        capacity.emplace_back(row, col, rom.C[index]);
+                        capacity.emplace_back(i, j, rom.C[index]);
                 }
-            }
-            return {core::build_csr(rom.order, rom.order, std::move(stiffness)),
-                core::build_csr(rom.order, rom.order, std::move(capacity)), std::move(load)};
+            auto K = core::build_csr(n, n, std::move(stiffness));
+            auto C = core::build_csr(n, n, std::move(capacity));
+            return {std::move(K), std::move(C), rom.f};
         }
         core::CSRMatrix<double> build_capacity(std::size_t n)
         {
@@ -285,17 +276,15 @@ namespace mhs::solver {
         // physical conductance and heat load by the Galerkin transpose map.
         for (const auto& term : model_.rom_boundary_terms) {
             const auto& rom = model_.rom(term.domain);
-            const auto& port = model_.components.at(term.domain).ports.at(term.port);
-            const auto& facet = port.patches.at(term.patch);
-            const auto& field
-                = model_.layout.field(model_.layout.find(term.domain, model::FieldQuantity::ReducedCoordinate));
+            const auto& facet = rom.ports.at(term.port).at(term.patch);
+            const auto& field = model_.layout.field(model_.components[term.domain].state_field);
             double temperature = facet.offset;
-            for (std::size_t i = 0; i < rom.order; ++i)
+            for (std::size_t i = 0; i < rom.f.size(); ++i)
                 temperature += facet.trace[i] * state[field.dof(i)];
             const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
             model::Vec3 center {};
-            const auto axis = static_cast<std::size_t>(port.region.axis);
-            center[axis] = port.region.coordinate;
+            const auto axis = static_cast<std::size_t>(term.axis);
+            center[axis] = term.coordinate;
             std::size_t tangent = 0;
             for (std::size_t d = 0; d < 3; ++d)
                 if (d != axis) {
@@ -306,7 +295,7 @@ namespace mhs::solver {
             const auto trace
                 = evaluate_boundary(condition, center, area, facet.half_resistance, temperature, 1.0, time);
             core::Vector<WeightedDof> weights;
-            for (std::size_t i = 0; i < rom.order; ++i)
+            for (std::size_t i = 0; i < rom.f.size(); ++i)
                 if (facet.trace[i] != 0.0)
                     weights.push_back({field.dof(i), facet.trace[i]});
             scatter_trace(stiffness, load, weights, trace.conductance, trace.load - trace.conductance * facet.offset);
