@@ -298,7 +298,7 @@ class Case1Model(AffineParametricModel):
 
         return (
             BoundaryGroup(
-                surface=type(top)(top_cells, top_areas, top.face_ids[silicon]),
+                surface=type(top)(top_cells, top_areas, top.facet_ids[silicon]),
                 h_range=self.config.h_ranges[0],
             ),
             BoundaryGroup(

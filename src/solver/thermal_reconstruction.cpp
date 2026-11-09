@@ -1,5 +1,4 @@
 #include "thermal_reconstruction.hpp"
-#include "thermal_geometry.hpp"
 #include "thermal_physics.hpp"
 #include <algorithm>
 #include <cmath>
@@ -49,8 +48,8 @@ namespace mhs::solver {
             const auto fluid_index = [&](CellId c) {
                 return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
             };
-            for (auto id : model.discrete.incident_faces(cell)) {
-                const auto& f = model.discrete.faces[id];
+            for (auto id : model.discrete.incident_facets(cell)) {
+                const auto& f = model.discrete.facets[id];
                 if (f.exterior())
                     continue;
                 const auto axis = static_cast<std::size_t>(f.axis);
@@ -76,41 +75,22 @@ namespace mhs::solver {
                 const double trace = weighted_temperature / (a + b + r_film);
                 gradient[axis] += (f.minus == cell ? 1 : -1) * f.area() * trace;
             }
-            for (const auto& term : boundary_faces_on_cell(model, cell)) {
-                const auto axis = static_cast<std::size_t>(term.axis);
-                const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
-                const auto trace = evaluate_boundary(model.boundary_conditions[term.condition],
-                    boundary_center(model.discrete.cells[cell], term), area,
-                    model.discrete.cells[cell].size()[axis] / 2, temperature[cell], k[axis], time);
-                gradient[axis] += term.sign * area * trace.temperature;
+            for (auto id : model.discrete.incident_facets(cell)) {
+                const auto& facet = model.discrete.facets[id];
+                if (!facet.exterior())
+                    continue;
+                const auto axis = static_cast<std::size_t>(facet.axis);
+                const auto center = facet.center();
+                const mhs::expression::FieldContext context {center[0], center[1], center[2], temperature[cell], time};
+                const double d = model.discrete.cells[cell].size()[axis] / 2;
+                const auto trace = evaluate_boundary(model.boundary_conditions[model.facet_thermal_condition[id]],
+                    context, facet.area(), facet.area() / side_thermal_resistance(d, k[axis]));
+                gradient[axis] += facet.outward_sign() * facet.area() * trace.temperature;
             }
             const auto volume = model.discrete.cells[cell].volume();
             return {gradient[0] / volume, gradient[1] / volume, gradient[2] / volume};
         }
     } // namespace
-
-    std::span<const mhs::model::BoundaryFace> boundary_faces_on_cell(
-        const mhs::model::Model& model, mhs::model::CellId cell)
-    {
-        const auto& patches = model.boundary_faces;
-        auto first = std::lower_bound(patches.begin(), patches.end(), cell,
-            [](const mhs::model::BoundaryFace& patch, mhs::model::CellId id) { return patch.cell < id; });
-        auto last = first;
-        while (last != patches.end() && last->cell == cell)
-            ++last;
-        return {first, last};
-    }
-
-    bool boundary_contains(
-        const mhs::model::CellGeometry& cell, const mhs::model::BoundaryFace& term, const mhs::model::Vec3& point)
-    {
-        constexpr double eps = 1e-12;
-        const auto axis = static_cast<std::size_t>(term.axis);
-        const auto a = axis == 0 ? 1 : 0, b = axis == 2 ? 1 : 2;
-        const double coordinate = term.sign > 0 ? cell.max[axis] : cell.min[axis];
-        return std::abs(point[axis] - coordinate) <= eps && point[a] >= term.bounds[0] - eps
-            && point[a] <= term.bounds[1] + eps && point[b] >= term.bounds[2] - eps && point[b] <= term.bounds[3] + eps;
-    }
 
     std::optional<double> boundary_value_at(const mhs::model::Model& model, std::span<const double> temperature,
         double time, mhs::model::CellId cell, const mhs::model::Vec3& p)
@@ -120,16 +100,19 @@ namespace mhs::solver {
         const double cell_temperature = temperature[cell];
         double sum = 0, dirichlet_sum = 0;
         size_t count = 0, dirichlet_count = 0;
-        for (const auto& term : boundary_faces_on_cell(model, cell)) {
-            const auto axis = static_cast<std::size_t>(term.axis);
-            const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
-            if (!boundary_contains(model.discrete.cells[term.cell], term, p))
+        for (auto id : model.discrete.incident_facets(cell)) {
+            const auto& facet = model.discrete.facets[id];
+            if (!facet.exterior() || !facet.contains(p))
                 continue;
-            const auto& condition = model.boundary_conditions[term.condition];
-            const double trace = evaluate_boundary(condition, boundary_center(model.discrete.cells[term.cell], term),
-                area, (model.discrete.cells[cell].size()[axis] / 2), cell_temperature,
-                conductivity(model, temperature, cell, time, static_cast<int>(term.axis)), time)
-                                     .temperature;
+            const auto axis = static_cast<std::size_t>(facet.axis);
+            const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
+            const auto center = facet.center();
+            const mhs::expression::FieldContext context {center[0], center[1], center[2], cell_temperature, time};
+            const double d = model.discrete.cells[cell].size()[axis] / 2;
+            const double k = conductivity(model, temperature, cell, time, static_cast<int>(facet.axis));
+            const double trace
+                = evaluate_boundary(condition, context, facet.area(), facet.area() / side_thermal_resistance(d, k))
+                      .temperature;
             sum += trace;
             ++count;
             if (std::holds_alternative<mhs::model::Dirichlet>(condition)) {

@@ -52,7 +52,7 @@ TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 
     EXPECT_TRUE(model.fluid.fluid_to_global.empty());
     EXPECT_TRUE(model.fluid.global_to_fluid.empty());
-    EXPECT_TRUE(model.fluid.face_volume_flux.empty());
+    EXPECT_TRUE(model.fluid.facet_volume_flux.empty());
     EXPECT_TRUE(model.fluid.interface_heat_transfer_factor.empty());
     EXPECT_TRUE(model.fluid.boundary_terms.empty());
 }
@@ -60,7 +60,7 @@ TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
 {
     const auto model = load_microfluid_case();
-    ASSERT_EQ(model.fluid.face_volume_flux.size(), model.discrete.faces.size());
+    ASSERT_EQ(model.fluid.facet_volume_flux.size(), model.discrete.facets.size());
     mhs::core::Vector<double> balance(model.discrete.cells.size(), 0);
     auto density = [&](mhs::model::CellId cell) {
         const auto p = model.discrete.cells[cell].center();
@@ -68,11 +68,11 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
             {p[0], p[1], p[2], model.reference_temperature, 0});
     };
     bool nonzero = false;
-    for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
-        const auto& f = model.discrete.faces[id];
+    for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
+        const auto& f = model.discrete.facets[id];
         if (f.exterior())
             continue;
-        const double mass = model.fluid.face_volume_flux[id] * (density(f.minus) + density(f.plus)) / 2;
+        const double mass = model.fluid.facet_volume_flux[id] * (density(f.minus) + density(f.plus)) / 2;
         nonzero = nonzero || std::abs(mass) > 1e-20;
         balance[f.minus] += mass;
         balance[f.plus] -= mass;
@@ -89,7 +89,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
                     return flow.mass_flow_rate;
             },
             term.condition);
-        balance[term.cell] += mass;
+        balance[model.discrete.facets[term.facet].owner()] += mass;
         boundary_sum += mass;
     }
     for (auto cell : model.fluid.fluid_to_global)
@@ -99,14 +99,15 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     const mhs::core::Vector<double> state(model.discrete.cells.size(), 300);
     // Suppress diffusion/sources to inspect advection through the main assembler.
     auto transport = model;
-    transport.boundary_faces.clear();
+    std::fill(
+        transport.facet_thermal_condition.begin(), transport.facet_thermal_condition.end(), mhs::core::invalid_id);
     transport.source_terms.clear();
     for (auto& material : transport.material_table)
         material.kx = material.ky = material.kz = mhs::expression::CompiledExpression::make_constant(0);
     const auto normal = mhs::solver::assemble_thermal(transport, state, 0);
     auto scaled = transport;
     constexpr double factor = 1e-20;
-    for (auto& flux : scaled.fluid.face_volume_flux)
+    for (auto& flux : scaled.fluid.facet_volume_flux)
         flux *= factor;
     for (auto& term : scaled.fluid.boundary_terms)
         std::visit([](auto& flow) { flow.mass_flow_rate *= factor; }, term.condition);

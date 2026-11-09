@@ -1,4 +1,4 @@
-# ADR-0002: External Boundary Traces
+# ADR-0002: Canonical Facets and Condensed Boundary Traces
 
 ## Status
 
@@ -6,25 +6,44 @@ Accepted.
 
 ## Context
 
-Boundary laws act at the physical surface. Using the adjacent cell-center temperature to evaluate a temperature-dependent heat flux or HTC changes that law and gives postprocessing a second, inconsistent boundary-temperature formula.
+Thermal and fluid conditions may cover partial, overlapping rectangles of an exterior
+control-volume face. Keeping separate mesh faces and projected boundary geometry
+duplicated topology, geometry, and coordinate interpretation. Temperature-dependent
+thermal conditions must be evaluated at physical surface temperature.
 
 ## Decision
 
-Each compiled external `BoundaryFace` stored in `Model::boundary_faces` has an algebraically independent temperature trace. `BoundaryFace` is a projection record: it stores the adjacent `CellId`, normal axis and outward sign, a shared `BoundaryCondition` index, and tangential bounds. Records are sorted by cell and do not reference mesh faces; subdividing a boundary does not modify `DiscreteMesh`.
+`DiscreteMesh::facets` is the unique collection of rectangular flux integration
+regions. `Facet` stores adjacent cells (one invalid for an exterior surface), normal
+axis, plane coordinate and tangential bounds. It supplies area, center, owner,
+outward sign and membership. `FacetId` identifies one canonical integration region.
 
-For cell temperature `T`, trace `lambda`, normal conductivity `k`, owner distance `d`, and area `A`, the conductive flux is
+The geometry compiler partitions exterior facets against the union of thermal and
+fluid boundary region cuts **before** building cell-facet incidence. A partially
+covered rectangle creates several Facets, including uncovered pieces. The compiler
+then independently binds thermal conditions to `Model::facet_thermal_condition`
+and fluid boundaries to those same FacetIds. Later regions take precedence within
+each physics. The default thermal condition applies to uncovered exterior facets.
+Internal facet geometry does not depend on exterior boundary assignments.
 
-`F = k A (T - lambda) / d`.
+For cell temperature `T`, trace `lambda`, normal conductivity `k`, center-to-wall
+distance `d`, and facet area `A`, conductive flux is `F = k A (T - lambda) / d`.
 
-Dirichlet prescribes `lambda` from an expression that must not depend on `lambda`; Neumann satisfies `F + A q(lambda) = 0`, where positive `q` is inward; convection equates `F` to `A h(lambda) (lambda - T_inf(lambda))`. Boundary expressions therefore receive `lambda` as `T`. The same local equation supplies assembly, gradient reconstruction, probes and output sampling.
+Dirichlet prescribes `lambda` independently of temperature; Neumann satisfies
+`F + A q(lambda) = 0` where positive `q` is inward. Convection equates `F` to
+`A h(lambda) (lambda - T_inf(lambda))`. Boundary expressions receive the surface
+trace as their temperature variable. `evaluate_boundary` accepts an expression
+context, integration area, and cell-to-wall conductance, independently of mesh
+geometry or topology.
 
-The trace equations are statically condensed face by face. Laws independent of trace temperature use their analytic solution; a temperature-dependent law uses a bracketed scalar solve. The global state, `K/C/f`, nonlinear driver, time integration, and public solve entry remain cell-sized. Internal faces retain TPFA.
-
-This decision does not introduce HMM, MPFA, non-matching interfaces, general polyhedral cells, or EROM coupling.
+Each local trace is eliminated by static condensation. Trace-independent laws
+use analytic formulas and temperature-dependent laws use a bracketed scalar solve.
+Assembly, gradients and probes share the same law. The global state and matrix
+remain cell-sized, without materialized ghost nodes.
 
 ## Rationale
 
-- Boundary temperature has one numerical definition everywhere.
-- Temperature-dependent laws are evaluated at the surface they describe.
-- Local condensation preserves the existing sparse matrix size and pattern.
-- Contiguous POD boundary records add only `O(number of boundary faces)` patch storage; traces are reconstructed on demand.
+- Canonical geometry and facet subdivision have one owner.
+- Multiple physics independently bind conditions to the same FacetIds.
+- No second boundary geometry, duplicated area, or mesh-dependent physical law.
+- Local trace condensation leaves the global degree-of-freedom count unchanged.

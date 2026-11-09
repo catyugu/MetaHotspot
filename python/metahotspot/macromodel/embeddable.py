@@ -141,12 +141,12 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
     local = {int(c): i for i, c in enumerate(cells)}
     fields = full.fields
     ambient_faces = {
-        int(f) for group in model.boundary_groups() for f in group.face_ids
+        int(f) for group in model.boundary_groups() for f in group.facet_ids
     }
     by_key = {}
-    invalid = np.iinfo(fields.face_plus.dtype).max
+    invalid = np.iinfo(fields.facet_plus.dtype).max
     for fid, (minus, plus) in enumerate(
-        zip(fields.face_minus, fields.face_plus, strict=True)
+        zip(fields.facet_minus, fields.facet_plus, strict=True)
     ):
         for cell, other, sign in (
             (int(minus), int(plus), 1),
@@ -157,15 +157,15 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
             ambient = other == invalid and fid in ambient_faces
             if ambient and not include_ambient:
                 continue
-            key = (int(fields.face_axis[fid]), sign, ambient)
+            key = (int(fields.facet_axis[fid]), sign, ambient)
             by_key.setdefault(key, []).append((local[cell], fid))
     ports = []
     for (axis, direction, ambient), entries in by_key.items():
         rows = np.asarray([r for r, _ in entries], dtype=np.int64)
-        face_ids = np.asarray([f for _, f in entries], dtype=np.int64)
+        facet_ids = np.asarray([f for _, f in entries], dtype=np.int64)
         fc = cells[rows]
         t1, t2 = _tangent_pair(axis)
-        rects = fields.face_bounds[face_ids]
+        rects = fields.facet_bounds[facet_ids]
         distances = full.half_sizes[fc, axis]
         ports.append(
             FacePort(
@@ -580,7 +580,7 @@ def connect(
     paper's Section 5).  The shared-node block sees ``gl + gr`` and off-diagonal
     ``-gl``/``-gr``, so the whole system is symmetric PSD and identity coupling
     reproduces the monolithic solve.
-    Returns ``(K, C, rhs, left_order, right_order, interface_count)``.
+    Returns ``(K, C, rhs, left_order, right_order, interfacet_count)``.
     """
     areas, E_l, E_r, xi_l, xi_r, _li, _ri = common_patches(left_port, right_port)
     Vl, hl = left.interface_trace(left_port, E_l, xi_l)

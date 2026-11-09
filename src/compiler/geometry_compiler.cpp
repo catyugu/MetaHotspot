@@ -90,59 +90,69 @@ namespace mhs::compiler {
         }
     }
 
-    mhs::core::Vector<ProjectedSurfacePatch> project_exterior_surface_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<TaggedSurfaceRegion>& boundaries, std::optional<std::size_t> fallback)
+    void refine_exterior_facets(
+        mhs::model::DiscreteMesh& mesh, const mhs::core::Vector<mhs::model::SurfaceRegion>& regions)
     {
-        using namespace mhs::core;
         using namespace mhs::model;
-        mhs::core::Vector<ProjectedSurfacePatch> faces;
-        for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
-            const auto& face = mesh.faces[id];
-            if (!face.exterior())
+        mhs::core::Vector<Facet> refined;
+        refined.reserve(mesh.facets.size());
+        for (const auto& facet : mesh.facets) {
+            if (!facet.exterior()) {
+                refined.push_back(facet);
                 continue;
-            const auto cell = face.minus != invalid_id ? face.minus : face.plus;
-            const auto axis = static_cast<std::size_t>(face.axis);
-            const std::int8_t sign = face.minus != invalid_id ? 1 : -1;
-            const double coordinate = sign > 0 ? mesh.cells[cell].max[axis] : mesh.cells[cell].min[axis];
-            mhs::core::Vector<double> ca {face.bounds[0], face.bounds[1]}, cb {face.bounds[2], face.bounds[3]};
-            for (const auto& tagged : boundaries) {
-                const auto& region = tagged.region;
-                if (region.axis != face.axis || std::abs(region.coordinate - coordinate) >= EPS)
+            }
+            mhs::core::Vector<double> a {facet.bounds[0], facet.bounds[1]};
+            mhs::core::Vector<double> b {facet.bounds[2], facet.bounds[3]};
+            for (const auto& region : regions) {
+                if (region.axis != facet.axis || std::abs(region.coordinate - facet.coordinate) >= EPS)
                     continue;
                 const auto& r = region.rectangle;
-                if (r.a_max <= face.bounds[0] || r.a_min >= face.bounds[1] || r.b_max <= face.bounds[2]
-                    || r.b_min >= face.bounds[3])
+                if (r.a_max <= facet.bounds[0] || r.a_min >= facet.bounds[1] || r.b_max <= facet.bounds[2]
+                    || r.b_min >= facet.bounds[3])
                     continue;
-                ca.push_back(std::clamp(r.a_min, face.bounds[0], face.bounds[1]));
-                ca.push_back(std::clamp(r.a_max, face.bounds[0], face.bounds[1]));
-                cb.push_back(std::clamp(r.b_min, face.bounds[2], face.bounds[3]));
-                cb.push_back(std::clamp(r.b_max, face.bounds[2], face.bounds[3]));
+                a.push_back(std::clamp(r.a_min, facet.bounds[0], facet.bounds[1]));
+                a.push_back(std::clamp(r.a_max, facet.bounds[0], facet.bounds[1]));
+                b.push_back(std::clamp(r.b_min, facet.bounds[2], facet.bounds[3]));
+                b.push_back(std::clamp(r.b_max, facet.bounds[2], facet.bounds[3]));
             }
             auto unique = [](auto& cuts) {
                 std::sort(cuts.begin(), cuts.end());
                 cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
             };
-            unique(ca);
-            unique(cb);
-            for (std::size_t i = 1; i < ca.size(); ++i)
-                for (std::size_t j = 1; j < cb.size(); ++j) {
-                    const std::array<double, 4> bounds {ca[i - 1], ca[i], cb[j - 1], cb[j]};
-                    const double center_a = (bounds[0] + bounds[1]) / 2;
-                    const double center_b = (bounds[2] + bounds[3]) / 2;
-                    auto tag = fallback;
-                    for (auto it = boundaries.rbegin(); it != boundaries.rend(); ++it) {
-                        if (it->region.axis == face.axis && std::abs(it->region.coordinate - coordinate) < EPS
-                            && point_in_region(it->region, center_a, center_b)) {
-                            tag = it->tag;
-                            break;
-                        }
-                    }
-                    if (tag)
-                        faces.push_back({cell, face.axis, sign, *tag, bounds});
+            unique(a);
+            unique(b);
+            for (std::size_t u = 1; u < a.size(); ++u)
+                for (std::size_t v = 1; v < b.size(); ++v) {
+                    if (a[u] <= a[u - 1] || b[v] <= b[v - 1])
+                        continue;
+                    auto piece = facet;
+                    piece.bounds = {a[u - 1], a[u], b[v - 1], b[v]};
+                    refined.push_back(piece);
                 }
         }
-        std::stable_sort(faces.begin(), faces.end(), [](const auto& a, const auto& b) { return a.cell < b.cell; });
-        return faces;
+        mesh.facets = std::move(refined);
+    }
+
+    mhs::core::Vector<std::size_t> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
+        const mhs::core::Vector<TaggedSurfaceRegion>& regions, std::size_t fallback)
+    {
+        mhs::core::Vector<std::size_t> assigned(mesh.facets.size(), std::numeric_limits<std::size_t>::max());
+        for (std::size_t id = 0; id < mesh.facets.size(); ++id) {
+            const auto& facet = mesh.facets[id];
+            if (!facet.exterior())
+                continue;
+            assigned[id] = fallback;
+            const auto a = (facet.bounds[0] + facet.bounds[1]) / 2;
+            const auto b = (facet.bounds[2] + facet.bounds[3]) / 2;
+            for (auto it = regions.rbegin(); it != regions.rend(); ++it) {
+                if (it->region.axis == facet.axis && std::abs(it->region.coordinate - facet.coordinate) < EPS
+                    && point_in_region(it->region, a, b)) {
+                    assigned[id] = it->tag;
+                    break;
+                }
+            }
+        }
+        return assigned;
     }
 
 } // namespace mhs::compiler

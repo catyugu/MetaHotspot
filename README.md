@@ -164,7 +164,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 
 ## 编号与数据顺序
 
-`CellId` 标识控制体及主温度未知量，`FaceId` 标识唯一有向面片。`BoundaryFace` 标识外边界积分片及其温度迹；物理边界投影不改变面片拓扑。
+`CellId` 标识控制体及主温度未知量，`FacetId` 标识唯一的有向积分面片。局部边界条件在几何编译阶段切分外表面，热学与流体条件分别绑定到共用的 FacetId。
 
 几何、材料、`K`、`C`、`f`、`state` 和 `state_history` 按 CellId 排列。Python 暴露 `Solution.state` 与 `Solution.state_history` 两组结果。
 

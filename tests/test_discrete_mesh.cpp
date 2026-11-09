@@ -3,7 +3,6 @@
 #include "core/vector.hpp"
 #include "model/discrete_mesh.hpp"
 #include "solver/assembler.hpp"
-#include "solver/thermal_geometry.hpp"
 #include "solver/thermal_physics.hpp"
 #include "solver/thermal_reconstruction.hpp"
 #include <algorithm>
@@ -32,10 +31,10 @@ TEST(DiscreteMesh, CartesianTopologyHasUniqueFacesAndClosedCellIncidence)
     const auto model = mhs::compiler::build_model(definition);
     const auto& mesh = model.discrete;
     ASSERT_EQ(mesh.cells.size(), 8u);
-    ASSERT_EQ(mesh.faces.size(), 36u);
+    ASSERT_EQ(mesh.facets.size(), 36u);
     ASSERT_EQ(model.cell_material.size(), 8u);
     std::size_t internal = 0;
-    for (const auto& face : mesh.faces) {
+    for (const auto& face : mesh.facets) {
         EXPECT_GT(face.area(), 0);
         if (!face.exterior())
             ++internal;
@@ -44,8 +43,8 @@ TEST(DiscreteMesh, CartesianTopologyHasUniqueFacesAndClosedCellIncidence)
     for (std::size_t c = 0; c < mesh.cells.size(); ++c) {
         Vec3 closure {};
         double surface = 0;
-        for (const auto id : mesh.incident_faces(static_cast<CellId>(c))) {
-            const auto& face = mesh.faces[id];
+        for (const auto id : mesh.incident_facets(static_cast<CellId>(c))) {
+            const auto& face = mesh.facets[id];
             const double sign = (face.minus == c ? 1 : -1);
             closure[static_cast<std::size_t>(face.axis)] += sign * face.area();
             surface += face.area();
@@ -65,21 +64,19 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
         d.default_thermal_boundary = condition;
         const auto model = mhs::compiler::build_model(d);
-        ASSERT_EQ(model.boundary_faces.size(), 6u);
-        // Boundary sampling looks up terms by cell.
-        EXPECT_TRUE(std::ranges::is_sorted(model.boundary_faces, {}, [](const auto& patch) { return patch.cell; }));
+        ASSERT_EQ(model.discrete.facets.size(), 6u);
         const mhs::core::Vector<double> state {350};
-        for (const auto& patch : model.boundary_faces) {
-            // Unit conductivity, unit area and half-cell distance give g = 2 W/K;
-            // T-dependent laws are evaluated at the surface trace, not at the cell.
-            const auto center = mhs::solver::boundary_center(model.discrete.cells[patch.cell], patch);
-            const auto trace = mhs::solver::evaluate_boundary(model.boundary_conditions[patch.condition], center,
-                ((patch.bounds[1] - patch.bounds[0]) * (patch.bounds[3] - patch.bounds[2])),
-                (model.discrete.cells[patch.cell].size()[static_cast<std::size_t>(patch.axis)] / 2), state[0], 1.0, 0);
+        for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
+            const auto& facet = model.discrete.facets[id];
+            const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
+            const auto center = facet.center();
+            const double d = model.discrete.cells[facet.owner()].size()[static_cast<std::size_t>(facet.axis)] / 2;
+            const mhs::expression::FieldContext cell_context {center[0], center[1], center[2], state[0], 0};
+            const auto trace = mhs::solver::evaluate_boundary(condition, cell_context, facet.area(), facet.area() / d);
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], trace.temperature, 0};
             const double conductive_flux = 2 * (state[0] - trace.temperature);
-            if (std::holds_alternative<mhs::model::Convection>(model.boundary_conditions[patch.condition])) {
-                const auto& law = std::get<mhs::model::Convection>(model.boundary_conditions[patch.condition]);
+            if (std::holds_alternative<mhs::model::Convection>(condition)) {
+                const auto& law = std::get<mhs::model::Convection>(condition);
                 const double h = law.coefficient.eval(ctx);
                 const double ambient = law.ambient_temperature.eval(ctx);
                 EXPECT_NEAR(conductive_flux, h * (trace.temperature - ambient), 1e-4);
@@ -88,7 +85,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
                 EXPECT_NEAR(trace.load, condensed * ambient, 1e-9);
             }
             else {
-                const auto& law = std::get<mhs::model::Neumann>(model.boundary_conditions[patch.condition]);
+                const auto& law = std::get<mhs::model::Neumann>(condition);
                 // Positive q is inward: the trace conducts q out of the cell.
                 EXPECT_NEAR(conductive_flux, -law.heat_flux.eval(ctx), 1e-4);
                 EXPECT_DOUBLE_EQ(trace.conductance, 0.0);
@@ -117,14 +114,29 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     d.thermal_boundaries.push_back(bc);
     const auto base = mhs::compiler::build_model(cube_definition()).discrete;
     const auto model = mhs::compiler::build_model(d);
-    ASSERT_EQ(model.discrete.faces.size(), base.faces.size());
-    EXPECT_EQ(model.discrete.cell_face_offsets, base.cell_face_offsets);
-    EXPECT_EQ(model.discrete.cell_face_ids, base.cell_face_ids);
-    for (std::size_t i = 0; i < base.faces.size(); ++i) {
-        EXPECT_EQ(model.discrete.faces[i].minus, base.faces[i].minus);
-        EXPECT_EQ(model.discrete.faces[i].plus, base.faces[i].plus);
-        EXPECT_EQ(model.discrete.faces[i].bounds, base.faces[i].bounds);
+    // Boundary-condition rectangles refine the canonical geometry itself.
+    ASSERT_GT(model.discrete.facets.size(), base.facets.size());
+    EXPECT_EQ(model.discrete.cells.size(), base.cells.size());
+    auto exterior_area = [](const auto& mesh) {
+        double total = 0.0;
+        for (const auto& facet : mesh.facets)
+            if (facet.exterior())
+                total += facet.area();
+        return total;
+    };
+    EXPECT_NEAR(exterior_area(model.discrete), exterior_area(base), 1e-14);
+    double assigned_area = 0;
+    for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
+        const auto& facet = model.discrete.facets[id];
+        if (!facet.exterior())
+            continue;
+        const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
+        const auto& flux = std::get<mhs::model::Neumann>(condition).heat_flux;
+        const auto center = facet.center();
+        if (flux.eval({center[0], center[1], center[2], 300, 0}) == 10.0)
+            assigned_area += facet.area();
     }
+    EXPECT_NEAR(assigned_area, 0.01, 1e-14);
     const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double>(8, 300), 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 0.1, 1e-14);
 }
@@ -175,13 +187,13 @@ TEST(DiscreteMesh, MissingReferencesRemainInvalid)
 {
     DiscreteMesh mesh;
     mesh.cells.push_back({{0, 0, 0}, {1, 1, 1}});
-    FacePatch face;
+    Facet face;
     EXPECT_EQ(face.minus, invalid_id);
     EXPECT_EQ(face.plus, invalid_id);
     face.minus = 0;
-    mesh.faces.push_back(face);
-    mhs::compiler::build_cell_face_incidence(mesh);
-    EXPECT_EQ(mesh.incident_faces(0).size(), 1u);
+    mesh.facets.push_back(face);
+    mhs::compiler::build_cell_facet_incidence(mesh);
+    EXPECT_EQ(mesh.incident_facets(0).size(), 1u);
     EXPECT_EQ(mhs::solver::locate_cell(mesh, {2, 2, 2}), invalid_id);
     EXPECT_EQ(mhs::solver::locate_cell(mesh, {0.5, 0.5, 0.5}), 0u);
 }

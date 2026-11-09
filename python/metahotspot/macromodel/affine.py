@@ -68,8 +68,8 @@ class BoundaryGroup:
         return self.surface.areas
 
     @property
-    def face_ids(self):
-        return self.surface.face_ids
+    def facet_ids(self):
+        return self.surface.facet_ids
 
 
 @dataclass(frozen=True)
@@ -294,9 +294,9 @@ class AffineParametricModel:
     def _effective_per_patch(self, group, h_phys: float) -> np.ndarray:
         """Series-condensed coefficient on each selected native surface patch."""
         fields = self.geometry.fields
-        faces = np.asarray(group.face_ids, dtype=np.intp)
+        faces = np.asarray(group.facet_ids, dtype=np.intp)
         cells = np.asarray(group.cells, dtype=np.intp)
-        axes = fields.face_axis[faces]
+        axes = fields.facet_axis[faces]
         k = self.cell_layout.conductivity[cells, axes]
         half = self.geometry.half_sizes[cells, axes]
         h = float(h_phys)

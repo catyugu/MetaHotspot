@@ -1,7 +1,6 @@
 #include "compiler/geometry_compiler.hpp"
 #include "pta_test_utils.hpp"
 #include "solver/assembler.hpp"
-#include "solver/thermal_geometry.hpp"
 #include "solver/thermal_physics.hpp"
 #include "solver/thermal_reconstruction.hpp"
 #include <algorithm>
@@ -32,7 +31,7 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
         mesh.cells[i] = model.discrete.cells[order[i]];
         inverse[order[i]] = i;
     }
-    for (auto& face : mesh.faces) {
+    for (auto& face : mesh.facets) {
         if (face.minus != invalid_id)
             face.minus = inverse[face.minus];
         if (face.plus != invalid_id)
@@ -40,15 +39,11 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
     }
     auto imported = test_pta::build_model(definition);
     imported.discrete = std::move(mesh);
-    mhs::compiler::build_cell_face_incidence(imported.discrete);
+    mhs::compiler::build_cell_facet_incidence(imported.discrete);
     for (size_t c = 0; c < order.size(); ++c)
         imported.cell_material[c] = model.cell_material[order[c]];
     for (auto& term : imported.source_terms)
         term.cell = inverse[term.cell];
-    for (auto& face : imported.boundary_faces)
-        face.cell = inverse[face.cell];
-    std::stable_sort(imported.boundary_faces.begin(), imported.boundary_faces.end(),
-        [](const auto& a, const auto& b) { return a.cell < b.cell; });
     for (auto* m : {&model, &imported}) {
         m->material_table[0].kx = mhs::expression::parse("1+T/1000", {});
         m->heat_source_table[0] = mhs::expression::parse("x+2*y+3*z", {});
@@ -91,25 +86,26 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         const auto model = test_pta::build_model(d);
         // All other faces share the compiled zero-flux default condition.
         ASSERT_EQ(model.boundary_conditions.size(), 2u);
-        ASSERT_EQ(model.boundary_faces.size(), 6u);
-        for (const auto& term : model.boundary_faces) {
-            if (term.axis != Axis::X || term.sign != 1) {
-                EXPECT_TRUE(std::holds_alternative<Neumann>(model.boundary_conditions[term.condition]));
+        ASSERT_EQ(model.discrete.facets.size(), 6u);
+        for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
+            const auto& facet = model.discrete.facets[id];
+            const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
+            if (facet.axis != Axis::X || facet.outward_sign() != 1) {
+                EXPECT_TRUE(std::holds_alternative<Neumann>(condition));
                 continue;
             }
             for (double time : {2.0, 3.0}) {
                 const double T = 280 + 10 * time;
                 const mhs::core::Vector<double> state {T};
                 const auto ops = mhs::solver::assemble_thermal(model, state, time);
-                // The cell is a unit cube with unit conductivity, so the
-                // condensed patch coefficients follow from the trace alone.
-                const auto condensed = mhs::solver::evaluate_boundary(model.boundary_conditions[term.condition],
-                    mhs::solver::boundary_center(model.discrete.cells[term.cell], term),
-                    ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2])),
-                    (model.discrete.cells[term.cell].size()[static_cast<std::size_t>(term.axis)] / 2), T, 1.0, time);
+                const auto center = facet.center();
+                const mhs::expression::FieldContext context {center[0], center[1], center[2], T, time};
+                const double d = model.discrete.cells[facet.owner()].size()[0] / 2;
+                const double g_cell = facet.area() / d;
+                const auto condensed = mhs::solver::evaluate_boundary(condition, context, facet.area(), g_cell);
                 double g, load;
                 if (kind == 0) {
-                    const auto& bc = std::get<Dirichlet>(model.boundary_conditions[term.condition]);
+                    const auto& bc = std::get<Dirichlet>(condition);
                     const double prescribed = 280 + 10 * time + 0.5;
                     EXPECT_DOUBLE_EQ(bc.temperature.eval({1, 0.5, 0.5, T, time}), prescribed);
                     EXPECT_NEAR(condensed.temperature, prescribed, 1e-12);
@@ -126,7 +122,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                         prescribed);
                 }
                 else if (kind == 1) {
-                    const auto& bc = std::get<Neumann>(model.boundary_conditions[term.condition]);
+                    const auto& bc = std::get<Neumann>(condition);
                     const double q = (T / 100 + time + 0.5) / (1 - 0.5 / 100);
                     const double trace = T + q * 0.5;
                     EXPECT_NEAR(bc.heat_flux.eval({1, 0.5, 0.5, trace, time}), q, 1e-12);
@@ -137,7 +133,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                     load = q;
                 }
                 else {
-                    const auto& bc = std::get<Convection>(model.boundary_conditions[term.condition]);
+                    const auto& bc = std::get<Convection>(condition);
                     const double trace = condensed.temperature;
                     const double h = trace / 100 + time + 0.5, ambient = 280 + time + 0.5;
                     EXPECT_DOUBLE_EQ(bc.coefficient.eval({1, 0.5, 0.5, trace, time}), h);

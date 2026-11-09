@@ -17,8 +17,9 @@ namespace mhs::solver {
         double load = 0.0;
     };
 
-    // Evaluate a thermal boundary law locally, with no mesh or Model dependency.
-    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition, const mhs::model::Vec3& center,
-        double area, double normal_distance, double cell_temperature, double normal_conductivity, double time);
+    // Physical law on one boundary integration region. Context holds the cell
+    // temperature and time; conductance is cell-to-surface, in W/K.
+    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition,
+        mhs::expression::FieldContext context, double area, double conductive);
 
 } // namespace mhs::solver
