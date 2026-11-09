@@ -29,6 +29,7 @@ namespace {
         MaterialSpec mat;
         mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
         mat.density = mat.specific_heat = "1";
+        mat.kind = MaterialKind::Fluid;
         mat.dynamic_viscosity = "1";
         d.model.materials.push_back({"fluid", mat});
         mhs::app::pta::LayerSpec layer;

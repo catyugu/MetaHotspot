@@ -12,7 +12,7 @@ import numpy as np
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
-from metahotspot.enums import Axis, FluidBC, GeometryOp, StudyType
+from metahotspot.enums import Axis, FluidBC, GeometryOp, MaterialKind, StudyType
 from metahotspot.types import MhsModel, MhsStudy, MhsSurfaceRegion, Point2D, Rect2D
 
 if TYPE_CHECKING:
@@ -160,14 +160,17 @@ class Model(OwnedHandle):
         kz: str,
         rho: str,
         c: str,
+        *,
+        kind: MaterialKind = MaterialKind.SOLID,
         dynamic_viscosity: str | None = None,
     ) -> int:
-        """Register a material and return its ID. Laws use canonical T."""
+        """Register an explicitly typed material and return its ID."""
         identifier = ctypes.c_uint32()
         text_args = tuple(_text(v) for v in (name, kx, ky, kz, rho, c))
         self._call(
             "mhs_model_add_material",
             *text_args,
+            int(kind),
             _text(dynamic_viscosity),
             ctypes.byref(identifier),
             ctx="add_material",

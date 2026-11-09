@@ -21,6 +21,7 @@ namespace mhs::model {
     };
 
     struct MaterialProps {
+        MaterialKind kind = MaterialKind::Solid;
         mhs::expression::CompiledExpression kx;
         mhs::expression::CompiledExpression ky;
         mhs::expression::CompiledExpression kz;

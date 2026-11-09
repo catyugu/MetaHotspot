@@ -109,6 +109,18 @@ static mhs::model::Axis _to_axis(mhs_axis_t a)
     }
 }
 
+static mhs::model::MaterialKind _to_material_kind(mhs_material_kind_t kind)
+{
+    switch (kind) {
+    case MHS_MATERIAL_SOLID:
+        return mhs::model::MaterialKind::Solid;
+    case MHS_MATERIAL_FLUID:
+        return mhs::model::MaterialKind::Fluid;
+    default:
+        throw std::invalid_argument("invalid material kind: " + std::to_string(kind));
+    }
+}
+
 static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
 {
     if (!std::isfinite(coord) || !std::isfinite(r.a_min) || !std::isfinite(r.a_max) || !std::isfinite(r.b_min)
@@ -247,7 +259,8 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
-    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id)
+    const char* kz, const char* rho, const char* c, mhs_material_kind_t kind, const char* dynamic_viscosity,
+    mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
@@ -259,15 +272,19 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
     CHECK_NULL(c);
     MHS_TRY({
         mhs::model::MaterialSpec spec;
+        spec.kind = _to_material_kind(kind);
         spec.conductivity_x = kx;
         spec.conductivity_y = ky;
         spec.conductivity_z = kz;
         spec.density = rho;
         spec.specific_heat = c;
-        if (dynamic_viscosity) {
-            if (!dynamic_viscosity[0])
-                throw std::invalid_argument("dynamic viscosity expression must not be empty");
+        if (spec.kind == mhs::model::MaterialKind::Fluid) {
+            if (!dynamic_viscosity || !dynamic_viscosity[0])
+                throw std::invalid_argument("fluid material requires dynamic viscosity");
             spec.dynamic_viscosity = std::string(dynamic_viscosity);
+        }
+        else if (dynamic_viscosity) {
+            throw std::invalid_argument("solid material must not define dynamic viscosity");
         }
         *out_id = static_cast<mhs_index_t>(m->def.materials.size());
         m->def.materials.push_back({name, std::move(spec)});

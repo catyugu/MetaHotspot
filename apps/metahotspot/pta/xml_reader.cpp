@@ -275,9 +275,10 @@ namespace mhs::app::pta {
                         const std::string value = get_text(fluid);
                         if (value != "true" && value != "false")
                             throw std::runtime_error("FluidMaterial must be true or false");
-                        if (value == "true" && !mat.dynamic_viscosity)
+                        mat.kind = value == "true" ? mhs::model::MaterialKind::Fluid : mhs::model::MaterialKind::Solid;
+                        if (mat.kind == mhs::model::MaterialKind::Fluid && !mat.dynamic_viscosity)
                             throw std::runtime_error("fluid material '" + name + "' is missing DynamicViscosity");
-                        if (value == "false")
+                        if (mat.kind == mhs::model::MaterialKind::Solid)
                             mat.dynamic_viscosity.reset();
                     }
                     else {

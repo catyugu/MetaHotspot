@@ -314,6 +314,7 @@ TEST(IoTest, ReadXmlThermalConductivitySingleExpressionTrimsWhitespace)
     auto io_structure = mhs::app::pta::read_xml(path.string());
     ASSERT_EQ(io_structure.model.materials.size(), 1u);
     EXPECT_EQ(io_structure.model.materials[0].name, "mat");
+    EXPECT_EQ(io_structure.model.materials[0].value.kind, mhs::model::MaterialKind::Solid);
     EXPECT_EQ(io_structure.model.materials[0].value.conductivity_x, "5");
     EXPECT_EQ(io_structure.model.materials[0].value.conductivity_y, "5");
     EXPECT_EQ(io_structure.model.materials[0].value.conductivity_z, "5");
