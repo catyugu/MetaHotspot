@@ -2,6 +2,7 @@
 
 #include "core/vector.hpp"
 #include "model/types.hpp"
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -163,8 +164,19 @@ namespace mhs::model {
         mhs::core::Vector<ThermalBoundary> thermal_boundaries;
         mhs::core::Vector<FluidBoundaryCondition> fluid_boundaries;
 
+        void add_function(NamedFunction value)
+        {
+            if (std::any_of(functions.begin(), functions.end(),
+                    [&](const auto& entry) { return entry.name == value.name; }))
+                throw std::invalid_argument("duplicate function name: " + value.name);
+            checked_id(functions.size());
+            functions.push_back(std::move(value));
+        }
         MaterialId add_material(NamedMaterial value)
         {
+            if (std::any_of(materials.begin(), materials.end(),
+                    [&](const auto& entry) { return entry.name == value.name; }))
+                throw std::invalid_argument("duplicate material name: " + value.name);
             const auto id = checked_id(materials.size());
             materials.push_back(std::move(value));
             return id;
@@ -207,6 +219,7 @@ namespace mhs::model {
 
         LibraryDefinition& library() { return *library_handle; }
         const LibraryDefinition& library() const { return *library_handle; }
+        void detach_library() { library_handle = std::make_shared<LibraryDefinition>(*library_handle); }
 
         double reference_temperature = 300.0;
         MeshSpec mesh;

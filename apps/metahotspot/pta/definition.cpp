@@ -101,6 +101,9 @@ namespace mhs::app::pta {
 
     mhs::model::ModelDefinition normalize(Definition pta)
     {
+        // PTA normalization rewrites physical laws and generates heat sources.
+        // Never mutate a Library shared with an existing model definition.
+        pta.model.detach_library();
         normalize_pta_expressions(pta);
         auto out = std::move(pta.model);
         const double scale = length_unit_to_si(pta.length_unit);

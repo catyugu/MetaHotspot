@@ -287,8 +287,7 @@ MHS_API mhs_status_t mhs_library_add_material(mhs_library_t* l, const char* name
                 throw std::invalid_argument("dynamic viscosity expression must not be empty");
             spec.dynamic_viscosity = std::string(dynamic_viscosity);
         }
-        *out_id = static_cast<mhs_index_t>(l->def->materials.size());
-        l->def->materials.push_back({name, std::move(spec)});
+        *out_id = l->def->add_material({name, std::move(spec)});
     });
 }
 
@@ -298,8 +297,7 @@ MHS_API mhs_status_t mhs_library_add_source(mhs_library_t* l, const char* expres
     CHECK_NULL(expression);
     CHECK_NULL(out_id);
     MHS_TRY({
-        *out_id = static_cast<mhs_index_t>(l->def->sources.size());
-        l->def->sources.push_back(expression);
+        *out_id = l->def->add_source(expression);
     });
 }
 MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
@@ -378,7 +376,7 @@ MHS_API mhs_status_t mhs_library_add_function_expr(mhs_library_t* l, const char*
     CHECK_NULL(l);
     CHECK_NULL(name);
     CHECK_NULL(expression);
-    MHS_TRY({ l->def->functions.push_back({name, mhs::model::ExpressionFunctionSpec {expression}}); });
+    MHS_TRY({ l->def->add_function({name, mhs::model::ExpressionFunctionSpec {expression}}); });
 }
 
 MHS_API mhs_status_t mhs_library_add_function_gauss(
@@ -386,7 +384,7 @@ MHS_API mhs_status_t mhs_library_add_function_gauss(
 {
     CHECK_NULL(l);
     CHECK_NULL(name);
-    MHS_TRY({ l->def->functions.push_back({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}}); });
+    MHS_TRY({ l->def->add_function({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}}); });
 }
 
 MHS_API mhs_status_t mhs_library_add_function_sine(
@@ -395,7 +393,7 @@ MHS_API mhs_status_t mhs_library_add_function_sine(
     CHECK_NULL(l);
     CHECK_NULL(name);
     MHS_TRY(
-        { l->def->functions.push_back({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}}); });
+        { l->def->add_function({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}}); });
 }
 
 MHS_API mhs_status_t mhs_library_add_function_double_exponential(
@@ -404,7 +402,7 @@ MHS_API mhs_status_t mhs_library_add_function_double_exponential(
     CHECK_NULL(l);
     CHECK_NULL(name);
     MHS_TRY(
-        { l->def->functions.push_back({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}}); });
+        { l->def->add_function({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}}); });
 }
 
 MHS_API mhs_status_t mhs_library_add_function_piecewise(
@@ -417,7 +415,7 @@ MHS_API mhs_status_t mhs_library_add_function_piecewise(
         mhs::model::PiecewiseFunctionSpec spec;
         for (size_t i = 0; i < count; ++i)
             spec.points.push_back({points[i].x, points[i].y});
-        l->def->functions.push_back({name, std::move(spec)});
+        l->def->add_function({name, std::move(spec)});
     });
 }
 
@@ -431,7 +429,7 @@ MHS_API mhs_status_t mhs_library_add_function_periodic_piecewise_constant(
         mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
         spec.period = period;
         spec.values.assign(values, values + count);
-        l->def->functions.push_back({name, std::move(spec)});
+        l->def->add_function({name, std::move(spec)});
     });
 }
 

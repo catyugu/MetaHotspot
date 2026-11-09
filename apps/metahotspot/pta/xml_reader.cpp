@@ -357,7 +357,7 @@ namespace mhs::app::pta {
                     }
                 }
                 if (!name.empty()) {
-                    def.model.library().functions.push_back({std::move(name), std::move(fn)});
+                    def.model.library().add_function({std::move(name), std::move(fn)});
                 }
             }
         }

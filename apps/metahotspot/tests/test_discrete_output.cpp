@@ -79,13 +79,12 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
 
 TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
 {
-    auto d = cube_definition();
-    d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
     const std::array<mhs::model::ThermalBoundary, 3> conditions {mhs::model::DirichletBoundary {"280+10*t+y"},
         mhs::model::NeumannBoundary {"T/100+t+y"}, mhs::model::ConvectionBoundary {"T/100+t+y", "280+t+z"}};
     for (size_t kind = 0; kind < conditions.size(); ++kind) {
         SCOPED_TRACE(kind);
-        d.library().thermal_boundaries.clear();
+        auto d = cube_definition();
+        d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
         d.thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}},
             d.library().add_thermal_boundary(conditions[kind])}};
         const auto model = test_pta::build_model(d);
