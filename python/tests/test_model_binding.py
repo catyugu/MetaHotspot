@@ -12,7 +12,7 @@ from metahotspot.enums import Axis, StudyType
 
 
 def _model(*, transient: bool = False) -> metahotspot.Model:
-    model = metahotspot.Model()
+    model = metahotspot.Model(metahotspot.Library())
     model.set_cartesian_mesh(
         np.array([0.0, 0.001]),
         np.array([0.0, 0.001]),
@@ -22,12 +22,14 @@ def _model(*, transient: bool = False) -> metahotspot.Model:
     source = model.library.add_source("1e6")
     volume = model.add_volume(material, source)
     model.add_box(volume, [0, 0, 0], [0.001, 0.001, 0.001])
+    model.set_default_thermal_boundary(
+        model.library.add_thermal_boundary(metahotspot.Neumann("0"))
+    )
     return model
 
 
 def test_model_native_calls_compile_and_assemble():
     model = _model()
-
 
     compiled = model.compile()
     assert compiled.cell_count == 1

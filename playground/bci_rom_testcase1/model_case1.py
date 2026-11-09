@@ -201,13 +201,16 @@ class Case1Config:
 
 
 def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
-    """Assemble the Case-1 geometry (no boundary conditions; default Neumman)."""
+    """Assemble the Case-1 geometry with an explicit adiabatic default."""
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
-    model = metahotspot.Model()
+    model = metahotspot.Model(metahotspot.Library())
     model.set_reference_temperature(cfg.ambient_K)
     model.set_cartesian_mesh(
         cfg.x_vertices_mm * 1e-3, cfg.y_vertices_mm * 1e-3, cfg.z_vertices_mm * 1e-3
+    )
+    model.set_default_thermal_boundary(
+        model.library.add_thermal_boundary(metahotspot.Neumann("0"))
     )
     materials = {
         name: model.library.add_material(name, *props) for name, props in MATERIALS.items()

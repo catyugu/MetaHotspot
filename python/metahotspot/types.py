@@ -58,8 +58,11 @@ class MhsSurfaceRegion(ctypes.Structure):
 
 
 class MhsThermalBoundary(ctypes.Structure):
-    _fields_ = [("kind", ctypes.c_int32), ("expression", ctypes.c_char_p),
-                ("ambient_temperature", ctypes.c_char_p)]
+    _fields_ = [
+        ("kind", ctypes.c_int32),
+        ("expression", ctypes.c_char_p),
+        ("ambient_temperature", ctypes.c_char_p),
+    ]
 
 
 class MhsStudy(ctypes.Structure):

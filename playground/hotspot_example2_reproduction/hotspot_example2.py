@@ -163,10 +163,13 @@ def build_model(
 ) -> metahotspot.Model:
     """Build the MetaHotSpot model for example2."""
     if model is None:
-        model = metahotspot.Model()
+        model = metahotspot.Model(metahotspot.Library())
     m = model
 
     m.set_reference_temperature(T_AMB)
+    m.set_default_thermal_boundary(
+        m.library.add_thermal_boundary(metahotspot.Neumann("0"))
+    )
 
     # -- Mesh: full sink XY extent, 4 Z layers --
     z_chip = np.linspace(0, T_CHIP, NZ_CHIP + 1, endpoint=True)
@@ -379,7 +382,7 @@ def main():
     print("=" * 72)
 
     t0 = _time.perf_counter()
-    transient_model = metahotspot.Model()
+    transient_model = metahotspot.Model(metahotspot.Library())
 
     # Register periodic piecewise-constant functions first.
     # HotSpot ptrace: total power (W). Convert to volumetric density (W/m3).

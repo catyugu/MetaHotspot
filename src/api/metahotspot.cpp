@@ -358,7 +358,7 @@ MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(mhs_model_t* m, mhs_
 {
     CHECK_NULL(m);
     MHS_TRY({
-        if (condition != MHS_INVALID_INDEX && condition >= m->def.library().thermal_boundaries.size())
+        if (condition >= m->def.library().thermal_boundaries.size())
             throw std::out_of_range("default thermal boundary condition ID out of range");
         m->def.default_thermal_boundary = condition;
     });
