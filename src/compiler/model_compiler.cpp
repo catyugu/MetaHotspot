@@ -5,7 +5,6 @@
 #include "core/vector.hpp"
 #include "expression/expression.hpp"
 
-#include <cassert>
 #include <cmath>
 #include <stdexcept>
 
@@ -59,12 +58,30 @@ namespace mhs::compiler {
             return compiled;
         }
 
+        void validate_surface_regions(const mhs::model::ModelDefinition& definition)
+        {
+            auto check = [](const mhs::model::SurfaceRegion& region) {
+                const auto& r = region.rectangle;
+                if (static_cast<unsigned>(region.axis) > 2 || !std::isfinite(region.coordinate)
+                    || !std::isfinite(r.a_min) || !std::isfinite(r.a_max) || !std::isfinite(r.b_min)
+                    || !std::isfinite(r.b_max) || r.a_min >= r.a_max || r.b_min >= r.b_max)
+                    throw std::invalid_argument("surface region requires a valid axis and finite, increasing bounds");
+            };
+            for (const auto& boundary : definition.thermal_boundaries)
+                for (const auto& region : boundary.regions)
+                    check(region);
+            for (const auto& boundary : definition.fluid_boundaries)
+                for (const auto& region : boundary.regions)
+                    check(region);
+        }
+
     } // namespace
 
     mhs::model::Model build_model(const mhs::model::ModelDefinition& definition)
     {
         if (!std::isfinite(definition.reference_temperature))
             throw std::invalid_argument("reference temperature must be finite");
+        validate_surface_regions(definition);
 
         mhs::model::Model model;
         model.reference_temperature = definition.reference_temperature;

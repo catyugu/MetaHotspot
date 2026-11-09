@@ -2,7 +2,6 @@
 #include "core/vector.hpp"
 #include "model/constants.hpp"
 
-#include "expression/expression.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -101,8 +100,7 @@ namespace mhs::compiler {
                 refined.push_back(facet);
                 continue;
             }
-            mhs::core::Vector<double> a {facet.bounds[0], facet.bounds[1]};
-            mhs::core::Vector<double> b {facet.bounds[2], facet.bounds[3]};
+            mhs::core::Vector<double> a, b;
             for (const auto& region : regions) {
                 if (region.axis != facet.axis || std::abs(region.coordinate - facet.coordinate) >= EPS)
                     continue;
@@ -110,10 +108,18 @@ namespace mhs::compiler {
                 if (r.a_max <= facet.bounds[0] || r.a_min >= facet.bounds[1] || r.b_max <= facet.bounds[2]
                     || r.b_min >= facet.bounds[3])
                     continue;
+                if (a.empty()) {
+                    a = {facet.bounds[0], facet.bounds[1]};
+                    b = {facet.bounds[2], facet.bounds[3]};
+                }
                 a.push_back(std::clamp(r.a_min, facet.bounds[0], facet.bounds[1]));
                 a.push_back(std::clamp(r.a_max, facet.bounds[0], facet.bounds[1]));
                 b.push_back(std::clamp(r.b_min, facet.bounds[2], facet.bounds[3]));
                 b.push_back(std::clamp(r.b_max, facet.bounds[2], facet.bounds[3]));
+            }
+            if (a.empty()) {
+                refined.push_back(facet);
+                continue;
             }
             auto unique = [](auto& cuts) {
                 std::sort(cuts.begin(), cuts.end());
