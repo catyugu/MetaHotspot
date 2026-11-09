@@ -4,7 +4,10 @@
 #include "model/types.hpp"
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <stdexcept>
+#include <utility>
 #include <string>
 #include <variant>
 
@@ -65,12 +68,14 @@ namespace mhs::model {
         RegionRect rectangle;
     };
 
-    template <typename Condition> struct SurfaceConditionSpec {
+    // A spatial assignment refers to one reusable condition of the appropriate kind.
+    struct SurfaceAssignment {
         mhs::core::Vector<SurfaceRegion> regions;
-        Condition condition;
+        BoundaryConditionId condition = mhs::core::invalid_id;
     };
 
-    using ThermalBoundarySpec = SurfaceConditionSpec<ThermalBoundary>;
+    using ThermalBoundarySpec = SurfaceAssignment;
+    using FluidBoundarySpec = SurfaceAssignment;
 
     struct MaterialSpec {
         Expression conductivity_x = "0.0";
@@ -149,20 +154,71 @@ namespace mhs::model {
         double pressure = 0.0;
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
-    using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryCondition>;
 
-    struct ModelDefinition {
-        double reference_temperature = 300.0;
-        MeshSpec mesh;
-        mhs::core::Vector<VariableSpec> variables;
+    // Definitions are reusable across models. Each category owns a separate, append-only ID space.
+    struct LibraryDefinition {
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;
         mhs::core::Vector<Expression> sources;
+        mhs::core::Vector<ThermalBoundary> thermal_boundaries;
+        mhs::core::Vector<FluidBoundaryCondition> fluid_boundaries;
+
+        MaterialId add_material(NamedMaterial value)
+        {
+            const auto id = checked_id(materials.size());
+            materials.push_back(std::move(value));
+            return id;
+        }
+        SourceId add_source(Expression value)
+        {
+            const auto id = checked_id(sources.size());
+            sources.push_back(std::move(value));
+            return id;
+        }
+        BoundaryConditionId add_thermal_boundary(ThermalBoundary value)
+        {
+            const auto id = checked_id(thermal_boundaries.size());
+            thermal_boundaries.push_back(std::move(value));
+            return id;
+        }
+        BoundaryConditionId add_fluid_boundary(FluidBoundaryCondition value)
+        {
+            const auto id = checked_id(fluid_boundaries.size());
+            fluid_boundaries.push_back(std::move(value));
+            return id;
+        }
+
+    private:
+        static BoundaryConditionId checked_id(std::size_t size)
+        {
+            if (size >= mhs::core::invalid_id)
+                throw std::length_error("library resource ID space exhausted");
+            return static_cast<BoundaryConditionId>(size);
+        }
+    };
+
+    struct ModelDefinition {
+        explicit ModelDefinition(std::shared_ptr<LibraryDefinition> shared = std::make_shared<LibraryDefinition>())
+            : library_handle(std::move(shared))
+        {
+            if (!library_handle)
+                throw std::invalid_argument("model requires a Library");
+        }
+
+        LibraryDefinition& library() { return *library_handle; }
+        const LibraryDefinition& library() const { return *library_handle; }
+
+        double reference_temperature = 300.0;
+        MeshSpec mesh;
+        mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<VolumeSpec> volumes;
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
-        ThermalBoundary default_thermal_boundary = NeumannBoundary {};
+        BoundaryConditionId default_thermal_boundary = mhs::core::invalid_id; // built-in Neumann(0)
         mhs::core::Vector<PointProbeSpec> point_probes;
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
+
+    private:
+        std::shared_ptr<LibraryDefinition> library_handle;
     };
 
 } // namespace mhs::model
