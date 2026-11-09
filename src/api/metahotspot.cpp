@@ -122,12 +122,7 @@ static mhs::model::MaterialKind _to_material_kind(mhs_material_kind_t kind)
 }
 
 static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
-{
-    if (!std::isfinite(coord) || !std::isfinite(r.a_min) || !std::isfinite(r.a_max) || !std::isfinite(r.b_min)
-        || !std::isfinite(r.b_max) || r.a_min >= r.a_max || r.b_min >= r.b_max)
-        throw std::invalid_argument("surface region bounds must be finite and increasing");
-    return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}};
-}
+{ return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}}; }
 
 static mhs::core::Vector<mhs::model::SurfaceRegion> _copy_surface_regions(
     const mhs_surface_region_t* regions, size_t count)
@@ -223,10 +218,6 @@ MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
 MHS_API mhs_status_t mhs_model_set_reference_temperature(mhs_model_t* m, double temperature_K)
 {
     CHECK_NULL(m);
-    if (!std::isfinite(temperature_K)) {
-        SET_ERR("reference temperature must be finite");
-        return MHS_ERROR;
-    }
     m->def.reference_temperature = temperature_K;
     mhs_detail_clear_last_error();
     return MHS_OK;
@@ -240,11 +231,7 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
         auto axis = [](const double* data, size_t count) {
             if (!data || count < 2)
                 throw std::invalid_argument("mesh axes require at least two vertices");
-            mhs::core::Vector<double> result(data, data + count);
-            for (size_t i = 0; i < count; ++i)
-                if (!std::isfinite(result[i]) || (i && result[i] <= result[i - 1]))
-                    throw std::invalid_argument("mesh vertices must be finite and strictly increasing");
-            return result;
+            return mhs::core::Vector<double>(data, data + count);
         };
         mhs::model::MeshSpec mesh {axis(x, nx), axis(y, ny), axis(z, nz)};
         m->def.mesh = std::move(mesh);
@@ -283,14 +270,8 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
         spec.conductivity_z = kz;
         spec.density = rho;
         spec.specific_heat = c;
-        if (spec.kind == mhs::model::MaterialKind::Fluid) {
-            if (!dynamic_viscosity || !dynamic_viscosity[0])
-                throw std::invalid_argument("fluid material requires dynamic viscosity");
-            spec.dynamic_viscosity = std::string(dynamic_viscosity);
-        }
-        else if (dynamic_viscosity) {
-            throw std::invalid_argument("solid material must not define dynamic viscosity");
-        }
+        if (dynamic_viscosity)
+            spec.dynamic_viscosity = dynamic_viscosity;
         *out_id = static_cast<mhs_index_t>(m->def.materials.size());
         m->def.materials.push_back({name, std::move(spec)});
     });
@@ -311,10 +292,6 @@ MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, 
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        if (material >= m->def.materials.size())
-            throw std::out_of_range("material ID out of range");
-        if (source != MHS_INVALID_INDEX && source >= m->def.sources.size())
-            throw std::out_of_range("source ID out of range");
         *out_id = static_cast<mhs_index_t>(m->def.volumes.size());
         m->def.volumes.push_back({material, source, {}});
     });
@@ -588,7 +565,7 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
     const auto& mesh = model.discrete;
     if (fields->cell_count != mesh.cells.size() || fields->facet_count != mesh.facets.size()
         || fields->projection_count != model.source_terms.size()) {
-        SET_ERR("CellFields buffer sizes do not match compiled model");
+        SET_ERR("compiled fields buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
     if (fields->cell_count && (!fields->cell_min || !fields->cell_max || !fields->material_id)) {

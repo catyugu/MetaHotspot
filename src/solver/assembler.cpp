@@ -110,20 +110,8 @@ namespace mhs::solver {
             const auto col = static_cast<SparseIndex>(f.plus);
             const auto kj = conductivity_[j][axis];
             const auto fi = fluid_index(i), fj = fluid_index(j);
-            const double d_minus = model.discrete.cells[i].size()[axis] / 2;
-            const double d_plus = model.discrete.cells[j].size()[axis] / 2;
-            double r_minus = side_thermal_resistance(d_minus, ki);
-            double r_plus = side_thermal_resistance(d_plus, kj);
-            double r_film = 0.0;
-            if (fi != mhs::core::invalid_id && fj == mhs::core::invalid_id) {
-                r_minus = 0.0;
-                r_film = fluid_film_resistance(model.fluid.interface_heat_transfer_factor[fi], ki);
-            }
-            else if (fj != mhs::core::invalid_id && fi == mhs::core::invalid_id) {
-                r_plus = 0.0;
-                r_film = fluid_film_resistance(model.fluid.interface_heat_transfer_factor[fj], kj);
-            }
-            const double g = f.area() / (r_minus + r_film + r_plus);
+            const auto [r_minus, r_plus] = interior_facet_resistances(model, f, ki, kj);
+            const double g = f.area() / (r_minus + r_plus);
             const auto ij = slot(row, col), ji = slot(col, row);
             values[diagonal_positions_[i]] += g;
             values[ij] -= g;

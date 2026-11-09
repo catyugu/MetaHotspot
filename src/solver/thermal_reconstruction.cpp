@@ -45,9 +45,6 @@ namespace mhs::solver {
             const Vec3 k {conductivity(model, temperature, cell, time, 0),
                 conductivity(model, temperature, cell, time, 1), conductivity(model, temperature, cell, time, 2)};
             Vec3 gradient {};
-            const auto fluid_index = [&](CellId c) {
-                return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
-            };
             for (auto id : model.discrete.incident_facets(cell)) {
                 const auto& f = model.discrete.facets[id];
                 if (f.exterior())
@@ -55,24 +52,13 @@ namespace mhs::solver {
                 const auto axis = static_cast<std::size_t>(f.axis);
                 const auto neighbor = f.minus == cell ? f.plus : f.minus;
                 const double k_neighbor = conductivity(model, temperature, neighbor, time, static_cast<int>(f.axis));
-                double a = side_thermal_resistance(model.discrete.cells[cell].size()[axis] / 2, k[axis]);
-                double b = side_thermal_resistance(model.discrete.cells[neighbor].size()[axis] / 2, k_neighbor);
-                const auto fi = fluid_index(cell), fj = fluid_index(neighbor);
-                double r_film = 0.0;
-                if (fi != mhs::core::invalid_id && fj == mhs::core::invalid_id) {
-                    a = 0.0;
-                    r_film = fluid_film_resistance(model.fluid.interface_heat_transfer_factor[fi], k[axis]);
-                }
-                else if (fj != mhs::core::invalid_id && fi == mhs::core::invalid_id) {
-                    b = 0.0;
-                    r_film = fluid_film_resistance(model.fluid.interface_heat_transfer_factor[fj], k_neighbor);
-                }
-                // The film spans the fluid bulk temperature and the shared wall temperature.
-                const double r_cell_to_wall = a + (fi != mhs::core::invalid_id ? r_film : 0.0);
-                const double r_neighbor_to_wall = b + (fj != mhs::core::invalid_id ? r_film : 0.0);
-                const double weighted_temperature
-                    = r_neighbor_to_wall * temperature[cell] + r_cell_to_wall * temperature[neighbor];
-                const double trace = weighted_temperature / (a + b + r_film);
+                const auto [r_minus, r_plus] = f.minus == cell
+                    ? interior_facet_resistances(model, f, k[axis], k_neighbor)
+                    : interior_facet_resistances(model, f, k_neighbor, k[axis]);
+                const double r_cell = f.minus == cell ? r_minus : r_plus;
+                const double r_neighbor = f.minus == cell ? r_plus : r_minus;
+                const double trace
+                    = (r_neighbor * temperature[cell] + r_cell * temperature[neighbor]) / (r_minus + r_plus);
                 gradient[axis] += (f.minus == cell ? 1 : -1) * f.area() * trace;
             }
             for (auto id : model.discrete.incident_facets(cell)) {

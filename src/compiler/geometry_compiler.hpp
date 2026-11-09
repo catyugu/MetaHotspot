@@ -1,5 +1,4 @@
 #pragma once
-#include <limits>
 #include <optional>
 
 #include "model/model.hpp"
@@ -12,9 +11,10 @@ namespace mhs::compiler {
     void build_cell_facet_incidence(mhs::model::DiscreteMesh& mesh);
 
     // Tags are opaque caller-owned indices; geometry has no physics payload.
+    using SurfaceTag = mhs::core::EntityIndex;
     struct TaggedSurfaceRegion {
         mhs::model::SurfaceRegion region;
-        std::size_t tag;
+        SurfaceTag tag;
     };
 
     std::optional<std::size_t> classify_point(
@@ -29,7 +29,6 @@ namespace mhs::compiler {
         mhs::model::DiscreteMesh& mesh, const mhs::core::Vector<mhs::model::SurfaceRegion>& regions);
 
     // Later regions take precedence. Interior facets always have the invalid tag.
-    mhs::core::Vector<std::size_t> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<TaggedSurfaceRegion>& regions,
-        std::size_t fallback = std::numeric_limits<std::size_t>::max());
+    mhs::core::Vector<SurfaceTag> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
+        const mhs::core::Vector<TaggedSurfaceRegion>& regions, SurfaceTag fallback = mhs::core::invalid_id);
 } // namespace mhs::compiler

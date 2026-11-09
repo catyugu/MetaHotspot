@@ -139,10 +139,10 @@ namespace mhs::compiler {
         mesh.facets = std::move(refined);
     }
 
-    mhs::core::Vector<std::size_t> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<TaggedSurfaceRegion>& regions, std::size_t fallback)
+    mhs::core::Vector<SurfaceTag> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
+        const mhs::core::Vector<TaggedSurfaceRegion>& regions, SurfaceTag fallback)
     {
-        mhs::core::Vector<std::size_t> assigned(mesh.facets.size(), std::numeric_limits<std::size_t>::max());
+        mhs::core::Vector<SurfaceTag> assigned(mesh.facets.size(), mhs::core::invalid_id);
         for (std::size_t id = 0; id < mesh.facets.size(); ++id) {
             const auto& facet = mesh.facets[id];
             if (!facet.exterior())

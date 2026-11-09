@@ -103,9 +103,9 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
             return (boundary,)
 
     fields = compiled.fields
-    axes = fields.facet_axis[boundary.facet_ids]
-    half = CellGeometry(fields).half_sizes[boundary.cells, axes]
-    expected = np.average(1000 / (1 + 1000 * half), weights=boundary.areas)
+    axes = fields.facet_axis[boundary.surface.facet_ids]
+    half = CellGeometry(fields).half_sizes[boundary.surface.cell_ids, axes]
+    expected = np.average(1000 / (1 + 1000 * half), weights=boundary.surface.areas)
     np.testing.assert_allclose(Ports().physical_to_effective([1000]), [expected])
 
 
@@ -116,7 +116,10 @@ def test_native_mesh_input_rejects_invalid_vertices(axis):
     from metahotspot._error import MetaHotspotError
 
     model = _model()
-    reference = model.compile().fields.cell_min.copy()
-    with pytest.raises((ValueError, MetaHotspotError)):
+    if len(axis) < 2:
+        with pytest.raises((ValueError, MetaHotspotError)):
+            model.set_cartesian_mesh(axis, [0.0, 0.001], [0.0, 0.001])
+    else:
         model.set_cartesian_mesh(axis, [0.0, 0.001], [0.0, 0.001])
-    np.testing.assert_array_equal(model.compile().fields.cell_min, reference)
+        with pytest.raises((ValueError, MetaHotspotError)):
+            model.compile()

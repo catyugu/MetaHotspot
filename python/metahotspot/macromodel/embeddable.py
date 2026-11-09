@@ -141,7 +141,7 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
     local = {int(c): i for i, c in enumerate(cells)}
     fields = full.fields
     ambient_faces = {
-        int(f) for group in model.boundary_groups() for f in group.facet_ids
+        int(f) for group in model.boundary_groups() for f in group.surface.facet_ids
     }
     by_key = {}
     invalid = np.iinfo(fields.facet_plus.dtype).max

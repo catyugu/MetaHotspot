@@ -11,7 +11,8 @@
 
 namespace mhs::compiler::fluid {
     void build_domain(mhs::model::Model& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
-        const mhs::core::Vector<std::size_t>& facet_boundary_tags, const FluidMaterialData& materials)
+        const mhs::core::Vector<mhs::core::EntityIndex>& facet_boundary_tags,
+        const mhs::core::Vector<double>& initial_viscosity)
     {
         using namespace mhs::core;
         using namespace mhs::model;
@@ -22,11 +23,11 @@ namespace mhs::compiler::fluid {
         mhs::core::Vector<double> viscosity;
         for (std::size_t c = 0; c < mesh.cells.size(); ++c) {
             const auto mat = model.cell_material[c];
-            if (mat >= materials.initial_viscosity.size() || model.material_table[mat].kind != MaterialKind::Fluid)
+            if (mat >= initial_viscosity.size() || model.material_table[mat].kind != MaterialKind::Fluid)
                 continue;
             fluid.global_to_fluid[c] = static_cast<FluidCellId>(fluid.fluid_to_global.size());
             fluid.fluid_to_global.push_back(static_cast<CellId>(c));
-            viscosity.push_back(materials.initial_viscosity[mat]);
+            viscosity.push_back(initial_viscosity[mat]);
         }
         const auto n = fluid.fluid_to_global.size();
         mhs::core::detail::checked_sparse_size(n);
