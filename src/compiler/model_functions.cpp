@@ -16,7 +16,7 @@ namespace mhs::compiler {
         mhs::expression::SymbolTable symbols, empty;
         for (const auto& variable : definition.variables)
             symbols.variables[variable.name] = mhs::expression::eval_geometry(variable.value, empty);
-        register_all_functions(symbols, definition.functions);
+        register_all_functions(symbols, definition.library().functions);
         return symbols;
     }
 

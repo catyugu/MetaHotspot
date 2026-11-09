@@ -11,7 +11,7 @@
 
 namespace mhs::compiler::fluid {
     void build_domain(mhs::model::Model& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
-        const FluidMaterialData& materials)
+        const mhs::model::LibraryDefinition& library, const FluidMaterialData& materials)
     {
         using namespace mhs::core;
         using namespace mhs::model;
@@ -129,7 +129,7 @@ namespace mhs::compiler::fluid {
                         rhs[i] += g * bc.pressure;
                     }
                 },
-                boundaries[term.tag].condition);
+                library.fluid_boundaries[boundaries[term.tag].condition]);
         }
         if (!reference)
             throw std::runtime_error(

@@ -17,8 +17,8 @@ namespace mhs::compiler {
         };
         template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-        mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
-            mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
+        mhs::model::BoundaryCondition compile_thermal_boundary(
+            const mhs::model::ThermalBoundary& condition, const mhs::expression::SymbolTable& symbols)
         {
             using namespace mhs::core;
             using namespace mhs::model;
@@ -42,20 +42,18 @@ namespace mhs::compiler {
                     },
                 },
                 condition);
-            const auto index = static_cast<BoundaryConditionId>(conditions.size());
-            conditions.push_back(std::move(result));
-            return index;
+            return result;
         }
 
         mhs::core::Vector<TaggedSurfaceRegion> compile_thermal_boundaries(
-            const mhs::core::Vector<mhs::model::ThermalBoundarySpec>& boundaries,
-            mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
+            const mhs::core::Vector<mhs::model::ThermalBoundarySpec>& boundaries, std::size_t condition_count)
         {
             mhs::core::Vector<TaggedSurfaceRegion> compiled;
             for (const auto& boundary : boundaries) {
-                const auto condition = compile_thermal_boundary(boundary.condition, conditions, symbols);
+                if (boundary.condition >= condition_count)
+                    throw std::out_of_range("thermal boundary condition ID out of range");
                 for (const auto& region : boundary.regions)
-                    compiled.push_back({region, condition});
+                    compiled.push_back({region, boundary.condition});
             }
             return compiled;
         }
@@ -67,6 +65,7 @@ namespace mhs::compiler {
         if (!std::isfinite(definition.reference_temperature))
             throw std::invalid_argument("reference temperature must be finite");
 
+        const auto& library = definition.library();
         mhs::model::Model model;
         model.reference_temperature = definition.reference_temperature;
 
@@ -75,7 +74,7 @@ namespace mhs::compiler {
             model.point_probes.push_back({p.name, p.x, p.y, p.z});
 
         // Compile material properties in ModelDefinition::materials order.
-        model.material_table.resize(definition.materials.size());
+        model.material_table.resize(library.materials.size());
         mhs::compiler::fluid::FluidMaterialData fluid_materials;
         fluid_materials.initial_viscosity.assign(definition.materials.size(), std::nullopt);
 
@@ -98,7 +97,7 @@ namespace mhs::compiler {
             }
         }
 
-        for (const auto& source : definition.sources)
+        for (const auto& source : library.sources)
             model.heat_source_table.push_back(mhs::expression::parse(source, symbols));
         for (const auto& volume : definition.volumes) {
             if (volume.material >= definition.materials.size())
@@ -113,11 +112,21 @@ namespace mhs::compiler {
 
         // Compile boundary patches.
         auto& boundary_conditions = model.boundary_conditions;
-        auto compiled_boundaries
-            = compile_thermal_boundaries(definition.thermal_boundaries, boundary_conditions, symbols);
+        for (const auto& condition : library.thermal_boundaries)
+            boundary_conditions.push_back(compile_thermal_boundary(condition, symbols));
+        auto compiled_boundaries = compile_thermal_boundaries(definition.thermal_boundaries, boundary_conditions.size());
 
-        auto default_thermal_boundary
-            = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
+        auto default_thermal_boundary = definition.default_thermal_boundary;
+        if (default_thermal_boundary == mhs::core::invalid_id) {
+            default_thermal_boundary = static_cast<mhs::model::BoundaryConditionId>(boundary_conditions.size());
+            boundary_conditions.push_back(compile_thermal_boundary(mhs::model::NeumannBoundary {}, symbols));
+        }
+        else if (default_thermal_boundary >= boundary_conditions.size()) {
+            throw std::out_of_range("default thermal boundary condition ID out of range");
+        }
+        for (const auto& boundary : definition.fluid_boundaries)
+            if (boundary.condition >= library.fluid_boundaries.size())
+                throw std::out_of_range("fluid boundary condition ID out of range");
 
         compile_cartesian_mesh(model, definition.mesh, definition.volumes);
         project_cell_regions(model, definition.volumes);
@@ -133,7 +142,7 @@ namespace mhs::compiler {
         const bool has_fluid_material = std::any_of(definition.materials.begin(), definition.materials.end(),
             [](const mhs::model::NamedMaterial& material) { return material.value.dynamic_viscosity.has_value(); });
         if (has_fluid_material) {
-            mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_materials);
+            mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, library, fluid_materials);
         }
 
         return model;
