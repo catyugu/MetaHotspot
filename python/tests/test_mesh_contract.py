@@ -5,6 +5,7 @@ import pytest
 from test_model_binding import _model
 
 from metahotspot import SurfaceRegion
+from metahotspot.enums import MaterialKind
 
 
 def test_subcell_sources_keep_independent_power_columns():
@@ -43,7 +44,14 @@ def test_cartesian_fluid_model_recompiles_consistently(case):
     def fluid_model():
         model = _model()
         material = model.add_material(
-            "fluid", "0.6", "0.6", "0.6", "1000", "4200", "0.001"
+            "fluid",
+            "0.6",
+            "0.6",
+            "0.6",
+            "1000",
+            "4200",
+            kind=MaterialKind.FLUID,
+            dynamic_viscosity="0.001",
         )
         volume = model.add_volume(material, 0)
         model.add_box(volume, [0, 0, 0], [0.001, 0.001, 0.001])
