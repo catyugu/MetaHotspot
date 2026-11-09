@@ -30,8 +30,14 @@ namespace mhs::compiler {
                         {axes[0][x], axes[1][y], axes[2][z]}, {axes[0][x + 1], axes[1][y + 1], axes[2][z + 1]}};
                     if (!classify_point(volumes, cell.center()))
                         continue;
-                    active[flatten(x, y, z)] = static_cast<CellId>(model.discrete.cells.size());
+                    const auto cell_id = static_cast<CellId>(model.discrete.cells.size());
+                    active[flatten(x, y, z)] = cell_id;
                     model.discrete.cells.push_back(cell);
+                    for (auto& probe : model.point_probes)
+                        if (probe.point[0] >= cell.min[0] && probe.point[0] <= cell.max[0]
+                            && probe.point[1] >= cell.min[1] && probe.point[1] <= cell.max[1]
+                            && probe.point[2] >= cell.min[2] && probe.point[2] <= cell.max[2])
+                            probe.cell = cell_id;
                 }
         for (std::size_t x = 0; x < n[0]; ++x)
             for (std::size_t y = 0; y < n[1]; ++y)

@@ -4,8 +4,8 @@
 #include "logging/logger.hpp"
 #include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
-#include "solver/probe_recorder.hpp"
 #include "solver/solver.hpp"
+#include "thermal_reconstruction.hpp"
 #include <atstep/stepper.hpp>
 
 #include <cmath>
@@ -212,12 +212,18 @@ namespace mhs::solver {
             return assembler.assemble(current, time);
         };
 
-        ProbeRecorder probe_recorder(model);
-        StateObserver observe
-            = [&](double t, std::span<const double> accepted_state) { probe_recorder.record(t, accepted_state); };
+        mhs::core::Vector<ProbeTrace> probe_traces;
+        for (const auto& probe : model.point_probes)
+            probe_traces.push_back({probe.name, {}});
+        StateObserver observe = [&](double time, std::span<const double> accepted_state) {
+            for (std::size_t i = 0; i < model.point_probes.size(); ++i) {
+                const auto& probe = model.point_probes[i];
+                probe_traces[i].values.push_back(sample_point(model, accepted_state, time, probe.cell, probe.point));
+            }
+        };
 
         auto sol = solve_system(study, assemble, std::move(state), options, observe);
-        sol.probe_traces = std::move(probe_recorder).take_traces();
+        sol.probe_traces = std::move(probe_traces);
         return sol;
     }
 
