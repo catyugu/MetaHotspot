@@ -210,13 +210,13 @@ def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
         cfg.x_vertices_mm * 1e-3, cfg.y_vertices_mm * 1e-3, cfg.z_vertices_mm * 1e-3
     )
     materials = {
-        name: model.add_material(name, *props) for name, props in MATERIALS.items()
+        name: model.library.add_material(name, *props) for name, props in MATERIALS.items()
     }
-    air = model.add_material(AIR_MATERIAL, AIR_K, AIR_K, AIR_K, AIR_RHO, AIR_C)
+    air = model.library.add_material(AIR_MATERIAL, AIR_K, AIR_K, AIR_K, AIR_RHO, AIR_C)
 
     def add_box(material, lo, hi, power=0):
         source = (
-            model.add_source(f"{power / (np.prod(np.array(hi) - lo) * 1e-9):.17g}")
+            model.library.add_source(f"{power / (np.prod(np.array(hi) - lo) * 1e-9):.17g}")
             if power > 0
             else 0xFFFFFFFF
         )
@@ -241,7 +241,7 @@ def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
             [xhi, yhi, z + DIE_THICKNESS_MM],
             power,
         )
-    model.set_default_neumann("0")
+    
     return model
 
 

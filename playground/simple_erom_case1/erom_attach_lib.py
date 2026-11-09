@@ -147,12 +147,12 @@ def build_geometry(cfg: AttachConfig, *, detail: bool, macro: bool):
     model = metahotspot.Model()
     model.set_reference_temperature(cfg.ambient_K)
     model.set_cartesian_mesh(cube_axis_mm() * 1e-3, cube_axis_mm() * 1e-3, _z_full_mm(cfg) * 1e-3)
-    copper = model.add_material("Copper (Pure)", *COPPER)
+    copper = model.library.add_material("Copper (Pure)", *COPPER)
     H = cfg.ext_thickness_mm
 
     def add_box(material, lo, hi, power_density=None):
         source = (
-            model.add_source(f"{power_density:.17g}")
+            model.library.add_source(f"{power_density:.17g}")
             if power_density is not None
             else 0xFFFFFFFF
         )
@@ -162,7 +162,7 @@ def build_geometry(cfg: AttachConfig, *, detail: bool, macro: bool):
     add_box(copper, [0, 0, H], [CUBE_MM, CUBE_MM, H + CUBE_MM])
     add_box(copper, [25, 25, H + 25], [75, 75, H + 75], CUBE_SOURCE_W / SOURCE_VOL_M3)
     for lo, hi, name, k, rho, c in _ext_material_bands(cfg):
-        material = model.add_material(
+        material = model.library.add_material(
             name, f"{k:.17g}", f"{k:.17g}", f"{k:.17g}", f"{rho:.17g}", f"{c:.17g}"
         )
         add_box(material, [0, 0, lo], [CUBE_MM, CUBE_MM, hi])
@@ -175,7 +175,7 @@ def build_geometry(cfg: AttachConfig, *, detail: bool, macro: bool):
                     [75, 75, zhi],
                     cfg.ext_source_w / SOURCE_VOL_M3,
                 )
-    model.set_default_neumann("0")
+    
     return model
 
 

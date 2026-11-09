@@ -94,13 +94,13 @@ def build_current_detailed(x: np.ndarray, y: np.ndarray):
     model.set_reference_temperature(AMBIENT_K)
     grid_mm = current_grid_axis_mm()
     model.set_cartesian_mesh(grid_mm * 1e-3, grid_mm * 1e-3, grid_mm * 1e-3)
-    material_id = model.add_material(name, k, k, k, rho, c)
+    material_id = model.library.add_material(name, k, k, k, rho, c)
     body = model.add_volume(material_id)
     model.add_box(body, base_pos, np.array(base_pos) + base_size)
     heat = 100.0 / np.prod(src_size)
-    source = model.add_volume(material_id, model.add_source(f"{heat:.17g}"))
+    source = model.add_volume(material_id, model.library.add_source(f"{heat:.17g}"))
     model.add_box(source, src_pos, np.array(src_pos) + src_size)
-    model.set_default_neumann("0")
+    
     compiled = model.compile()
     return normalized_operators(*compiled.assemble()), compiled
 

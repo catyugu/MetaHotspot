@@ -240,7 +240,9 @@ class Library(OwnedHandle):
 class Model(OwnedHandle):
     """Geometry and spatial assignments using a Library."""
 
-    def __init__(self, library: Library) -> None:
+    def __init__(self, library: Library | None = None) -> None:
+        if library is None:
+            library = Library()
         dll = get_dll()
         handle = _create_model(dll, library)
         super().__init__(dll, handle, dll.mhs_model_destroy)

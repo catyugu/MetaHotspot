@@ -11,7 +11,7 @@ def test_subcell_sources_keep_independent_power_columns():
     from metahotspot.macromodel.affine import AffineParametricModel, SourcePort
 
     model = _model()
-    second = model.add_volume(0, model.add_source("2e6"))
+    second = model.add_volume(0, model.library.add_source("2e6"))
     model.add_box(second, [0, 0, 0], [0.00025, 0.001, 0.001])
     compiled = model.compile()
     q = compiled.source_operator()
@@ -42,17 +42,21 @@ def test_cartesian_fluid_model_recompiles_consistently(case):
 
     def fluid_model():
         model = _model()
-        material = model.add_material(
+        material = model.library.add_material(
             "fluid", "0.6", "0.6", "0.6", "1000", "4200", "0.001"
         )
         volume = model.add_volume(material, 0)
         model.add_box(volume, [0, 0, 0], [0.001, 0.001, 0.001])
         model.set_cartesian_mesh(*(np.linspace(0, 0.001, 4) for _ in range(3)))
-        model.set_default_convection("10", "300")
+        model.set_default_thermal_boundary(model.library.add_thermal_boundary(metahotspot.Convection("10", "300")))
         model.add_fluid_boundary(
-            [SurfaceRegion(0, 0, 0, 0.001, 0, 0.001)], 1, 100 if case == 1 else 200, 300
+            [SurfaceRegion(0, 0, 0, 0.001, 0, 0.001)],
+            model.library.add_fluid_boundary(1, 100 if case == 1 else 200, 300),
         )
-        model.add_fluid_boundary([SurfaceRegion(0, 0.001, 0, 0.001, 0, 0.001)], 3, 0)
+        model.add_fluid_boundary(
+            [SurfaceRegion(0, 0.001, 0, 0.001, 0, 0.001)],
+            model.library.add_fluid_boundary(3, 0),
+        )
         return model
 
     original = fluid_model().compile()

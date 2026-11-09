@@ -4,7 +4,7 @@ Usage::
 
     import metahotspot
 
-    model = metahotspot.Model()
+    library = metahotspot.Library()\n    model = metahotspot.Model(library)
     # Construct SI volumes and mesh axes before compiling.
     compiled = model.compile()
     solution = compiled.solve()

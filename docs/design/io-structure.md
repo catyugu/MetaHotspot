@@ -1,63 +1,30 @@
-# ModelDefinition 与 PTA 适配
+# ModelDefinition / Library 与 PTA 适配
 
-`model/model_definition.hpp` 是库的建模契约。所有几何、网格坐标和探针坐标使用 SI 米；材料及边界表达式使用规范变量 `x/y/z/T/t`，编译器原样解析。材料中的 `T` 表示单元温度，热边界中的 `T` 表示表面迹温度。
+LibraryDefinition 保存 Material、Source、Function、ThermalBoundary 与 FluidBoundary 五类共享物理定义，每类资源有独立顺序 ID。ModelDefinition 保存网格、体几何、模型局部变量、探针、默认热边界 ID 和热/流体表面赋值。已注册的物理条件与其施加的表面区域相互独立。
 
-`ModelDefinition` 保存 settings、mesh、variables、functions、materials、sources、volumes、thermal_boundaries、default_thermal_boundary、point_probes 和 fluid_boundaries。材料和热源采用有序表，`VolumeSpec` 使用表内 ID 引用；`core::invalid_id` 表示无热源。
+所有坐标采用 SI 米；材料表达式 T 表示单元温度，热边界表达式 T 表示表面温度迹。热通量正号表示流入。Dirichlet 不允许依赖温度迹。热边界后赋值的区域覆盖先前区域，未赋值区域采用 Neumann(0)；流体边界只使用显式赋值。投影仍通过现有的笛卡尔网格表面矩形交叠算法，编译结果仍使用按单元排序的 BoundaryFace 及紧凑条件表。
 
-## 体几何
+共享 Library 使用独立句柄；创建 Model 时保留底层 Library 的共享所有权。Compiled 在编译时取得自己的物理参数快照，不依赖后续资源注册。Library 资源 ID 不支持删除或重排。
 
-`VolumeSpec { material, source, geometry }` 的 geometry 为三维轴对齐 `BoxOperation { operation, min, max }` 序列。每个 box 的 min/max 是绝对 SI 坐标，必须有限且严格递增。操作按顺序执行：最后命中的 Add/Subtract 决定点是否属于体；后添加的体覆盖前面的体。当前网格离散保持笛卡尔六面体，不引入 CAD 对象树。
+PTA 的 XML、LengthUnit、Layer、Block、Rect、FaceKey 和表达式形式参数规则仍位于 apps/metahotspot；导入时创建当前项目自己的 Library，对其表达式进行 x→T/t 规范化，然后进行几何单位换算。CLI 的 XML 网格读取不进入内核。
 
-编译器消费 `ModelDefinition::mesh` 中显式给定、严格递增的 Cartesian 网格轴，构造内部 `DiscreteMesh`。热源按实际几何交叠体积积分，不要求源区域边界与单元边界重合。
-
-`SurfaceRegion { axis, coordinate, rectangle }` 描述 SI 平面区域。ThermalBoundarySpec 按添加顺序覆盖，default_thermal_boundary 覆盖未命中的外表面。流体边界共用 SurfaceRegion，并采用 PressureInlet、MassFlowInlet、PressureOutlet variant；入口缺省温度采用模型初温。
-
-## 应用层
-
-PTA 的 XML、LengthUnit、Layer、Block、Rect、FaceKey 和表达式形式参数规则全部位于 `apps/metahotspot`。`pta::normalize` 将层厚度/偏移/矩形展开成绝对三维 SI box，解析材料名，换算边界、网格和探针坐标，并完成 PTA 的 `x→T/t` 重写。随后才调用 `compiler::build_model`。
-
-CLI 兼容 PTA 时保留从 XML 的 `Results/Mesh` 或 `GeneratedMesh` 读取网格坐标轴的行为。读取与单位换算属于应用层，转换后通过通用的 `ModelDefinition::mesh` 传入编译器；内核与公开 API 不包含 PTA 网格导入逻辑或外部 `DiscreteMesh` 输入入口。
-
-PTA `VolumetricHeatSource` 使用 W/m³；引用裸函数名时，适配器转换为 `function(t)`。PTA 的周期分段常数函数 Interval 为每段时长，周期为 Interval × Values.Count。
-
-`OutputMesh`、节点插值、PTA XML 结果回写和 VTU 写出均属于应用私有实现。运行期 Model 只保存计算数据。SDK 不依赖 tinyxml2，不安装应用层头文件。
-
-## C ABI / Python
-
-使用 add_material 返回的 ID、add_source 返回的 ID、add_volume 和 volume_add_box（Python 为 add_box）构造模型。所有坐标直接使用 SI。调用方通过编译网格与 raw Solution 接口取得几何和场数据。
-
-C ABI 使用
-`mhs_surface_region_t`、`mhs_model_set_cartesian_mesh`、`mhs_model_set_study`
-和 `mhs_model_add_point_probe`。点探针传入 `const double xyz[3]`。
-
-Python 的 `set_cartesian_mesh`、`set_study` 和 `add_point_probe(name, position)`
-对应这些入口。热边界与流体边界统一接受非空 `Sequence[SurfaceRegion]`。
-以下示例创建一个可编译、可求解的模型：
+## Python 示例
 
 ```python
-from metahotspot import Model, SurfaceRegion
+from metahotspot import Library, Model, Dirichlet, SurfaceRegion
 from metahotspot.enums import Axis
 
-with Model() as model:
-    model.set_study()
+library = Library()
+material = library.add_material("solid", "1", "1", "1", "1000", "500")
+cold = library.add_thermal_boundary(Dirichlet("300"))
+
+with Model(library) as model:
     model.set_cartesian_mesh([0, 0.001], [0, 0.001], [0, 0.001])
-    material = model.add_material("solid", "1", "1", "1", "1000", "500")
     volume = model.add_volume(material)
     model.add_box(volume, (0, 0, 0), (0.001, 0.001, 0.001))
-    bottom = [SurfaceRegion(Axis.Z, 0, 0, 0.001, 0, 0.001)]
-    model.add_dirichlet(bottom, temperature="300")
-    model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
+    model.add_thermal_boundary([SurfaceRegion(Axis.Z, 0, 0, 0.001, 0, 0.001)], cold)
     compiled = model.compile()
     solution = compiled.solve()
 ```
 
-`SurfaceRegion` 表示一个连续矩形，切向坐标顺序为 X→(y,z)、Y→(x,z)、Z→(x,y)。
-多个矩形直接组成区域序列。默认热边界通过 `set_default_*` 指定；空区域调用报错。
-流体边界同样使用 `add_fluid_boundary(regions, kind, value, inlet_temperature=None)`。
-
-`mhs_model_t` 是可变建模入口，持有 study 设置与点探针。`compile` 创建独立、
-不可变的 compiled handle。内核中的材料以 `dynamic_viscosity` 是否存在区分固体/流体，
-不维护额外布尔标记。PTA 适配器在 app 侧校验 `FluidMaterial`，展开多矩形 FaceKey。
-
-几何投影只处理区域与网格的交叠，返回 cell、axis、sign、bounds 和不透明 tag。
-热与流体编译器分别解释 tag；投影算法不依赖热边界 ID 或条件类型。
+函数通过 Library 注册，变量仍由 Model 注册。Probe 仍是模型局部几何观测。PTA 导出、节点插值与 VTU 均保持应用层职责。
