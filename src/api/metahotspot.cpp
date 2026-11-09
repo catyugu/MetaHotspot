@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <memory>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -68,12 +67,8 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts);
 /*  Opaque handle structs  (exposed to both core and macromodel TUs)   */
 /* ------------------------------------------------------------------ */
 
-struct mhs_library_t {
-    std::shared_ptr<mhs::model::LibraryDefinition> def = std::make_shared<mhs::model::LibraryDefinition>();
-};
 struct mhs_model_t {
     mhs::model::ModelDefinition def;
-    explicit mhs_model_t(std::shared_ptr<mhs::model::LibraryDefinition> library) : def(std::move(library)) { }
 };
 
 struct mhs_compiled_t {
@@ -122,29 +117,17 @@ static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double co
     return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}};
 }
 
-static mhs::core::Vector<mhs::model::SurfaceRegion> _regions(const mhs_surface_region_t* regions, size_t count)
+template <typename Boundary> static void _add_thermal_boundary(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, Boundary condition)
 {
-    if (!regions || !count)
+    if (!n_regions)
         throw std::invalid_argument("surface regions must not be empty");
-    mhs::core::Vector<mhs::model::SurfaceRegion> result;
-    result.reserve(count);
-    for (size_t i = 0; i < count; ++i)
-        result.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    return result;
-}
-static mhs::model::ThermalBoundary _thermal_law(const mhs_thermal_bc_t& bc)
-{
-    if (!bc.expression)
-        throw std::invalid_argument("thermal boundary expression is required");
-    switch (bc.kind) {
-    case MHS_THERMAL_DIRICHLET: return mhs::model::DirichletBoundary {bc.expression};
-    case MHS_THERMAL_NEUMANN: return mhs::model::NeumannBoundary {bc.expression};
-    case MHS_THERMAL_CONVECTION:
-        if (!bc.ambient_temperature)
-            throw std::invalid_argument("convection ambient temperature is required");
-        return mhs::model::ConvectionBoundary {bc.expression, bc.ambient_temperature};
-    default: throw std::invalid_argument("invalid thermal boundary kind");
-    }
+    mhs::model::ThermalBoundarySpec bp;
+    bp.condition = std::move(condition);
+    bp.regions.reserve(n_regions);
+    for (size_t i = 0; i < n_regions; ++i)
+        bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+    m->def.thermal_boundaries.push_back(std::move(bp));
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -198,19 +181,20 @@ MHS_API const char* mhs_version_string(void) { return MHS_VERSION_STRING; }
 /*  Model life-cycle                                                   */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_library_create(mhs_library_t** out)
+MHS_API mhs_status_t mhs_model_create(mhs_model_t** out)
 {
     CHECK_NULL(out);
     *out = nullptr;
-    MHS_TRY({ *out = new mhs_library_t {}; });
-}
-MHS_API void mhs_library_destroy(mhs_library_t* l) { delete l; }
-MHS_API mhs_status_t mhs_model_create(mhs_library_t* library, mhs_model_t** out)
-{
-    CHECK_NULL(library);
-    CHECK_NULL(out);
-    *out = nullptr;
-    MHS_TRY({ *out = new mhs_model_t(library->def); });
+    try {
+        *out = new mhs_model_t {};
+        mhs_detail_clear_last_error();
+        return MHS_OK;
+    }
+    catch (const std::bad_alloc&) {
+        *out = nullptr;
+        SET_ERR("memory allocation failed");
+        return MHS_ERROR;
+    }
 }
 
 MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
@@ -262,10 +246,10 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 /*  Model construction  —  materials, sources, volumes           */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_library_add_material(mhs_library_t* l, const char* name, const char* kx, const char* ky,
+MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
     const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id)
 {
-    CHECK_NULL(l);
+    CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(out_id);
     CHECK_NULL(kx);
@@ -285,19 +269,19 @@ MHS_API mhs_status_t mhs_library_add_material(mhs_library_t* l, const char* name
                 throw std::invalid_argument("dynamic viscosity expression must not be empty");
             spec.dynamic_viscosity = std::string(dynamic_viscosity);
         }
-        *out_id = static_cast<mhs_index_t>(l->def->materials.size());
-        l->def->materials.push_back({name, std::move(spec)});
+        *out_id = static_cast<mhs_index_t>(m->def.materials.size());
+        m->def.materials.push_back({name, std::move(spec)});
     });
 }
 
-MHS_API mhs_status_t mhs_library_add_source(mhs_library_t* l, const char* expression, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id)
 {
-    CHECK_NULL(l);
+    CHECK_NULL(m);
     CHECK_NULL(expression);
     CHECK_NULL(out_id);
     MHS_TRY({
-        *out_id = static_cast<mhs_index_t>(l->def->sources.size());
-        l->def->sources.push_back(expression);
+        *out_id = static_cast<mhs_index_t>(m->def.sources.size());
+        m->def.sources.push_back(expression);
     });
 }
 MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
@@ -305,9 +289,9 @@ MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, 
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        if (material >= m->def.library().materials.size())
+        if (material >= m->def.materials.size())
             throw std::out_of_range("material ID out of range");
-        if (source != MHS_INVALID_INDEX && source >= m->def.library().sources.size())
+        if (source != MHS_INVALID_INDEX && source >= m->def.sources.size())
             throw std::out_of_range("source ID out of range");
         *out_id = static_cast<mhs_index_t>(m->def.volumes.size());
         m->def.volumes.push_back({material, source, {}});
@@ -339,95 +323,122 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
 /*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_library_add_thermal_boundary(mhs_library_t* l,
-    const mhs_thermal_bc_t* bc, mhs_index_t* out_id)
-{
-    CHECK_NULL(l); CHECK_NULL(bc); CHECK_NULL(out_id);
-    MHS_TRY({ *out_id = l->def->add_thermal_boundary(_thermal_law(*bc)); });
-}
-MHS_API mhs_status_t mhs_model_add_thermal_boundary(mhs_model_t* m,
-    const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
+MHS_API mhs_status_t mhs_model_add_dirichlet(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* temperature)
 {
     CHECK_NULL(m);
-    MHS_TRY({
-        if (condition >= m->def.library().thermal_boundaries.size())
-            throw std::out_of_range("thermal boundary condition ID out of range");
-        m->def.thermal_boundaries.push_back({_regions(regions, count), condition});
-    });
+    CHECK_NULL(regions);
+    CHECK_NULL(temperature);
+    MHS_TRY({ _add_thermal_boundary(m, regions, n_regions, mhs::model::DirichletBoundary {temperature}); });
 }
-MHS_API mhs_status_t mhs_model_set_default_thermal_boundary(mhs_model_t* m, mhs_index_t condition)
+
+MHS_API mhs_status_t mhs_model_add_neumann(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, const char* heat_flux)
 {
     CHECK_NULL(m);
+    CHECK_NULL(regions);
+    CHECK_NULL(heat_flux);
+    MHS_TRY({ _add_thermal_boundary(m, regions, n_regions, mhs::model::NeumannBoundary {heat_flux}); });
+}
+
+MHS_API mhs_status_t mhs_model_add_convection(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
+    const char* coefficient, const char* ambient_temperature)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(regions);
+    CHECK_NULL(coefficient);
+    CHECK_NULL(ambient_temperature);
     MHS_TRY({
-        if (condition != MHS_INVALID_INDEX && condition >= m->def.library().thermal_boundaries.size())
-            throw std::out_of_range("default thermal boundary condition ID out of range");
-        m->def.default_thermal_boundary = condition;
+        _add_thermal_boundary(m, regions, n_regions, mhs::model::ConvectionBoundary {coefficient, ambient_temperature});
     });
+}
+
+MHS_API mhs_status_t mhs_model_set_default_dirichlet(mhs_model_t* m, const char* temperature)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(temperature);
+    MHS_TRY({ m->def.default_thermal_boundary = mhs::model::DirichletBoundary {temperature}; });
+}
+
+MHS_API mhs_status_t mhs_model_set_default_neumann(mhs_model_t* m, const char* heat_flux)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(heat_flux);
+    MHS_TRY({ m->def.default_thermal_boundary = mhs::model::NeumannBoundary {heat_flux}; });
+}
+
+MHS_API mhs_status_t mhs_model_set_default_convection(
+    mhs_model_t* m, const char* coefficient, const char* ambient_temperature)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(coefficient);
+    CHECK_NULL(ambient_temperature);
+    MHS_TRY({ m->def.default_thermal_boundary = mhs::model::ConvectionBoundary {coefficient, ambient_temperature}; });
 }
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  function library                            */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_library_add_function_expr(mhs_library_t* l, const char* name, const char* expression)
+MHS_API mhs_status_t mhs_model_add_function_expr(mhs_model_t* m, const char* name, const char* expression)
 {
-    CHECK_NULL(l);
+    CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(expression);
-    MHS_TRY({ l->def->functions.push_back({name, mhs::model::ExpressionFunctionSpec {expression}}); });
+    MHS_TRY({ m->def.functions.push_back({name, mhs::model::ExpressionFunctionSpec {expression}}); });
 }
 
-MHS_API mhs_status_t mhs_library_add_function_gauss(
-    mhs_library_t* l, const char* name, double amplitude, double tau, double center)
+MHS_API mhs_status_t mhs_model_add_function_gauss(
+    mhs_model_t* m, const char* name, double amplitude, double tau, double center)
 {
-    CHECK_NULL(l);
+    CHECK_NULL(m);
     CHECK_NULL(name);
-    MHS_TRY({ l->def->functions.push_back({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}}); });
+    MHS_TRY({ m->def.functions.push_back({name, mhs::model::GaussFunctionSpec {amplitude, tau, center}}); });
 }
 
-MHS_API mhs_status_t mhs_library_add_function_sine(
-    mhs_library_t* l, const char* name, double amplitude, double angular_frequency, double phase)
+MHS_API mhs_status_t mhs_model_add_function_sine(
+    mhs_model_t* m, const char* name, double amplitude, double angular_frequency, double phase)
 {
-    CHECK_NULL(l);
-    CHECK_NULL(name);
-    MHS_TRY(
-        { l->def->functions.push_back({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}}); });
-}
-
-MHS_API mhs_status_t mhs_library_add_function_double_exponential(
-    mhs_library_t* l, const char* name, double amplitude, double alpha, double beta)
-{
-    CHECK_NULL(l);
+    CHECK_NULL(m);
     CHECK_NULL(name);
     MHS_TRY(
-        { l->def->functions.push_back({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}}); });
+        { m->def.functions.push_back({name, mhs::model::SineFunctionSpec {amplitude, angular_frequency, phase}}); });
 }
 
-MHS_API mhs_status_t mhs_library_add_function_piecewise(
-    mhs_library_t* l, const char* name, const mhs_point2d_t* points, size_t count)
+MHS_API mhs_status_t mhs_model_add_function_double_exponential(
+    mhs_model_t* m, const char* name, double amplitude, double alpha, double beta)
 {
-    CHECK_NULL(l);
+    CHECK_NULL(m);
+    CHECK_NULL(name);
+    MHS_TRY(
+        { m->def.functions.push_back({name, mhs::model::DoubleExponentialFunctionSpec {amplitude, alpha, beta}}); });
+}
+
+MHS_API mhs_status_t mhs_model_add_function_piecewise(
+    mhs_model_t* m, const char* name, const mhs_point2d_t* points, size_t count)
+{
+    CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(points);
     MHS_TRY({
         mhs::model::PiecewiseFunctionSpec spec;
         for (size_t i = 0; i < count; ++i)
             spec.points.push_back({points[i].x, points[i].y});
-        l->def->functions.push_back({name, std::move(spec)});
+        m->def.functions.push_back({name, std::move(spec)});
     });
 }
 
-MHS_API mhs_status_t mhs_library_add_function_periodic_piecewise_constant(
-    mhs_library_t* l, const char* name, const double* values, size_t count, double period)
+MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
+    mhs_model_t* m, const char* name, const double* values, size_t count, double period)
 {
-    CHECK_NULL(l);
+    CHECK_NULL(m);
     CHECK_NULL(name);
     CHECK_NULL(values);
     MHS_TRY({
         mhs::model::PeriodicPiecewiseConstantFunctionSpec spec;
         spec.period = period;
         spec.values.assign(values, values + count);
-        l->def->functions.push_back({name, std::move(spec)});
+        m->def.functions.push_back({name, std::move(spec)});
     });
 }
 
@@ -447,32 +458,32 @@ MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name,
     });
 }
 
-MHS_API mhs_status_t mhs_library_add_fluid_boundary(mhs_library_t* l,
-    mhs_fluid_bc_t kind, double value, const double* inlet_temperature, mhs_index_t* out_id)
-{
-    CHECK_NULL(l); CHECK_NULL(out_id);
-    MHS_TRY({
-        if (!std::isfinite(value) || (inlet_temperature && !std::isfinite(*inlet_temperature)))
-            throw std::invalid_argument("fluid boundary values must be finite");
-        const auto temp = inlet_temperature ? std::optional<double>(*inlet_temperature) : std::nullopt;
-        mhs::model::FluidBoundaryCondition bc;
-        switch (kind) {
-        case MHS_FLUID_PRESSURE_INLET: bc = mhs::model::PressureInlet {value, temp}; break;
-        case MHS_FLUID_MASS_FLOW_INLET: bc = mhs::model::MassFlowInlet {value, temp}; break;
-        case MHS_FLUID_OUTLET: bc = mhs::model::PressureOutlet {value}; break;
-        default: throw std::invalid_argument("invalid fluid boundary kind");
-        }
-        *out_id = l->def->add_fluid_boundary(std::move(bc));
-    });
-}
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m,
-    const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
+MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
+    mhs_fluid_bc_t kind, double value, const double* inlet_temperature)
 {
     CHECK_NULL(m);
+    CHECK_NULL(regions);
     MHS_TRY({
-        if (condition >= m->def.library().fluid_boundaries.size())
-            throw std::out_of_range("fluid boundary condition ID out of range");
-        m->def.fluid_boundaries.push_back({_regions(regions, count), condition});
+        if (!n_regions || !std::isfinite(value) || (inlet_temperature && !std::isfinite(*inlet_temperature)))
+            throw std::invalid_argument("fluid boundary requires regions and finite values");
+        mhs::model::FluidBoundarySpec fb;
+        for (size_t i = 0; i < n_regions; ++i)
+            fb.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+        const auto temperature = inlet_temperature ? std::optional<double>(*inlet_temperature) : std::nullopt;
+        switch (kind) {
+        case MHS_FLUID_PRESSURE_INLET:
+            fb.condition = mhs::model::PressureInlet {value, temperature};
+            break;
+        case MHS_FLUID_MASS_FLOW_INLET:
+            fb.condition = mhs::model::MassFlowInlet {value, temperature};
+            break;
+        case MHS_FLUID_OUTLET:
+            fb.condition = mhs::model::PressureOutlet {value};
+            break;
+        default:
+            throw std::invalid_argument("invalid fluid boundary kind");
+        }
+        m->def.fluid_boundaries.push_back(std::move(fb));
     });
 }
 
