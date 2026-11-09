@@ -2,7 +2,7 @@
 
 `model/model_definition.hpp` 是库的建模契约。所有几何、网格坐标和探针坐标使用 SI 米；材料及边界表达式使用规范变量 `x/y/z/T/t`，编译器原样解析。材料中的 `T` 表示单元温度，热边界中的 `T` 表示表面迹温度。
 
-`ModelDefinition` 保存 settings、mesh、variables、functions、materials、sources、volumes、thermal_boundaries、default_thermal_boundary、point_probes 和 fluid_boundaries。材料和热源采用有序表，`VolumeSpec` 使用表内 ID 引用；`core::invalid_id` 表示无热源。
+`ModelDefinition` 保存 reference_temperature、mesh、variables、functions、materials、sources、volumes、thermal_boundaries、default_thermal_boundary、point_probes 和 fluid_boundaries。材料和热源采用有序表，`VolumeSpec` 使用表内 ID 引用；`core::invalid_id` 表示无热源。
 
 ## 体几何
 
@@ -10,7 +10,7 @@
 
 编译器消费 `ModelDefinition::mesh` 中显式给定、严格递增的 Cartesian 网格轴，构造内部 `DiscreteMesh`。热源按实际几何交叠体积积分，不要求源区域边界与单元边界重合。
 
-`SurfaceRegion { axis, coordinate, rectangle }` 描述 SI 平面区域。ThermalBoundarySpec 按添加顺序覆盖，default_thermal_boundary 覆盖未命中的外表面。流体边界共用 SurfaceRegion，并采用 PressureInlet、MassFlowInlet、PressureOutlet variant；入口缺省温度采用模型初温。
+`SurfaceRegion { axis, coordinate, rectangle }` 描述 SI 平面区域。编译器验证轴、坐标有限性及矩形范围的严格递增，并将热学和流体区域用于同一套外部 Facet 切分。ThermalBoundarySpec 按添加顺序覆盖，default_thermal_boundary 覆盖未命中的外表面。流体边界共用 SurfaceRegion，并采用 PressureInlet、MassFlowInlet、PressureOutlet variant；入口缺省温度采用模型初温。
 
 ## 应用层
 
@@ -26,12 +26,9 @@ PTA `VolumetricHeatSource` 使用 W/m³；引用裸函数名时，适配器转�
 
 使用 add_material 返回的 ID、add_source 返回的 ID、add_volume 和 volume_add_box（Python 为 add_box）构造模型。所有坐标直接使用 SI。调用方通过编译网格与 raw Solution 接口取得几何和场数据。
 
-C ABI 使用
-`mhs_surface_region_t`、`mhs_model_set_cartesian_mesh`、`mhs_model_set_study`
-和 `mhs_model_add_point_probe`。点探针传入 `const double xyz[3]`。
+C ABI 使用 `mhs_surface_region_t`、`mhs_model_set_cartesian_mesh` 和 `mhs_model_add_point_probe` 建模；点探针传入 `const double xyz[3]`。求解配置通过 `mhs_compiled_solve` 的 `mhs_study_t` 参数传入。
 
-Python 的 `set_cartesian_mesh`、`set_study` 和 `add_point_probe(name, position)`
-对应这些入口。热边界与流体边界统一接受非空 `Sequence[SurfaceRegion]`。
+Python 的 `set_cartesian_mesh`、`add_point_probe(name, position)` 分别对应建模入口；`Compiled.solve(study=Study(...))` 指定求解类型和时刻。热与流体边界统一接受非空 `Sequence[SurfaceRegion]`。
 以下示例创建一个可编译、可求解的模型：
 
 ```python
@@ -39,7 +36,6 @@ from metahotspot import Model, SurfaceRegion
 from metahotspot.enums import Axis
 
 with Model() as model:
-    model.set_study()
     model.set_cartesian_mesh([0, 0.001], [0, 0.001], [0, 0.001])
     material = model.add_material("solid", "1", "1", "1", "1000", "500")
     volume = model.add_volume(material)
@@ -55,11 +51,10 @@ with Model() as model:
 多个矩形直接组成区域序列。默认热边界通过 `set_default_*` 指定；空区域调用报错。
 流体边界同样使用 `add_fluid_boundary(regions, kind, value, inlet_temperature=None)`。
 
-`mhs_model_t` 是可变建模入口，持有 study 设置与点探针。`compile` 创建独立、
+`mhs_model_t` 是可变建模入口，保存模型定义与点探针；study 在求解调用时提供。`compile` 创建独立、
 不可变的 compiled handle。材料通过 `MaterialKind::{Solid, Fluid}` 显式分类；
 `dynamic_viscosity` 只是流体材料的必需物性，不承担类型判定。C ABI 使用
 `mhs_material_kind_t`，Python 使用 `MaterialKind`。PTA 适配器直接把 XML 的
 `FluidMaterial` 映射到该分类，并继续在 app 侧展开多矩形 FaceKey。
 
-几何投影只处理区域与网格的交叠，返回 cell、axis、sign、bounds 和不透明 tag。
-热与流体编译器分别解释 tag；投影算法不依赖热边界 ID 或条件类型。
+编译器先根据热与流体边界区域的联合切分生成唯一的外部 `Facet`，再构建 Cell–Facet 关联。热学与流体分别通过 `FacetId` 绑定条件；`facet_coordinate` 和 `facet_bounds` 是面片几何的事实来源。C ABI 通过 `mhs_compiled_copy_fields` 将单元、Facet 和热源投影一次性复制到调用者缓冲区。
