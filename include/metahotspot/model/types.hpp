@@ -2,6 +2,7 @@
 #include "core/types.hpp"
 
 namespace mhs::model {
+    using Id = core::EntityIndex;
     using DomainId = core::EntityIndex;
     using PortId = core::EntityIndex;
     using ConnectionId = core::EntityIndex;
@@ -11,7 +12,15 @@ namespace mhs::model {
     using FaceId = core::EntityIndex;
     using MaterialId = core::EntityIndex;
     using SourceId = core::EntityIndex;
-    using BoundaryConditionId = core::EntityIndex;
+    using MaterialIndex = core::EntityIndex; // compiled material-table index
+    using SourceIndex = core::EntityIndex; // compiled source-table index
+    using ThermalBoundaryIndex = core::EntityIndex; // compiled thermal boundary-table index
+    using FluidAssignmentIndex = core::EntityIndex; // component-local projected assignment
+    using FluidBoundaryIndex = core::EntityIndex; // compiled fluid-condition index
+    using ThermalBoundaryId = core::EntityIndex;
+    using FluidBoundaryId = Id;
+    using FunctionId = Id;
+    using VariableId = Id;
     using FluidCellId = core::EntityIndex;
     using PointId = core::EntityIndex;
 

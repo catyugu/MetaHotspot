@@ -9,7 +9,8 @@ from metahotspot.enums import Axis, EntitySupport, FieldQuantity, FluidBC, Study
 
 
 def package(*, fluid=True, anisotropic=False, split=False, coarse=False, refinement=1):
-    m = metahotspot.Model()
+    library = metahotspot.Library()
+    m = metahotspot.Model(library)
     m.add_cartesian_component()
     m.set_cartesian_mesh(
         np.arange(12 * refinement + 1) * 0.001 / refinement,
@@ -28,7 +29,7 @@ def package(*, fluid=True, anisotropic=False, split=False, coarse=False, refinem
             component=upper,
         )
     materials = [
-        m.add_material(
+        library.add_material(
             "silicon",
             "130",
             "90" if anisotropic else "130",
@@ -36,14 +37,14 @@ def package(*, fluid=True, anisotropic=False, split=False, coarse=False, refinem
             "2330",
             "700",
         ),
-        m.add_material("TIM", "4", "4", "4", "2500", "1000"),
-        m.add_material("copper", "390", "390", "390", "8960", "385"),
+        library.add_material("TIM", "4", "4", "4", "2500", "1000"),
+        library.add_material("copper", "390", "390", "390", "8960", "385"),
     ]
     if fluid:
         materials.append(
-            m.add_material("liquid", "0.6", "0.6", "0.6", "997", "4180", "8.9e-4")
+            library.add_material("liquid", "0.6", "0.6", "0.6", "997", "4180", "8.9e-4")
         )
-    source = m.add_source("1.25e8")
+    source = library.add_source("1.25e8")
     volumes = [
         (0, None, [0, 0, 0], [0.012, 0.008, 0.001]),
         (1, None, [0, 0, 0.001], [0.012, 0.008, 0.0015]),
@@ -64,20 +65,17 @@ def package(*, fluid=True, anisotropic=False, split=False, coarse=False, refinem
         m.connect(0, a, upper, b)
     m.add_thermal_boundary(
         [SurfaceRegion(Axis.Z, 0.005, 0, 0.012, 0, 0.008)],
-        Convection("400", "300"),
+        library.add_thermal_boundary(Convection("400", "300")),
         component=upper if split else 0,
     )
     if fluid:
         m.add_fluid_boundary(
             [SurfaceRegion(Axis.X, 0, 0.003, 0.005, 0.0025, 0.0035)],
-            FluidBC.MASS_FLOW_INLET,
-            2e-4,
-            300,
+            library.add_fluid_boundary(FluidBC.MASS_FLOW_INLET, 2e-4, 300),
         )
         m.add_fluid_boundary(
             [SurfaceRegion(Axis.X, 0.012, 0.003, 0.005, 0.0025, 0.0035)],
-            FluidBC.OUTLET,
-            0,
+            library.add_fluid_boundary(FluidBC.OUTLET, 0),
         )
     for name, xyz in [
         ("hotspot", [0.006, 0.004, 0.00025]),
@@ -110,7 +108,7 @@ def test_package_layout_recompile_and_snapshot_lifetime(fluid):
     )
     np.testing.assert_array_equal(field.entities, np.arange(960))
     np.testing.assert_array_equal(field.dofs, np.arange(960))
-    counts = np.bincount(c.fields.material_id)
+    counts = np.bincount(c.fields.material_index)
     np.testing.assert_array_equal(
         counts, [192, 96, 624, 48] if fluid else [192, 96, 672]
     )
@@ -149,7 +147,7 @@ def test_gl02_anisotropic_solid_and_fluid_share_one_temperature_field():
     with package(anisotropic=True) as m:
         c = m.compile()
     values = c.eval_materials()
-    solid = c.fields.material_id == 0
+    solid = c.fields.material_index == 0
     np.testing.assert_array_equal(values.conductivity_x[solid], 130)
     np.testing.assert_array_equal(values.conductivity_y[solid], 90)
     np.testing.assert_array_equal(values.conductivity_z[solid], 150)

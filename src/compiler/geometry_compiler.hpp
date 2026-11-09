@@ -1,5 +1,6 @@
 #pragma once
 #include <optional>
+#include <span>
 
 #include "model/model.hpp"
 #include "model/model_definition.hpp"
@@ -13,16 +14,30 @@ namespace mhs::compiler {
     // Tags are opaque caller-owned indices; geometry carries no physics payload.
     struct TaggedSurfaceRegion {
         mhs::model::SurfaceRegion region;
-        std::size_t tag;
+        mhs::core::EntityIndex tag;
     };
 
+    using SurfaceBounds = std::array<double, 4>;
+    struct TaggedBounds {
+        SurfaceBounds bounds;
+        mhs::core::EntityIndex tag;
+    };
     struct ProjectedSurfacePatch {
         mhs::model::CellId cell;
         mhs::model::Axis axis;
         std::int8_t sign;
-        std::size_t tag;
-        std::array<double, 4> bounds;
+        mhs::core::EntityIndex tag;
+        SurfaceBounds bounds;
     };
+
+    SurfaceBounds surface_bounds(const mhs::model::RegionRect& rectangle);
+    SurfaceBounds surface_bounds(const mhs::model::SurfaceRegion& region);
+    SurfaceBounds intersect_bounds(const SurfaceBounds& a, const SurfaceBounds& b);
+    bool positive_bounds(const SurfaceBounds& bounds);
+    void validate_surface_region(const mhs::model::SurfaceRegion& region);
+    double surface_area(const SurfaceBounds& bounds);
+    mhs::core::Vector<TaggedBounds> partition_surface_bounds(const SurfaceBounds& outer,
+        std::span<const TaggedBounds> regions, std::optional<mhs::core::EntityIndex> fallback = std::nullopt);
 
     // ──────────────────────────────────────────────────────────────
     //  Internal compiler operations
@@ -36,5 +51,6 @@ namespace mhs::compiler {
 
     // With no fallback tag, uncovered exterior patches are omitted.
     mhs::core::Vector<ProjectedSurfacePatch> project_exterior_surface_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<TaggedSurfaceRegion>& boundaries, std::optional<std::size_t> fallback = std::nullopt);
+        const mhs::core::Vector<TaggedSurfaceRegion>& boundaries,
+        std::optional<mhs::core::EntityIndex> fallback = std::nullopt);
 } // namespace mhs::compiler

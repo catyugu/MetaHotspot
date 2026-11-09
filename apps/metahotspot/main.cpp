@@ -39,7 +39,7 @@ int main(int argc, char* argv[])
         auto definition = mhs::app::pta::read_xml(input_path);
 
         MHS_LOG_INFO("Loaded {} volumes, {} materials, {} boundaries", definition.model.fom(0).volumes.size(),
-            definition.model.materials.size(), definition.model.component(0).thermal_boundaries.size());
+            definition.model.library().materials().size(), definition.model.component(0).thermal_boundaries.size());
 
         auto model = mhs::compiler::build_model(definition.model);
 
@@ -61,8 +61,8 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
         // XML output uses node-centered data (interpolated from cell centers)
-        auto node_temperature
-            = mhs::app::postprocess::interpolate_cell_to_node(model.fom(0), grid, solution, result.time);
+        auto node_temperature = mhs::app::postprocess::interpolate_cell_to_node(
+            model.fom(0), model.library(), grid, solution, result.time);
         mhs::app::pta::write_xml(
             input_path, output_xml, shape, node_temperature, result.probe_traces, result.snapshot_times);
         MHS_LOG_INFO("XML written to: {}", output_xml);

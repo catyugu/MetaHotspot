@@ -31,7 +31,7 @@ namespace {
         mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
         mat.density = mat.specific_heat = "1";
         mat.dynamic_viscosity = "1";
-        d.model.materials.push_back({"fluid", mat});
+        d.model.library().add_material({"fluid", mat});
         mhs::app::pta::LayerSpec layer;
         layer.thickness = "1";
         mhs::app::pta::BlockSpec block;
@@ -96,16 +96,19 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     auto transport = model;
     transport.boundary_faces.clear();
     transport.source_terms.clear();
-    for (auto& material : transport.material_table)
+    auto library = std::make_shared<mhs::model::CompiledLibrary>(*transport.library);
+    for (auto& material : library->material_table)
         material.kx = material.ky = material.kz = mhs::expression::CompiledExpression::make_constant(0);
-    const auto normal = mhs::solver::assemble_thermal(transport, state, 0);
+    transport.library = std::move(library);
+    mhs::solver::ThermalAssembler normal_assembler(transport, *transport.library, transport.flow);
+    const auto& normal = normal_assembler.assemble(state, 0);
     auto scaled = transport;
     constexpr double factor = 1e-20;
     for (auto& flux : scaled.flow.face_mass_flow)
         flux *= factor;
     for (auto& term : scaled.flow.boundary_terms)
         std::visit([](auto& flow) { flow.mass_flow_rate *= factor; }, term.condition);
-    mhs::solver::ThermalAssembler tiny_assembler(scaled, scaled.flow);
+    mhs::solver::ThermalAssembler tiny_assembler(scaled, *scaled.library, scaled.flow);
     const auto tiny = tiny_assembler.assemble(state, 0);
     auto compare_scaled = [&](std::span<const double> small, std::span<const double> full) {
         ASSERT_EQ(small.size(), full.size());
@@ -129,18 +132,21 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
 {
     using namespace mhs::model;
     auto d = single_fluid_cell();
-    d.model.fom(0).fluid_boundaries = {
-        {{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}}, MassFlowInlet {2, 280}},
-        {{{Axis::X, 0, {0.8, 1, 0, 1}}}, MassFlowInlet {3, 320}}, {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}}};
+    const auto inlet_a = d.model.library().add_fluid_boundary(MassFlowInlet {2, 280});
+    const auto inlet_b = d.model.library().add_fluid_boundary(MassFlowInlet {3, 320});
+    const auto outlet = d.model.library().add_fluid_boundary(PressureOutlet {0});
+    d.model.fom(0).fluid_boundaries = {{{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}}, inlet_a},
+        {{{Axis::X, 0, {0.8, 1, 0, 1}}}, inlet_b}, {{{Axis::X, 1, {0, 1, 0, 1}}}, outlet}};
     auto verify = [&](const test_pta::Model& model) {
-        const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
+        mhs::solver::ThermalAssembler assembler(model, *model.library, model.flow);
+        const auto& inc = assembler.assemble(mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
         EXPECT_NEAR(diagonal, 5, 1e-12);
         EXPECT_NEAR(inc.f[0], 2 * 280 + 3 * 320, 1e-10);
     };
     verify(test_pta::build_model(d));
-    ThermalBoundarySpec thermal;
-    thermal.condition = NeumannBoundary {"0"};
+    SurfaceAssignment thermal;
+    thermal.condition = d.model.library().add_thermal_boundary(NeumannBoundary {"0"});
     thermal.regions.push_back({Axis::X, 0, {0, 0.15, 0, 1}});
     d.model.component(0).thermal_boundaries.push_back(thermal);
     verify(test_pta::build_model(d));
@@ -152,8 +158,9 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     auto d = single_fluid_cell();
     // Pressure labels do not determine thermal flow direction: the nominal
     // outlet supplies fluid when its pressure is higher than the inlet's.
-    d.model.fom(0).fluid_boundaries = {{{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {0, 280}},
-        {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {1, 315}}};
+    const auto inlet = d.model.library().add_fluid_boundary(PressureInlet {0, 280});
+    const auto outlet = d.model.library().add_fluid_boundary(PressureOutlet {1, 315});
+    d.model.fom(0).fluid_boundaries = {{{{Axis::X, 0, {0, 1, 0, 1}}}, inlet}, {{{Axis::X, 1, {0, 1, 0, 1}}}, outlet}};
     auto reverse = test_pta::build_model(d);
     ASSERT_EQ(reverse.flow.boundary_terms.size(), 2);
     for (const auto& term : reverse.flow.boundary_terms) {
@@ -164,16 +171,19 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
                   [](const auto& term) { return std::holds_alternative<mhs::solver::FluidInflow>(term.condition); }),
         1);
     auto verify_reverse = [&](const test_pta::Model& model, double temperature) {
-        const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
+        mhs::solver::ThermalAssembler assembler(model, *model.library, model.flow);
+        const auto& inc = assembler.assemble(mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
         ASSERT_GT(diagonal, 0);
         EXPECT_NEAR(inc.f[0], diagonal * temperature, 1e-10);
     };
     verify_reverse(reverse, 315);
 
-    std::get<PressureOutlet>(d.model.fom(0).fluid_boundaries.back().condition).pressure = 0;
+    std::get<PressureOutlet>(d.model.library().fluid_boundary(d.model.fom(0).fluid_boundaries.back().condition))
+        .pressure = 0;
     const auto stagnant = test_pta::build_model(d);
-    const auto zero = mhs::solver::assemble_thermal(stagnant, mhs::core::Vector<double> {300}, 0);
+    mhs::solver::ThermalAssembler stagnant_assembler(stagnant, *stagnant.library, stagnant.flow);
+    const auto& zero = stagnant_assembler.assemble(mhs::core::Vector<double> {300}, 0);
     EXPECT_DOUBLE_EQ(zero.f[0], 0);
     EXPECT_DOUBLE_EQ(mhs::core::norm_inf(zero.K.values()), 0);
 }

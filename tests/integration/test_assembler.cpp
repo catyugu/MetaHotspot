@@ -1,5 +1,6 @@
 #include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
+#include "library_test_utils.hpp"
 #include "model/model.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
@@ -12,22 +13,23 @@ using namespace mhs::compiler;
 static mhs::model::ModelDefinition make_simple_cube_io()
 {
     mhs::model::ModelDefinition io;
-    io.components.emplace_back();
+    io.add_component();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.sources = {"0"};
-    io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    const auto source_id = io.library().add_source("0");
+    io.fom(0).volumes = {{0, source_id, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
     mat.density = "8920";
     mat.specific_heat = "385";
-    io.materials.push_back({"copper", mat});
+    const auto material_id = io.library().add_material({"copper", mat});
+    io.fom(0).volumes[0].material = material_id;
 
-    io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.fom(0).default_thermal_boundary = io.library().add_thermal_boundary(mhs::model::NeumannBoundary {});
 
     return io;
 }
@@ -35,9 +37,9 @@ static mhs::model::ModelDefinition make_simple_cube_io()
 TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
 {
     auto io = make_simple_cube_io();
-    auto model = mhs::compiler::build_model(io).fom(0);
+    auto model = mhs::compiler::build_model(io);
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.fom(0).cell_material.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);
@@ -58,24 +60,25 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     // Material k is T-dependent in this case ("100 + T"). Different T should
     // produce different K.
     mhs::model::ModelDefinition io;
-    io.components.emplace_back();
+    io.add_component();
 
     io.fom(0).mesh.x_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.y_vertices = {0.0, 0.005, 0.01};
     io.fom(0).mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.sources = {"0"};
-    io.fom(0).volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    const auto source_id = io.library().add_source("0");
+    io.fom(0).volumes = {{0, source_id, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "100 + T";
-    io.materials.push_back({"mat", mat});
+    const auto material_id = io.library().add_material({"mat", mat});
+    io.fom(0).volumes[0].material = material_id;
 
-    io.fom(0).default_thermal_boundary = mhs::model::NeumannBoundary {};
+    io.fom(0).default_thermal_boundary = io.library().add_thermal_boundary(mhs::model::NeumannBoundary {});
 
-    auto model = mhs::compiler::build_model(io).fom(0);
+    auto model = mhs::compiler::build_model(io);
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.fom(0).cell_material.size());
 
     mhs::core::Vector<double> T300(static_cast<std::size_t>(N), 300.0);
     mhs::core::Vector<double> T500(static_cast<std::size_t>(N), 500.0);
@@ -90,9 +93,9 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
 {
     auto io = make_simple_cube_io();
-    auto model = mhs::compiler::build_model(io).fom(0);
+    auto model = mhs::compiler::build_model(io);
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.fom(0).cell_material.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);

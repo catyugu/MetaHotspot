@@ -4,8 +4,12 @@
 #include "model/types.hpp"
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <span>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -66,12 +70,10 @@ namespace mhs::model {
         RegionRect rectangle;
     };
 
-    template <typename Condition> struct SurfaceConditionSpec {
+    struct SurfaceAssignment {
         mhs::core::Vector<SurfaceRegion> regions;
-        Condition condition;
+        Id condition = core::invalid_id;
     };
-
-    using ThermalBoundarySpec = SurfaceConditionSpec<ThermalBoundary>;
 
     struct MaterialSpec {
         Expression conductivity_x = "0.0";
@@ -151,7 +153,90 @@ namespace mhs::model {
         std::optional<double> temperature = std::nullopt;
     };
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
-    using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryCondition>;
+    enum class LibraryKind : std::uint8_t { Variable, Function, Material, Source, ThermalBoundary, FluidBoundary };
+    // Type-tagged integer IDs: low 3 bits encode LibraryKind, upper bits the per-kind index.
+    // Registered payloads can change, but only registration may resize resource arrays.
+    struct LibraryDefinition {
+    private:
+        mhs::core::Vector<VariableSpec> variables_;
+        mhs::core::Vector<NamedFunction> functions_;
+        mhs::core::Vector<NamedMaterial> materials_;
+        mhs::core::Vector<Expression> sources_;
+        mhs::core::Vector<ThermalBoundary> thermal_boundaries_;
+        mhs::core::Vector<FluidBoundaryCondition> fluid_boundaries_;
+
+        static constexpr Id kind_bits = 3;
+        static constexpr Id kind_mask = (Id {1} << kind_bits) - 1;
+        static constexpr Id encode(LibraryKind kind, Id index) { return (index << kind_bits) | static_cast<Id>(kind); }
+
+        template <class T, class U> Id insert(LibraryKind kind, mhs::core::Vector<T>& values, U&& value)
+        {
+            if (values.size() > (core::invalid_id >> kind_bits))
+                throw std::length_error("library ID space exhausted");
+            const auto id = encode(kind, static_cast<Id>(values.size()));
+            values.emplace_back(std::forward<U>(value));
+            return id;
+        }
+
+    public:
+        Id index(Id id, LibraryKind expected) const
+        {
+            const auto kind = static_cast<Id>(expected);
+            if (kind >= 6 || (id & kind_mask) != kind)
+                throw std::invalid_argument("library ID has the wrong attribute kind");
+            const Id local = id >> kind_bits;
+            const std::size_t counts[] = {variables_.size(), functions_.size(), materials_.size(), sources_.size(),
+                thermal_boundaries_.size(), fluid_boundaries_.size()};
+            if (local >= counts[kind])
+                throw std::out_of_range("library ID out of range");
+            return local;
+        }
+
+        const mhs::core::Vector<VariableSpec>& variables() const { return variables_; }
+        const mhs::core::Vector<NamedFunction>& functions() const { return functions_; }
+        const mhs::core::Vector<NamedMaterial>& materials() const { return materials_; }
+        const mhs::core::Vector<Expression>& sources() const { return sources_; }
+        const mhs::core::Vector<ThermalBoundary>& thermal_boundaries() const { return thermal_boundaries_; }
+        const mhs::core::Vector<FluidBoundaryCondition>& fluid_boundaries() const { return fluid_boundaries_; }
+
+        // These views allow editing registered payloads but cannot grow the registry.
+        std::span<NamedMaterial> edit_materials() { return materials_; }
+        std::span<ThermalBoundary> edit_thermal_boundaries() { return thermal_boundaries_; }
+
+        const VariableSpec& variable(Id id) const { return variables_.at(index(id, LibraryKind::Variable)); }
+        VariableSpec& variable(Id id) { return variables_.at(index(id, LibraryKind::Variable)); }
+        const NamedFunction& function(Id id) const { return functions_.at(index(id, LibraryKind::Function)); }
+        NamedFunction& function(Id id) { return functions_.at(index(id, LibraryKind::Function)); }
+        const NamedMaterial& material(Id id) const { return materials_.at(index(id, LibraryKind::Material)); }
+        NamedMaterial& material(Id id) { return materials_.at(index(id, LibraryKind::Material)); }
+        const Expression& source(Id id) const { return sources_.at(index(id, LibraryKind::Source)); }
+        Expression& source(Id id) { return sources_.at(index(id, LibraryKind::Source)); }
+        const ThermalBoundary& thermal_boundary(Id id) const
+        { return thermal_boundaries_.at(index(id, LibraryKind::ThermalBoundary)); }
+        ThermalBoundary& thermal_boundary(Id id)
+        { return thermal_boundaries_.at(index(id, LibraryKind::ThermalBoundary)); }
+        const FluidBoundaryCondition& fluid_boundary(Id id) const
+        { return fluid_boundaries_.at(index(id, LibraryKind::FluidBoundary)); }
+        FluidBoundaryCondition& fluid_boundary(Id id)
+        { return fluid_boundaries_.at(index(id, LibraryKind::FluidBoundary)); }
+
+        MaterialId material_id(std::string_view name) const
+        {
+            for (std::size_t i = 0; i < materials_.size(); ++i)
+                if (materials_[i].name == name)
+                    return encode(LibraryKind::Material, static_cast<Id>(i));
+            throw std::invalid_argument("unknown material: " + std::string(name));
+        }
+
+        Id add_variable(VariableSpec v) { return insert(LibraryKind::Variable, variables_, std::move(v)); }
+        Id add_function(NamedFunction v) { return insert(LibraryKind::Function, functions_, std::move(v)); }
+        Id add_material(NamedMaterial v) { return insert(LibraryKind::Material, materials_, std::move(v)); }
+        Id add_source(Expression v) { return insert(LibraryKind::Source, sources_, std::move(v)); }
+        Id add_thermal_boundary(ThermalBoundary v)
+        { return insert(LibraryKind::ThermalBoundary, thermal_boundaries_, std::move(v)); }
+        Id add_fluid_boundary(FluidBoundaryCondition v)
+        { return insert(LibraryKind::FluidBoundary, fluid_boundaries_, std::move(v)); }
+    };
 
     struct PortReference {
         DomainId domain = mhs::core::invalid_id;
@@ -169,8 +254,8 @@ namespace mhs::model {
         MeshSpec mesh;
         FlowMode flow_mode = FlowMode::Frozen;
         mhs::core::Vector<VolumeSpec> volumes;
-        ThermalBoundary default_thermal_boundary = NeumannBoundary {};
-        mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
+        ThermalBoundaryId default_thermal_boundary = mhs::core::invalid_id;
+        mhs::core::Vector<SurfaceAssignment> fluid_boundaries;
     };
 
     // Meshless modal domain. Port patches carry physical boundary geometry,
@@ -228,24 +313,37 @@ namespace mhs::model {
     struct ComponentDefinition {
         std::variant<FomDomainDefinition, RomDomainDefinition> physics;
         mhs::core::Vector<PortDefinition> ports;
-        mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
+        mhs::core::Vector<SurfaceAssignment> thermal_boundaries;
         mhs::core::Vector<ObservationDefinition> observations;
+        std::shared_ptr<LibraryDefinition> library;
     };
 
     struct ModelDefinition {
+        std::shared_ptr<LibraryDefinition> library_handle = std::make_shared<LibraryDefinition>();
         mhs::core::Vector<ComponentDefinition> components;
 
+        ModelDefinition() = default;
+        explicit ModelDefinition(std::shared_ptr<LibraryDefinition> shared) : library_handle(std::move(shared))
+        {
+            if (!library_handle)
+                throw std::invalid_argument("model requires a Library");
+        }
+
+        ComponentDefinition& add_component()
+        {
+            auto& component = components.emplace_back();
+            component.library = library_handle;
+            return component;
+        }
         ComponentDefinition& component(DomainId id) { return components.at(id); }
         const ComponentDefinition& component(DomainId id) const { return components.at(id); }
+        LibraryDefinition& library() { return *library_handle; }
+        const LibraryDefinition& library() const { return *library_handle; }
         FomDomainDefinition& fom(DomainId id) { return std::get<FomDomainDefinition>(component(id).physics); }
         const auto& fom(DomainId id) const { return std::get<FomDomainDefinition>(component(id).physics); }
         RomDomainDefinition& rom(DomainId id) { return std::get<RomDomainDefinition>(component(id).physics); }
 
         mhs::core::Vector<ConnectionDefinition> connections;
-        mhs::core::Vector<VariableSpec> variables;
-        mhs::core::Vector<NamedFunction> functions;
-        mhs::core::Vector<NamedMaterial> materials;
-        mhs::core::Vector<Expression> sources;
     };
 
 } // namespace mhs::model

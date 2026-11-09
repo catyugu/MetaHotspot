@@ -14,6 +14,7 @@ from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
 from metahotspot.enums import Axis, FluidBC, GeometryOp, StudyType, ThermalBoundaryKind
 from metahotspot.types import (
+    MhsLibrary,
     MhsModel,
     MhsRomPortPatch,
     MhsStudy,
@@ -38,9 +39,9 @@ def _double_ptr(array: np.ndarray):
     return array.ctypes.data_as(ctypes.POINTER(ctypes.c_double))
 
 
-def _create_model(dll):
+def _create_model(dll, library):
     handle = ctypes.POINTER(MhsModel)()
-    check(dll.mhs_model_create(ctypes.byref(handle)), "create")
+    check(dll.mhs_model_create(library._handle, ctypes.byref(handle)), "create")
     return handle
 
 
@@ -139,25 +140,149 @@ def _surface_regions(regions: Sequence[SurfaceRegion]) -> tuple[object, int]:
     return (MhsSurfaceRegion * len(values))(*values), len(values)
 
 
-def _add_piecewise(dll, handle, name, points) -> None:
-    native = (Point2D * len(points))(*[Point2D(x, y) for x, y in points])
-    check(
-        dll.mhs_model_add_function_piecewise(handle, _text(name), native, len(points)),
-        "add_function_piecewise",
-    )
-
-
-def _add_periodic_constant(dll, handle, name, values, period) -> None:
-    native = (ctypes.c_double * len(values))(*values)
-    check(
-        dll.mhs_model_add_function_periodic_piecewise_constant(
-            handle, _text(name), native, len(values), period
-        ),
-        "add_function_periodic_piecewise_constant",
-    )
-
-
 # ---- public wrapper ------------------------------------------------------
+
+
+class Library(OwnedHandle):
+    """Reusable material, source, expression and boundary definitions."""
+
+    def __init__(self) -> None:
+        dll = get_dll()
+        handle = ctypes.POINTER(MhsLibrary)()
+        check(dll.mhs_library_create(ctypes.byref(handle)), "create_library")
+        super().__init__(dll, handle, dll.mhs_library_destroy)
+
+    def _add_id(self, function: str, *args, ctx: str | None = None) -> int:
+        identifier = ctypes.c_uint32()
+        self._call(function, *args, ctypes.byref(identifier), ctx=ctx)
+        return identifier.value
+
+    def add_variable(self, name: str, expression: str) -> int:
+        """Add an expression constant."""
+        return self._add_id(
+            "mhs_library_add_variable",
+            _text(name),
+            _text(expression),
+            ctx="add_variable",
+        )
+
+    def add_material(
+        self,
+        name: str,
+        kx: str,
+        ky: str,
+        kz: str,
+        rho: str,
+        c: str,
+        dynamic_viscosity: str | None = None,
+    ) -> int:
+        """Register a material and return its ID. Laws use canonical T."""
+        text_args = tuple(_text(v) for v in (name, kx, ky, kz, rho, c))
+        return self._add_id(
+            "mhs_library_add_material",
+            *text_args,
+            _text(dynamic_viscosity),
+            ctx="add_material",
+        )
+
+    def add_source(self, expression: str) -> int:
+        """Register a volumetric source in W/m³ (canonical x/y/z/T/t)."""
+        return self._add_id(
+            "mhs_library_add_source", _text(expression), ctx="add_source"
+        )
+
+    # ---- Functions ----
+
+    def add_function_expr(self, name: str, expression: str) -> int:
+        return self._add_id(
+            "mhs_library_add_function_expr",
+            _text(name),
+            _text(expression),
+            ctx="add_function_expr",
+        )
+
+    def add_function_gauss(
+        self, name: str, amplitude: float, tau: float, center: float
+    ) -> int:
+        return self._add_id(
+            "mhs_library_add_function_gauss",
+            _text(name),
+            amplitude,
+            tau,
+            center,
+            ctx="add_function_gauss",
+        )
+
+    def add_function_sine(
+        self, name: str, amplitude: float, angular_frequency: float, phase: float
+    ) -> int:
+        return self._add_id(
+            "mhs_library_add_function_sine",
+            _text(name),
+            amplitude,
+            angular_frequency,
+            phase,
+            ctx="add_function_sine",
+        )
+
+    def add_function_double_exponential(
+        self, name: str, amplitude: float, alpha: float, beta: float
+    ) -> int:
+        return self._add_id(
+            "mhs_library_add_function_double_exponential",
+            _text(name),
+            amplitude,
+            alpha,
+            beta,
+            ctx="add_function_double_exponential",
+        )
+
+    def add_function_piecewise(self, name: str, points: np.ndarray) -> int:
+        """Register a piecewise-linear function.
+
+        Parameters
+        ----------
+        points : ndarray of shape (N, 2) — columns are (x, y).
+        """
+        native = (Point2D * len(points))(*(Point2D(x, y) for x, y in points))
+        return self._add_id(
+            "mhs_library_add_function_piecewise",
+            _text(name),
+            native,
+            len(points),
+            ctx="add_function_piecewise",
+        )
+
+    def add_function_periodic_piecewise_constant(
+        self, name: str, values: np.ndarray, period: float
+    ) -> int:
+        """Register a periodic piecewise-constant function."""
+        native = (ctypes.c_double * len(values))(*values)
+        return self._add_id(
+            "mhs_library_add_function_periodic_piecewise_constant",
+            _text(name),
+            native,
+            len(values),
+            period,
+            ctx="add_function_periodic_piecewise_constant",
+        )
+
+    def add_thermal_boundary(self, condition: ThermalBoundary) -> int:
+        native = _thermal_boundary(condition)
+        return self._add_id("mhs_library_add_thermal_boundary", ctypes.byref(native))
+
+    def add_fluid_boundary(
+        self, kind: FluidBC, value: float, inlet_temperature: float | None = None
+    ) -> int:
+        temperature = (
+            None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
+        )
+        return self._add_id(
+            "mhs_library_add_fluid_boundary",
+            int(kind),
+            value,
+            None if temperature is None else ctypes.byref(temperature),
+        )
 
 
 class Model(OwnedHandle):
@@ -165,7 +290,8 @@ class Model(OwnedHandle):
 
     Usage::
 
-        m = Model()
+        library = Library()
+        m = Model(library)
         m.add_cartesian_component()  # Explicitly create the Cartesian component.
         # Set SI mesh axes, materials and volumes before compiling.
         c = m.compile()
@@ -173,14 +299,15 @@ class Model(OwnedHandle):
 
     Use the context manager for automatic cleanup::
 
-        with Model() as m:
+        with Library() as library, Model(library) as m:
             ...
     """
 
-    def __init__(self) -> None:
+    def __init__(self, library: Library) -> None:
         dll = get_dll()
-        handle = _create_model(dll)
+        handle = _create_model(dll, library)
         super().__init__(dll, handle, dll.mhs_model_destroy)
+        self.library = library
         self._reduced_orders: dict[int, int] = {}
 
     # ---- Model construction helpers ----
@@ -209,46 +336,6 @@ class Model(OwnedHandle):
     def set_flow_mode(self, mode: int, *, component: int = 0) -> None:
         """Select the fluid solution: FROZEN (legacy) or STOKES (coupled)."""
         self._call("mhs_model_set_flow_mode", component, int(mode), ctx="set_flow_mode")
-
-    def add_variable(self, name: str, expression: str) -> None:
-        """Add an expression constant."""
-        self._call(
-            "mhs_model_add_variable", _text(name), _text(expression), ctx="add_variable"
-        )
-
-    def add_material(
-        self,
-        name: str,
-        kx: str,
-        ky: str,
-        kz: str,
-        rho: str,
-        c: str,
-        dynamic_viscosity: str | None = None,
-    ) -> int:
-        """Register a material and return its ID. Laws use canonical T."""
-        identifier = ctypes.c_uint32()
-        text_args = tuple(_text(v) for v in (name, kx, ky, kz, rho, c))
-        self._call(
-            "mhs_model_add_material",
-            *text_args,
-            _text(dynamic_viscosity),
-            ctypes.byref(identifier),
-            ctx="add_material",
-        )
-
-        return identifier.value
-
-    def add_source(self, expression: str) -> int:
-        """Register a volumetric source in W/m³ (canonical x/y/z/T/t)."""
-        identifier = ctypes.c_uint32()
-        self._call(
-            "mhs_model_add_source",
-            _text(expression),
-            ctypes.byref(identifier),
-            ctx="add_source",
-        )
-        return identifier.value
 
     def add_volume(
         self, material: int, source: int = 0xFFFFFFFF, *, component: int = 0
@@ -289,124 +376,28 @@ class Model(OwnedHandle):
             ctx="add_box",
         )
 
-    # ---- Thermal boundaries ----
+    # ---- Thermal boundary assignments ----
 
     def add_thermal_boundary(
-        self,
-        regions: Sequence[SurfaceRegion],
-        condition: ThermalBoundary,
-        *,
-        component: int = 0,
+        self, regions: Sequence[SurfaceRegion], condition: int, *, component: int = 0
     ) -> None:
         native, count = _surface_regions(regions)
-        spec = _thermal_boundary(condition)
         self._call(
-            "mhs_model_add_thermal_boundary",
-            component,
-            native,
-            count,
-            ctypes.byref(spec),
-            ctx="add_thermal_boundary",
+            "mhs_model_add_thermal_boundary", component, native, count, condition
         )
 
     def set_default_thermal_boundary(
-        self, condition: ThermalBoundary, *, component: int = 0
+        self, condition: int, *, component: int = 0
     ) -> None:
-        spec = _thermal_boundary(condition)
-        self._call(
-            "mhs_model_set_default_thermal_boundary",
-            component,
-            ctypes.byref(spec),
-            ctx="set_default_thermal_boundary",
-        )
-
-    # ---- Functions ----
-
-    def add_function_expr(self, name: str, expression: str) -> None:
-        self._call(
-            "mhs_model_add_function_expr",
-            _text(name),
-            _text(expression),
-            ctx="add_function_expr",
-        )
-
-    def add_function_gauss(
-        self, name: str, amplitude: float, tau: float, center: float
-    ) -> None:
-        self._call(
-            "mhs_model_add_function_gauss",
-            _text(name),
-            amplitude,
-            tau,
-            center,
-            ctx="add_function_gauss",
-        )
-
-    def add_function_sine(
-        self, name: str, amplitude: float, angular_frequency: float, phase: float
-    ) -> None:
-        self._call(
-            "mhs_model_add_function_sine",
-            _text(name),
-            amplitude,
-            angular_frequency,
-            phase,
-            ctx="add_function_sine",
-        )
-
-    def add_function_double_exponential(
-        self, name: str, amplitude: float, alpha: float, beta: float
-    ) -> None:
-        self._call(
-            "mhs_model_add_function_double_exponential",
-            _text(name),
-            amplitude,
-            alpha,
-            beta,
-            ctx="add_function_double_exponential",
-        )
-
-    def add_function_piecewise(self, name: str, points: np.ndarray) -> None:
-        """Register a piecewise-linear function.
-
-        Parameters
-        ----------
-        points : ndarray of shape (N, 2) — columns are (x, y).
-        """
-        _add_piecewise(self._dll, self._handle, name, points)
-
-    def add_function_periodic_piecewise_constant(
-        self, name: str, values: np.ndarray, period: float
-    ) -> None:
-        """Register a periodic piecewise-constant function."""
-        _add_periodic_constant(self._dll, self._handle, name, values, period)
+        self._call("mhs_model_set_default_thermal_boundary", component, condition)
 
     # ---- Probes & fluid boundaries ----
 
     def add_fluid_boundary(
-        self,
-        regions: Sequence[SurfaceRegion],
-        kind: FluidBC,
-        value: float,
-        inlet_temperature: float | None = None,
-        *,
-        component: int = 0,
+        self, regions: Sequence[SurfaceRegion], condition: int, *, component: int = 0
     ) -> None:
-        """Apply a hydraulic condition on nonempty surface regions."""
         native, count = _surface_regions(regions)
-        temperature = (
-            None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
-        )
-        self._call(
-            "mhs_model_add_fluid_boundary",
-            component,
-            native,
-            count,
-            int(kind),
-            value,
-            None if temperature is None else ctypes.byref(temperature),
-            ctx="add_fluid_boundary",
-        )
+        self._call("mhs_model_add_fluid_boundary", component, native, count, condition)
 
     def add_cartesian_component(self) -> int:
         """Add a Cartesian finite-volume component; IDs start at zero."""

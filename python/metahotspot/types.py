@@ -10,6 +10,10 @@ import ctypes
 # ---- Opaque handle types ----
 
 
+class MhsLibrary(ctypes.Structure):
+    pass
+
+
 class MhsModel(ctypes.Structure):
     pass
 
@@ -101,13 +105,13 @@ class MhsCellFields(ctypes.Structure):
         ("projection_count", ctypes.c_size_t),
         ("cell_min", ctypes.POINTER(ctypes.c_double)),
         ("cell_max", ctypes.POINTER(ctypes.c_double)),
-        ("material_id", ctypes.POINTER(ctypes.c_uint32)),
+        ("material_index", ctypes.POINTER(ctypes.c_uint32)),
         ("face_minus", ctypes.POINTER(ctypes.c_uint32)),
         ("face_plus", ctypes.POINTER(ctypes.c_uint32)),
         ("face_axis", ctypes.POINTER(ctypes.c_int32)),
         ("face_bounds", ctypes.POINTER(ctypes.c_double)),
         ("projection_cell", ctypes.POINTER(ctypes.c_uint32)),
-        ("projection_source", ctypes.POINTER(ctypes.c_uint32)),
+        ("projection_source_index", ctypes.POINTER(ctypes.c_uint32)),
         ("projection_volume", ctypes.POINTER(ctypes.c_double)),
         ("projection_center", ctypes.POINTER(ctypes.c_double)),
     ]

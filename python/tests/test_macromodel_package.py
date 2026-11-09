@@ -20,18 +20,19 @@ from metahotspot.macromodel.geometry import CellGeometry
 
 
 def _build_operators(nx=2, ny=2, nz=3):
-    model = metahotspot.Model()
+    library = metahotspot.Library()
+    model = metahotspot.Model(library)
     model.add_cartesian_component()
     model.set_cartesian_mesh(
         np.linspace(0.0, float(nx) * 1e-3, nx + 1),
         np.linspace(0.0, float(ny) * 1e-3, ny + 1),
         np.linspace(0.0, float(nz) * 1e-3, nz + 1),
     )
-    material = model.add_material("solid", "1", "1", "1", "1000", "500")
-    source = model.add_source("1e6")
+    material = library.add_material("solid", "1", "1", "1", "1000", "500")
+    source = library.add_source("1e6")
     volume = model.add_volume(material, source)
     model.add_box(volume, [0, 0, 0], [nx * 1e-3, ny * 1e-3, nz * 1e-3])
-    model.set_default_thermal_boundary(Neumann("0"))
+    model.set_default_thermal_boundary(library.add_thermal_boundary(Neumann("0")))
     compiled = model.compile()
     ops = compiled.assemble()
     return model, compiled, ops

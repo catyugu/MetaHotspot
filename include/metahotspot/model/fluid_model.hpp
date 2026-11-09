@@ -14,15 +14,15 @@ namespace mhs::model {
         std::size_t component_count = 0;
         // Active normal-face velocity supports in a staggered Stokes discretization.
         core::Vector<FaceId> velocity_faces;
-        // Boundary-condition indices by geometric face, invalid on other faces.
-        core::Vector<core::EntityIndex> face_conditions;
+        // Component-local assignment IDs by geometric face, invalid on other faces.
+        core::Vector<FluidAssignmentIndex> face_assignments;
     };
 
     struct FluidBoundaryPatch {
         CellId cell = core::invalid_id;
         Axis axis = Axis::X;
         std::array<double, 4> bounds {};
-        std::size_t condition = 0;
+        FluidAssignmentIndex assignment = core::invalid_id; // local assignment ID
     };
 
 } // namespace mhs::model

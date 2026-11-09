@@ -24,6 +24,6 @@ namespace mhs::solver {
         core::Vector<FluidBoundaryTerm> boundary_terms;
     };
 
-    FrozenFlow initialize_frozen_flow(
-        const mhs::model::FomDomain& model, std::span<const double> temperature, double time = 0.0);
+    FrozenFlow initialize_frozen_flow(const mhs::model::FomDomain& model, const mhs::model::CompiledLibrary& library,
+        std::span<const double> temperature, double time = 0.0);
 }

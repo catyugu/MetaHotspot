@@ -10,11 +10,13 @@
 #include <type_traits>
 
 namespace mhs::solver {
-    mhs::solver::FrozenFlow initialize_frozen_flow(
-        const mhs::model::FomDomain& model, std::span<const double> temperature, double time)
+    mhs::solver::FrozenFlow initialize_frozen_flow(const mhs::model::FomDomain& model,
+        const mhs::model::CompiledLibrary& library, std::span<const double> temperature, double time)
     {
         using namespace mhs::core;
         using namespace mhs::model;
+        const auto& materials = library.material_table;
+        const auto& conditions = library.fluid_conditions;
         const auto& fluid = model.fluid;
         const auto& mesh = model.discrete;
         if (temperature.size() != mesh.cells.size())
@@ -23,7 +25,7 @@ namespace mhs::solver {
         core::Vector<double> viscosity;
         for (auto c : fluid.fluid_to_global) {
             const auto p = mesh.cells[c].center();
-            const auto& material = model.material_table[model.cell_material[c]];
+            const auto& material = materials[model.cell_material[c]];
             const double mu = material.dynamic_viscosity->eval({p[0], p[1], p[2], temperature[c], time});
             if (!std::isfinite(mu) || mu <= 0)
                 throw std::invalid_argument("fluid dynamic viscosity must be finite and positive");
@@ -75,7 +77,7 @@ namespace mhs::solver {
             mobility[i] = diameter * diameter / (2 * f_re_rectangular(w, h) * viscosity[i]);
             const auto c = fluid.fluid_to_global[i];
             const auto p = mesh.cells[c].center();
-            rho[i] = model.material_table[model.cell_material[c]].rho.eval({p[0], p[1], p[2], temperature[c], time});
+            rho[i] = materials[model.cell_material[c]].rho.eval({p[0], p[1], p[2], temperature[c], time});
             if (!std::isfinite(rho[i]) || rho[i] <= 0)
                 throw std::invalid_argument("fluid density must be finite and positive");
             // Pressure equation is assembled in mass units, so frozen transport
@@ -83,10 +85,6 @@ namespace mhs::solver {
             mobility[i] *= rho[i];
         }
         const auto& projected = model.fluid_boundaries;
-        const auto& boundaries = model.fluid_conditions;
-        mhs::core::Vector<double> total_area(boundaries.size(), 0);
-        for (const auto& term : projected)
-            total_area[term.condition] += ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]));
         mhs::core::Vector<double> conductance(mesh.faces.size(), 0), diagonal(n, 0);
         for (std::size_t id = 0; id < mesh.faces.size(); ++id) {
             const auto& f = mesh.faces[id];
@@ -116,7 +114,7 @@ namespace mhs::solver {
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
                         rhs[i] += bc.mass_flow_rate
                             * ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
-                            / total_area[term.condition];
+                            / model.fluid_assignments[term.assignment].area;
                     else {
                         pressure_references[fluid.component_by_fluid_cell[i]] = true;
                         const double g = ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
@@ -126,7 +124,7 @@ namespace mhs::solver {
                         rhs[i] += g * bc.pressure;
                     }
                 },
-                boundaries[term.condition]);
+                conditions[model.fluid_assignments[term.assignment].condition]);
         }
         if (std::find(pressure_references.begin(), pressure_references.end(), false) != pressure_references.end())
             throw std::runtime_error("every connected fluid component needs a pressure inlet or outlet");
@@ -149,14 +147,14 @@ namespace mhs::solver {
         for (std::size_t t = 0; t < projected.size(); ++t) {
             const auto& term = projected[t];
             const auto i = fluid.global_to_fluid[term.cell];
-            const auto& condition = boundaries[term.condition];
+            const auto& condition = conditions[model.fluid_assignments[term.assignment].condition];
             const double mass = std::visit(
                 [&](const auto& bc) {
                     using T = std::decay_t<decltype(bc)>;
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
                         return -bc.mass_flow_rate
                             * ((term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]))
-                            / total_area[term.condition];
+                            / model.fluid_assignments[term.assignment].area;
                     else
                         return boundary_conductance[t] * (pressure[i] - bc.pressure);
                 },

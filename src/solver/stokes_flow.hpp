@@ -10,7 +10,7 @@ namespace mhs::solver {
     // for each nonlinear iterate. Pressure rows are algebraic (zero capacity).
     class StokesAssembler {
     public:
-        StokesAssembler(const model::FomDomain& domain, const model::StateLayout& layout, model::DomainId id);
+        StokesAssembler(const model::CompiledModel& compiled, model::DomainId id);
         FrozenFlow assemble(std::span<const double> state, std::span<const double> temperature, double time,
             core::Vector<core::Triplet<double>>& stiffness, core::Vector<core::Triplet<double>>& capacity,
             core::Vector<double>& load) const;
@@ -20,7 +20,7 @@ namespace mhs::solver {
             model::FaceId face = core::invalid_id;
             model::DofId dof = core::invalid_id; // Invalid for prescribed normal wall/inlet velocity.
             model::CellId minus = core::invalid_id, plus = core::invalid_id;
-            core::EntityIndex condition = core::invalid_id;
+            model::FluidAssignmentIndex assignment = core::invalid_id;
             std::size_t component = 0;
             model::Vec3 center {}, low {}, high {};
             std::array<bool, 6> joined {};
@@ -35,10 +35,10 @@ namespace mhs::solver {
         };
 
         const model::FomDomain& domain_;
+        const model::CompiledLibrary& library_;
         core::Vector<model::DofId> pressure_dof_, face_dof_;
         core::Vector<Node> nodes_;
         core::Vector<Link> links_;
         core::Vector<Wall> walls_;
-        core::Vector<double> boundary_area_;
     };
 } // namespace mhs::solver

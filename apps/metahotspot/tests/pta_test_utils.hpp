@@ -7,12 +7,19 @@
 #include "pta/definition.hpp"
 #include "pta/io.hpp"
 namespace test_pta {
+    template <class T, class U> inline mhs::core::EntityIndex append(mhs::core::Vector<T>& values, U&& value)
+    {
+        values.emplace_back(std::forward<U>(value));
+        return static_cast<mhs::core::EntityIndex>(values.size() - 1);
+    }
+
     inline mhs::model::SurfaceRegion face_region(
         mhs::model::Axis axis, double coordinate, mhs::model::RegionRect rectangle)
     { return {axis, coordinate, rectangle}; }
 
     struct Model : mhs::model::FomDomain {
         mhs::solver::FrozenFlow flow;
+        std::shared_ptr<const mhs::model::CompiledLibrary> library;
         mhs::model::MeshSpec sampling_grid;
         struct {
             mhs::core::Vector<mhs::model::Vec3> points;
@@ -22,8 +29,11 @@ namespace test_pta {
     inline Model build_model(const mhs::model::ModelDefinition& d)
     {
         Model m;
-        static_cast<mhs::model::FomDomain&>(m) = mhs::compiler::build_model(d).fom(0);
-        m.flow = mhs::solver::initialize_frozen_flow(m, mhs::core::Vector<double>(m.discrete.cells.size(), 300));
+        auto compiled = mhs::compiler::build_model(d);
+        m.library = compiled.components.front().library;
+        static_cast<mhs::model::FomDomain&>(m) = std::move(compiled.fom(0));
+        m.flow = mhs::solver::initialize_frozen_flow(
+            m, *m.library, mhs::core::Vector<double>(m.discrete.cells.size(), 300));
         const auto& mesh = d.fom(0).mesh;
         m.sampling_grid = mesh;
         m.output.cartesian_shape = {mesh.x_vertices.size(), mesh.y_vertices.size(), mesh.z_vertices.size()};
@@ -36,5 +46,5 @@ namespace test_pta {
     inline Model build_model(const mhs::app::pta::Definition& d) { return build_model(mhs::app::pta::normalize(d)); }
     inline Model build_model(const mhs::app::pta::Input& input) { return build_model(input.model); }
     inline auto interpolate_cell_to_node(const Model& m, std::span<const double> t, double time)
-    { return mhs::app::postprocess::interpolate_cell_to_node(m, m.sampling_grid, t, time); }
+    { return mhs::app::postprocess::interpolate_cell_to_node(m, *m.library, m.sampling_grid, t, time); }
 }
