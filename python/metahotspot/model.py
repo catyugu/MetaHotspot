@@ -160,6 +160,7 @@ class Model(OwnedHandle):
         kz: str,
         rho: str,
         c: str,
+        *,
         kind: MaterialKind = MaterialKind.SOLID,
         dynamic_viscosity: str | None = None,
     ) -> int:
