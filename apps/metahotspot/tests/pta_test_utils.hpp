@@ -30,7 +30,7 @@ namespace test_pta {
     {
         Model m;
         auto compiled = mhs::compiler::build_model(d);
-        m.library = compiled.components.front().library;
+        m.library = std::make_shared<mhs::model::CompiledLibrary>(std::move(compiled.library()));
         static_cast<mhs::model::FomDomain&>(m) = std::move(compiled.fom(0));
         m.flow = mhs::solver::initialize_frozen_flow(
             m, *m.library, mhs::core::Vector<double>(m.discrete.cells.size(), 300));

@@ -17,7 +17,6 @@ namespace {
         std::initializer_list<double> x, bool first, const std::shared_ptr<LibraryDefinition>& library)
     {
         ComponentDefinition component;
-        component.library = library;
         auto& d = std::get<FomDomainDefinition>(component.physics);
         d.mesh.x_vertices = x;
         d.mesh.y_vertices = d.mesh.z_vertices = {0.0, 1.0};
@@ -99,7 +98,7 @@ namespace {
             facet.center = {0.5, 0.5};
             facet.trace = {q, -q};
             port.patches.push_back(facet);
-            model.components.push_back({rom, {port}, {}, {}, library});
+            model.components.push_back({rom, {port}, {}, {}});
         }
         model.component(1).observations.push_back(
             {{"top", 2.5, 0.5, 0.5}, reduced ? mhs::core::Vector<double> {q, q} : mhs::core::Vector<double> {}, 0});
@@ -211,7 +210,7 @@ TEST(RomDomain, RomToRomConnectionNeedsNoFakeFomMesh)
         patch.trace = {1};
         port.patches.push_back(patch);
 
-        def.components.push_back({rom, {port}, {}, {}, library});
+        def.components.push_back({rom, {port}, {}, {}});
     }
     def.connections.push_back({{0, 0}, {1, 0}});
     const auto model = mhs::compiler::build_model(def);
@@ -263,7 +262,7 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
     boundary.regions.push_back({Axis::Z, 1, {0, 0.1, 0, 0.1}});
     boundary.condition = library->add_thermal_boundary(ConvectionBoundary {"100", "300"});
 
-    d.components.push_back({rom, {port}, {std::move(boundary)}, {}, library});
+    d.components.push_back({rom, {port}, {std::move(boundary)}, {}});
     const mhs::core::Vector<double> initial {300};
 
     const auto first = mhs::compiler::build_model(d);
@@ -292,7 +291,7 @@ TEST(RomDomain, ExposedHtcPortUsesOrdinaryThermalBoundaryCoupling)
     auto other_port = port;
 
     other_port.outward_sign = -1;
-    invalid.components.push_back({other, {other_port}, {}, {}, library});
+    invalid.components.push_back({other, {other_port}, {}, {}});
     invalid.connections.push_back({{0, 0}, {1, 0}});
     EXPECT_THROW(mhs::compiler::build_model(invalid), std::invalid_argument);
 }
@@ -337,7 +336,7 @@ TEST(RomDomain, NonmatchingFomRomNccRecoversLinearInterfaceTrace)
     patch.tangential_gradient[1] = {0};
     port.patches.push_back(patch);
 
-    d.components.push_back({rom, {port}, {}, {}, library});
+    d.components.push_back({rom, {port}, {}, {}});
     d.connections = {{{0, 0}, {1, 0}}};
 
     const auto compiled = mhs::compiler::build_model(d);
@@ -394,8 +393,8 @@ TEST(RomDomain, NonmatchingRomPortRequiresNccGradient)
     right_port.patches.push_back(patch);
     right_port.patches[1].rectangle = {0.5, 1, 0, 1};
 
-    d.components.push_back({std::move(left), {port}, {}, {}, library});
-    d.components.push_back({std::move(right), {right_port}, {}, {}, library});
+    d.components.push_back({std::move(left), {port}, {}, {}});
+    d.components.push_back({std::move(right), {right_port}, {}, {}});
     d.connections.push_back({{0, 0}, {1, 0}});
     EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
 }

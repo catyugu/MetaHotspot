@@ -53,7 +53,7 @@ namespace mhs::compiler {
     mhs::model::CompiledModel build_model(const mhs::model::ModelDefinition& definition)
     {
         mhs::model::CompiledModel compiled;
-        auto compiled_library = std::make_shared<mhs::model::CompiledLibrary>();
+        auto& compiled_library = compiled.library();
         auto append_field = [&](model::DomainId domain, model::FieldQuantity quantity, std::size_t count) {
             core::detail::checked_sparse_size(compiled.layout.state_count + count);
             const auto offset = static_cast<model::DofId>(compiled.layout.state_count);
@@ -62,20 +62,15 @@ namespace mhs::compiler {
         };
         if (definition.components.empty())
             throw std::invalid_argument("model must contain at least one component");
-        const auto library_handle = definition.library_handle;
-        if (!library_handle)
-            throw std::invalid_argument("model components require a Library");
-        for (const auto& component : definition.components)
-            if (component.library != library_handle)
-                throw std::invalid_argument("all model components must share one Library");
-
-        const auto& library = *library_handle;
+        if (!definition.library_handle)
+            throw std::invalid_argument("model requires a Library");
+        const auto& library = definition.library();
         auto symbols = build_symbol_table(definition);
-        compiled_library->material_table.resize(library.materials().size());
+        compiled_library.material_table.resize(library.materials().size());
         for (std::size_t m = 0; m < library.materials().size(); ++m) {
             const auto& mat = library.materials()[m].value;
             auto compile = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
-            auto& props = compiled_library->material_table[m];
+            auto& props = compiled_library.material_table[m];
             props.kx = compile(mat.conductivity_x);
             props.ky = compile(mat.conductivity_y);
             props.kz = compile(mat.conductivity_z);
@@ -89,11 +84,11 @@ namespace mhs::compiler {
             }
         }
         for (const auto& source : library.sources()) {
-            compiled_library->heat_source_table.push_back(mhs::expression::parse(source, symbols));
+            compiled_library.heat_source_table.push_back(mhs::expression::parse(source, symbols));
         }
         for (const auto& boundary : library.thermal_boundaries())
-            compiled_library->boundary_conditions.push_back(compile_thermal_boundary(boundary, symbols));
-        compiled_library->fluid_conditions = library.fluid_boundaries();
+            compiled_library.boundary_conditions.push_back(compile_thermal_boundary(boundary, symbols));
+        compiled_library.fluid_conditions = library.fluid_boundaries();
         for (std::size_t domain_id = 0; domain_id < definition.components.size(); ++domain_id) {
             const auto& component = definition.components[domain_id];
             if (const auto* value = std::get_if<model::RomDomainDefinition>(&component.physics)) {
@@ -128,8 +123,7 @@ namespace mhs::compiler {
                         throw std::invalid_argument("reduced observation has invalid dimension or values");
                 }
                 append_field(static_cast<model::DomainId>(domain_id), model::FieldQuantity::ReducedCoordinate, n);
-                compiled.components.push_back(
-                    {std::move(rom), component.ports, component.observations, compiled_library});
+                compiled.components.push_back({std::move(rom), component.ports, component.observations});
                 continue;
             }
 
@@ -138,8 +132,7 @@ namespace mhs::compiler {
                 if (!obs.weights.empty() || obs.offset != 0.0 || obs.point.name.empty() || !std::isfinite(obs.point.x)
                     || !std::isfinite(obs.point.y) || !std::isfinite(obs.point.z))
                     throw std::invalid_argument("Cartesian observation requires only a finite physical point");
-            compiled.components.push_back(
-                {model::FomDomain {}, component.ports, component.observations, compiled_library});
+            compiled.components.push_back({model::FomDomain {}, component.ports, component.observations});
             auto& model = compiled.fom(static_cast<model::DomainId>(domain_id));
             model.flow_mode = domain.flow_mode;
             for (const auto& volume : domain.volumes) {
@@ -159,21 +152,15 @@ namespace mhs::compiler {
 
             compile_cartesian_mesh(model, domain.mesh, domain.volumes);
             project_cell_regions(model, domain.volumes);
-            for (auto& material : model.cell_material) {
-                if (material != core::invalid_id)
-                    material = library.index(material, model::LibraryKind::Material);
-            }
-            for (auto& source : model.source_terms)
-                source.source_index = library.index(source.source_index, model::LibraryKind::Source);
             for (const auto material : model.cell_material)
-                if (material >= compiled_library->material_table.size())
+                if (material >= compiled_library.material_table.size())
                     throw std::out_of_range("cell has no valid material assignment");
 
             // Fluid membership and boundary projection are immutable; no pressure solve here.
             auto& fluid = model.fluid;
             fluid.global_to_fluid.assign(model.discrete.cells.size(), mhs::core::invalid_id);
             for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
-                if (!compiled_library->material_table[model.cell_material[c]].dynamic_viscosity)
+                if (!compiled_library.material_table[model.cell_material[c]].dynamic_viscosity)
                     continue;
                 fluid.global_to_fluid[c] = static_cast<mhs::model::FluidCellId>(fluid.fluid_to_global.size());
                 fluid.fluid_to_global.push_back(static_cast<mhs::model::CellId>(c));
@@ -209,7 +196,8 @@ namespace mhs::compiler {
                 }
                 mhs::core::Vector<TaggedSurfaceRegion> regions;
                 for (const auto& boundary : domain.fluid_boundaries) {
-                    const auto condition = library.index(boundary.condition, model::LibraryKind::FluidBoundary);
+                    (void)library.fluid_boundary(boundary.condition);
+                    const auto condition = static_cast<model::FluidBoundaryIndex>(boundary.condition);
                     const auto assignment = static_cast<model::Id>(model.fluid_assignments.size());
                     model.fluid_assignments.push_back({condition, 0.0});
                     for (const auto& region : boundary.regions)
@@ -254,9 +242,9 @@ namespace mhs::compiler {
                     }
                     else if (face.exterior() && (i != core::invalid_id || j != core::invalid_id)
                         && fluid.face_assignments[id] != core::invalid_id) {
-                        const auto& bc
-                            = compiled_library
-                                  ->fluid_conditions[model.fluid_assignments[fluid.face_assignments[id]].condition];
+                        const auto assignment = fluid.face_assignments[id];
+                        const auto condition = model.fluid_assignments[assignment].condition;
+                        const auto& bc = compiled_library.fluid_conditions[condition];
                         if (std::holds_alternative<model::PressureInlet>(bc)
                             || std::holds_alternative<model::PressureOutlet>(bc)) {
                             fluid.velocity_faces.push_back(static_cast<model::FaceId>(id));
@@ -290,7 +278,8 @@ namespace mhs::compiler {
             const auto domain_id = static_cast<model::DomainId>(d);
             core::Vector<core::Vector<TaggedBounds>> per_port(ports.size());
             for (const auto& boundary : boundaries) {
-                const auto condition = library.index(boundary.condition, model::LibraryKind::ThermalBoundary);
+                (void)library.thermal_boundary(boundary.condition);
+                const auto condition = static_cast<model::ThermalBoundaryIndex>(boundary.condition);
                 for (const auto& region : boundary.regions) {
                     const auto rectangle = surface_bounds(region.rectangle);
                     validate_surface_region(region);
