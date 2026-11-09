@@ -10,10 +10,6 @@ import ctypes
 # ---- Opaque handle types ----
 
 
-class MhsLibrary(ctypes.Structure):
-    pass
-
-
 class MhsModel(ctypes.Structure):
     pass
 
@@ -55,11 +51,6 @@ class MhsSurfaceRegion(ctypes.Structure):
         ("coordinate", ctypes.c_double),
         ("rectangle", Rect2D),
     ]
-
-
-class MhsThermalBoundary(ctypes.Structure):
-    _fields_ = [("kind", ctypes.c_int32), ("expression", ctypes.c_char_p),
-                ("ambient_temperature", ctypes.c_char_p)]
 
 
 class MhsStudy(ctypes.Structure):

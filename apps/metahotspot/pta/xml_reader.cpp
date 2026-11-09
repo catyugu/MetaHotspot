@@ -20,21 +20,19 @@ namespace mhs::app::pta {
     using detail::get_text;
     using detail::parse_double;
 
-    static void read_fluid_boundary_fields(const XMLElement* source, mhs::model::FluidBoundarySpec& boundary)
+    static mhs::model::FluidBoundaryCondition read_fluid_boundary_fields(const XMLElement* source)
     {
         const XMLElement* inlet = child_by_local_name(source, "InletTemperature");
         const XMLElement* pressure = child_by_local_name(source, "Pressure");
         const XMLElement* mass_flow = child_by_local_name(source, "MassFlowRate");
         if (inlet && pressure && !mass_flow) {
-            boundary.condition
-                = mhs::model::PressureInlet {parse_double(get_text(pressure)), parse_double(get_text(inlet))};
+            return mhs::model::PressureInlet {parse_double(get_text(pressure)), parse_double(get_text(inlet))};
         }
         else if (inlet && mass_flow && !pressure) {
-            boundary.condition
-                = mhs::model::MassFlowInlet {parse_double(get_text(mass_flow)), parse_double(get_text(inlet))};
+            return mhs::model::MassFlowInlet {parse_double(get_text(mass_flow)), parse_double(get_text(inlet))};
         }
         else if (!inlet && pressure && !mass_flow) {
-            boundary.condition = mhs::model::PressureOutlet {parse_double(get_text(pressure))};
+            return mhs::model::PressureOutlet {parse_double(get_text(pressure))};
         }
         else {
             throw std::runtime_error("fluid boundary fields must be InletTemperature+Pressure, "
@@ -285,7 +283,7 @@ namespace mhs::app::pta {
                     }
                 }
                 if (!name.empty()) {
-                    def.model.materials.push_back({std::move(name), std::move(mat)});
+                    def.model.library().add_material({std::move(name), std::move(mat)});
                 }
             }
         }
@@ -359,7 +357,7 @@ namespace mhs::app::pta {
                     }
                 }
                 if (!name.empty()) {
-                    def.model.functions.push_back({std::move(name), std::move(fn)});
+                    def.model.library().functions.push_back({std::move(name), std::move(fn)});
                 }
             }
         }
@@ -455,12 +453,12 @@ namespace mhs::app::pta {
                     || type_str.find("OutletBoundary") != std::string::npos) {
                     mhs::model::FluidBoundarySpec fluid_boundary;
                     fluid_boundary.regions = std::move(regions);
-                    read_fluid_boundary_fields(thermal, fluid_boundary);
+                    auto condition = read_fluid_boundary_fields(thermal);
                     const bool pressure_inlet_type = type_str.find("PressureInletBoundary") != std::string::npos;
                     const bool mass_flow_inlet_type = type_str.find("MassFlowInletBoundary") != std::string::npos;
                     const bool outlet_type = type_str.find("OutletBoundary") != std::string::npos;
                     if ((pressure_inlet_type
-                            && !std::holds_alternative<mhs::model::PressureInlet>(fluid_boundary.condition))
+                            && !std::holds_alternative<mhs::model::PressureInlet>(condition))
                         || (mass_flow_inlet_type
                             && !std::holds_alternative<mhs::model::MassFlowInlet>(fluid_boundary.condition))
                         || (outlet_type
@@ -469,6 +467,7 @@ namespace mhs::app::pta {
                             "fluid boundary fields do not match ThermalBoundary i:type: " + type_str);
                     if (fluid_boundary.regions.empty())
                         throw std::runtime_error("fluid boundary has no FaceKeys regions");
+                    fluid_boundary.condition = def.model.library().add_fluid_boundary(std::move(condition));
                     def.model.fluid_boundaries.push_back(std::move(fluid_boundary));
                     continue;
                 }
@@ -481,7 +480,7 @@ namespace mhs::app::pta {
                         if (const XMLElement* t = child_by_local_name(thermal, "Temperature")) {
                             bc.temperature = get_text(t);
                         }
-                        boundary.condition = std::move(bc);
+                        boundary.condition = def.model.library().add_thermal_boundary(std::move(bc));
                     }
                     else if (type_str.find("SecondType") != std::string::npos) {
                         mhs::model::NeumannBoundary bc;
@@ -578,7 +577,7 @@ namespace mhs::app::pta {
             }
         }
 
-        def.model.default_thermal_boundary = std::move(default_thermal_boundary);
+        def.model.default_thermal_boundary = def.model.library().add_thermal_boundary(std::move(default_thermal_boundary));
         return {study, normalize(std::move(def))};
     }
 
