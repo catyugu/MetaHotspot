@@ -135,8 +135,10 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     const auto inlet_a = d.model.library().add_fluid_boundary(MassFlowInlet {2, 280});
     const auto inlet_b = d.model.library().add_fluid_boundary(MassFlowInlet {3, 320});
     const auto outlet = d.model.library().add_fluid_boundary(PressureOutlet {0});
-    d.model.fluid_boundaries.push_back(
-        {{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}}, inlet_a});
+    FluidBoundarySpec first;
+    first.condition = inlet_a;
+    first.regions = {{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}};
+    d.model.fluid_boundaries.push_back(std::move(first));
     d.model.fluid_boundaries.push_back({{{Axis::X, 0, {0.8, 1, 0, 1}}}, inlet_b});
     d.model.fluid_boundaries.push_back({{{Axis::X, 1, {0, 1, 0, 1}}}, outlet});
     auto verify = [&](const mhs::model::Model& model) {

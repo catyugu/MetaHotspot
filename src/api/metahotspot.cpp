@@ -337,13 +337,12 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
 /*  Model construction  —  atomic boundary conditions                 */
 /* ------------------------------------------------------------------ */
 
-MHS_API mhs_status_t mhs_library_add_thermal_boundary(mhs_library_t* l, const mhs_thermal_bc_t* bc,
-    mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_library_add_thermal_boundary(mhs_library_t* l, const mhs_thermal_bc_t* b, mhs_index_t* id)
 {
     CHECK_NULL(l);
-    CHECK_NULL(bc);
-    CHECK_NULL(out_id);
-    MHS_TRY({ *out_id = l->def->add_thermal_boundary(_thermal_law(*bc)); });
+    CHECK_NULL(b);
+    CHECK_NULL(id);
+    MHS_TRY({ *id = l->def->add_thermal_boundary(_thermal_law(*b)); });
 }
 MHS_API mhs_status_t mhs_model_add_thermal_boundary(
     mhs_model_t* m, const mhs_surface_region_t* regions, size_t count, mhs_index_t condition)
