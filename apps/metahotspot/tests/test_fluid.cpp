@@ -132,11 +132,13 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
 {
     using namespace mhs::model;
     auto d = single_fluid_cell();
-    d.model.fluid_boundaries
-        = {{{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}},
-               d.model.library().add_fluid_boundary(MassFlowInlet {2, 280})},
-            {{{Axis::X, 0, {0.8, 1, 0, 1}}}, d.model.library().add_fluid_boundary(MassFlowInlet {3, 320})},
-            {{{Axis::X, 1, {0, 1, 0, 1}}}, d.model.library().add_fluid_boundary(PressureOutlet {0})}};
+    const auto inlet_a = d.model.library().add_fluid_boundary(MassFlowInlet {2, 280});
+    const auto inlet_b = d.model.library().add_fluid_boundary(MassFlowInlet {3, 320});
+    const auto outlet = d.model.library().add_fluid_boundary(PressureOutlet {0});
+    d.model.fluid_boundaries.push_back(
+        {{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}}, inlet_a});
+    d.model.fluid_boundaries.push_back({{{Axis::X, 0, {0.8, 1, 0, 1}}}, inlet_b});
+    d.model.fluid_boundaries.push_back({{{Axis::X, 1, {0, 1, 0, 1}}}, outlet});
     auto verify = [&](const mhs::model::Model& model) {
         const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
@@ -157,9 +159,10 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     auto d = single_fluid_cell();
     // Pressure labels do not determine thermal flow direction: the nominal
     // outlet supplies fluid when its pressure is higher than the inlet's.
-    d.model.fluid_boundaries
-        = {{{{Axis::X, 0, {0, 1, 0, 1}}}, d.model.library().add_fluid_boundary(PressureInlet {0, 280})},
-            {{{Axis::X, 1, {0, 1, 0, 1}}}, d.model.library().add_fluid_boundary(PressureOutlet {1})}};
+    const auto inlet = d.model.library().add_fluid_boundary(PressureInlet {0, 280});
+    const auto outlet = d.model.library().add_fluid_boundary(PressureOutlet {1});
+    d.model.fluid_boundaries.push_back({{{Axis::X, 0, {0, 1, 0, 1}}}, inlet});
+    d.model.fluid_boundaries.push_back({{{Axis::X, 1, {0, 1, 0, 1}}}, outlet});
     auto reverse = test_pta::build_model(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {

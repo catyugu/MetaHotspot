@@ -85,8 +85,8 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         SCOPED_TRACE(kind);
         auto d = cube_definition();
         d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
-        d.thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}},
-            d.library().add_thermal_boundary(conditions[kind])}};
+        const auto condition = d.library().add_thermal_boundary(conditions[kind]);
+        d.thermal_boundaries.push_back({{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, condition});
         const auto model = test_pta::build_model(d);
         // All other faces share the compiled zero-flux default condition.
         ASSERT_EQ(model.boundary_conditions.size(), 2u);
