@@ -1,6 +1,6 @@
 # expr 模块接口
 
-封装 muparser。`include/metahotspot/expression/expression.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，与 `parse()` 接收同一类 `SymbolTable`，但只绑定 `variables`，不绑定场上下文或 native 函数。
+封装 muparser。`include/metahotspot/expression/expression.hpp`。材料、热源和边界的运行时表达式走此模块；PTA 几何算术表达式由应用层独立求值，不进入 SDK。
 
 ---
 
@@ -37,7 +37,7 @@ namespace mhs::expression {
 
 ## SymbolTable
 
-`SymbolTable` 是 `parse()` 的显式输入，以 const 引用传入。非恒定 `CompiledExpression` 的实现保存符号表的值副本，其生命周期与原符号表解耦。
+`SymbolTable` 仅包含运行时 native 函数，并作为 `parse()` 的显式输入，以 const 引用传入。非恒定 `CompiledExpression` 的实现保存符号表的值副本，其生命周期与原符号表解耦。
 
 ```cpp
 namespace mhs::expression {
@@ -91,7 +91,7 @@ double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 
 | 操作                                                     | 同步                                   |
 | -------------------------------------------------------- | -------------------------------------- |
-| `parse()` / `eval_geometry()` / `register_all_functions` | setup 阶段使用各自的本地 `SymbolTable` |
+| `parse()` / `register_all_functions` | setup 阶段使用各自的本地 `SymbolTable` |
 | `CompiledExpression::eval()`                             | 每线程独立 AST，无应用层互斥锁         |
 
 `SymbolTable` 是 setup 期间单线程构造的本地值；运行时（`CompiledExpression::eval`）无任何全局状态访问，因此多个 `build_model()` 调用互不干扰。
