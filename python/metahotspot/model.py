@@ -146,12 +146,6 @@ class Model(OwnedHandle):
             ctx="set_cartesian_mesh",
         )
 
-    def add_variable(self, name: str, expression: str) -> None:
-        """Add an expression constant."""
-        self._call(
-            "mhs_model_add_variable", _text(name), _text(expression), ctx="add_variable"
-        )
-
     def add_material(
         self,
         name: str,
