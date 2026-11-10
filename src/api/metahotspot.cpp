@@ -69,6 +69,7 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts);
 
 struct mhs_model_t {
     mhs::model::ModelDefinition def;
+    mhs::model::MeshSpec mesh;
 };
 
 struct mhs_compiled_t {
@@ -234,7 +235,7 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
             return mhs::core::Vector<double>(data, data + count);
         };
         mhs::model::MeshSpec mesh {axis(x, nx), axis(y, ny), axis(z, nz)};
-        m->def.mesh = std::move(mesh);
+        m->mesh = std::move(mesh);
     });
 }
 
@@ -284,10 +285,8 @@ MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, 
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        const auto geometry = static_cast<mhs::model::GeometryId>(m->def.geometries.size());
-        m->def.geometries.emplace_back();
         *out_id = static_cast<mhs_index_t>(m->def.volumes.size());
-        m->def.volumes.push_back({geometry, material, source});
+        m->def.volumes.push_back({material, source, {}});
     });
 }
 MHS_API mhs_status_t mhs_model_volume_add_box(
@@ -308,7 +307,7 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
             box.min[a] = min_xyz[a];
             box.max[a] = max_xyz[a];
         }
-        m->def.geometries[m->def.volumes[volume].geometry].operations.push_back(box);
+        m->def.volumes[volume].geometry.push_back(box);
     });
 }
 
@@ -490,7 +489,7 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     CHECK_NULL(m);
     MHS_TRY({
         auto c = std::make_unique<mhs_compiled_t>();
-        c->model = mhs::compiler::build_model(m->def);
+        c->model = mhs::compiler::build_model(m->def, m->mesh);
         *out = c.release();
     });
 }

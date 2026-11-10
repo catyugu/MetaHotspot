@@ -20,21 +20,16 @@ namespace mhs::model {
         mhs::core::Vector<double> z_vertices;
     };
 
-    // SI geometry. Operations within a region are ordered.
+    // SI geometry. Later volumes override earlier volumes; operations are ordered.
     struct BoxOperation {
         GeometryOperation operation = GeometryOperation::Add;
         std::array<double, 3> min {};
         std::array<double, 3> max {};
     };
-    struct GeometrySpec {
-        mhs::core::Vector<BoxOperation> operations;
-    };
-
-    // Ordered physical assignments to regions; later volumes override earlier ones.
     struct VolumeSpec {
-        GeometryId geometry = mhs::core::invalid_id;
         MaterialId material = mhs::core::invalid_id;
         SourceId source = mhs::core::invalid_id;
+        mhs::core::Vector<BoxOperation> geometry;
     };
 
     struct DirichletBoundary {
@@ -154,11 +149,9 @@ namespace mhs::model {
 
     struct ModelDefinition {
         double reference_temperature = 300.0;
-        MeshSpec mesh;
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;
         mhs::core::Vector<Expression> sources;
-        mhs::core::Vector<GeometrySpec> geometries;
         mhs::core::Vector<VolumeSpec> volumes;
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
         ThermalBoundary default_thermal_boundary = NeumannBoundary {};

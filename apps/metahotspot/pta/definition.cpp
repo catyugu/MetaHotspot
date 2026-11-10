@@ -98,15 +98,14 @@ namespace mhs::app::pta {
             }
     }
 
-    mhs::model::ModelDefinition normalize(Definition pta)
+    void normalize(Definition& pta)
     {
         normalize_pta_expressions(pta);
-        auto out = std::move(pta.model);
+        auto& out = pta.model;
         const double scale = length_unit_to_si(pta.length_unit);
         const GeometryEvaluator geometry(pta.variables);
         auto eval = [&](const auto& e) { return geometry.evaluate(e) * scale; };
         mhs::core::Vector<double> thickness;
-        double z = 0;
         for (std::size_t l = 0; l < pta.layers.size(); ++l) {
             double t = pta.layers[l].thickness.empty() ? 0 : eval(pta.layers[l].thickness);
             if (l == 0)
@@ -114,22 +113,17 @@ namespace mhs::app::pta {
                     if (b.thickness)
                         t = std::max(t, eval(*b.thickness));
             thickness.push_back(t);
-            z += t;
         }
-        // Reverse the layer order so the first PTA layer wins at a shared plane.
-        mhs::core::Vector<mhs::core::Vector<mhs::model::VolumeSpec>> layers;
-        for (std::size_t l = 0; l < pta.layers.size(); ++l) {
-            z -= thickness[l];
+        // Build from bottom to top so the first PTA layer wins at shared planes.
+        double z = 0;
+        for (std::size_t l = pta.layers.size(); l-- > 0;) {
             const auto& layer = pta.layers[l];
-            mhs::core::Vector<mhs::model::VolumeSpec> volumes;
             for (const auto& b : layer.blocks) {
                 auto mat = std::find_if(
                     out.materials.begin(), out.materials.end(), [&](const auto& m) { return m.name == b.material; });
                 if (mat == out.materials.end())
                     throw std::invalid_argument("unknown material: " + b.material);
                 mhs::model::VolumeSpec v;
-                v.geometry = static_cast<mhs::model::GeometryId>(out.geometries.size());
-                out.geometries.emplace_back();
                 v.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
                 v.source = static_cast<mhs::model::SourceId>(out.sources.size());
                 out.sources.push_back(b.volumetric_heat_source);
@@ -138,17 +132,14 @@ namespace mhs::app::pta {
                 for (const auto& op : b.geometry) {
                     const auto& r = op.rect;
                     double x0 = x + eval(r.x), y0 = y + eval(r.y), x1 = x0 + eval(r.width), y1 = y0 + eval(r.height);
-                    out.geometries[v.geometry].operations.push_back({op.operation, {std::min(x0, x1), std::min(y0, y1), z},
+                    v.geometry.push_back({op.operation, {std::min(x0, x1), std::min(y0, y1), z},
                         {std::max(x0, x1), std::max(y0, y1), top}});
                 }
-                volumes.push_back(std::move(v));
-            }
-            layers.push_back(std::move(volumes));
-        }
-        for (auto it = layers.rbegin(); it != layers.rend(); ++it)
-            for (auto& v : *it)
                 out.volumes.push_back(std::move(v));
-        for (auto* axis : {&out.mesh.x_vertices, &out.mesh.y_vertices, &out.mesh.z_vertices})
+            }
+            z += thickness[l];
+        }
+        for (auto* axis : {&pta.mesh.x_vertices, &pta.mesh.y_vertices, &pta.mesh.z_vertices})
             for (auto& v : *axis)
                 v *= scale;
         auto scale_regions = [&](auto& regions) {
@@ -166,6 +157,5 @@ namespace mhs::app::pta {
             scale_regions(b.regions);
         for (const auto& p : pta.point_probes)
             out.point_probes.push_back({p.name, eval(p.x), eval(p.y), eval(p.z)});
-        return out;
     }
 } // namespace mhs::app::pta
