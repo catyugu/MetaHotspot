@@ -7,7 +7,9 @@ namespace mhs::compiler {
     // The only structured-index arithmetic in the compiled model pipeline.
     // This adapter consumes supplied axes; it does not choose/refine a mesh.
     void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
+        const mhs::core::Vector<mhs::model::RegionSpec>& regions,
+        const mhs::core::Vector<mhs::model::MaterialAssignment>& materials,
+        const mhs::core::Vector<mhs::model::SourceAssignment>& sources)
     {
         using namespace mhs::core;
         using namespace mhs::model;
@@ -28,7 +30,7 @@ namespace mhs::compiler {
                 for (std::size_t z = 0; z < n[2]; ++z) {
                     CellGeometry cell {
                         {axes[0][x], axes[1][y], axes[2][z]}, {axes[0][x + 1], axes[1][y + 1], axes[2][z + 1]}};
-                    if (!classify_point(volumes, cell.center()))
+                    if (!project_cell_regions(model, cell, regions, materials, sources))
                         continue;
                     const auto cell_id = static_cast<CellId>(model.discrete.cells.size());
                     active[flatten(x, y, z)] = cell_id;

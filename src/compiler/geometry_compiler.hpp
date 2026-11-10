@@ -1,5 +1,4 @@
 #pragma once
-#include <optional>
 
 #include "model/model.hpp"
 #include "model/model_definition.hpp"
@@ -17,11 +16,16 @@ namespace mhs::compiler {
         SurfaceTag tag;
     };
 
-    std::optional<std::size_t> classify_point(
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& point);
-    void project_cell_regions(mhs::model::Model& model, const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
+    // Returns false for cells wholly outside the material domain. Accepted cells
+    // append one material and their source integrals before mesh insertion.
+    bool project_cell_regions(mhs::model::Model& model, const mhs::model::CellGeometry& cell,
+        const mhs::core::Vector<mhs::model::RegionSpec>& regions,
+        const mhs::core::Vector<mhs::model::MaterialAssignment>& materials,
+        const mhs::core::Vector<mhs::model::SourceAssignment>& sources);
     void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
+        const mhs::core::Vector<mhs::model::RegionSpec>& regions,
+        const mhs::core::Vector<mhs::model::MaterialAssignment>& materials,
+        const mhs::core::Vector<mhs::model::SourceAssignment>& sources);
 
     // Partition exterior facets once against the union of thermal and fluid regions,
     // before building incidence and assigning physics-specific boundary conditions.

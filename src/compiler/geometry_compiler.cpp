@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
+#include <stdexcept>
 
 namespace mhs::compiler {
 
@@ -19,74 +21,85 @@ namespace mhs::compiler {
 
     } // namespace
 
-    std::optional<std::size_t> classify_point(
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& p)
-    {
-        for (std::size_t i = volumes.size(); i-- > 0;) {
-            bool inside = false;
-            for (const auto& box : volumes[i].geometry) {
-                bool contains = true;
-                for (int a = 0; a < 3; ++a)
-                    contains = contains && p[a] >= box.min[a] - EPS && p[a] <= box.max[a] + EPS;
-                if (contains)
-                    inside = box.operation == mhs::model::GeometryOperation::Add;
-            }
-            if (inside)
-                return i;
-        }
-        return std::nullopt;
-    }
-
-    void project_cell_regions(mhs::model::Model& model, const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
+    bool project_cell_regions(mhs::model::Model& model, const mhs::model::CellGeometry& cell,
+        const mhs::core::Vector<mhs::model::RegionSpec>& regions,
+        const mhs::core::Vector<mhs::model::MaterialAssignment>& materials,
+        const mhs::core::Vector<mhs::model::SourceAssignment>& sources)
     {
         using namespace mhs::core;
         using namespace mhs::model;
-        model.cell_material.clear();
-        model.source_terms.clear();
-        for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
-            const auto& cell = model.discrete.cells[c];
-            std::array<mhs::core::Vector<double>, 3> cuts;
-            for (int a = 0; a < 3; ++a)
-                cuts[a] = {cell.min[a], cell.max[a]};
-            auto cut = [&](int a, double v) {
-                if (v > cell.min[a] + EPS && v < cell.max[a] - EPS)
-                    cuts[a].push_back(v);
-            };
-            for (const auto& volume : volumes)
-                for (const auto& box : volume.geometry) {
-                    bool overlaps = true;
-                    for (int a = 0; a < 3; ++a)
-                        overlaps = overlaps && box.max[a] > cell.min[a] && box.min[a] < cell.max[a];
-                    if (overlaps)
-                        for (int a = 0; a < 3; ++a) {
-                            cut(a, box.min[a]);
-                            cut(a, box.max[a]);
-                        }
-                }
-            for (auto& v : cuts) {
-                std::sort(v.begin(), v.end());
-                v.erase(std::unique(v.begin(), v.end()), v.end());
+        std::array<mhs::core::Vector<double>, 3> cuts;
+        for (int a = 0; a < 3; ++a)
+            cuts[a] = {cell.min[a], cell.max[a]};
+        mhs::core::Vector<RegionId> candidates;
+        // Geometry is queried once per cell, shared by material and source assignments.
+        for (std::size_t r = 0; r < regions.size(); ++r) {
+            bool relevant = false;
+            for (const auto& box : regions[r].geometry) {
+                bool overlaps = true;
+                for (int a = 0; a < 3; ++a)
+                    overlaps = overlaps && box.max[a] > cell.min[a] && box.min[a] < cell.max[a];
+                if (!overlaps)
+                    continue;
+                relevant = true;
+                for (int a = 0; a < 3; ++a)
+                    for (const auto v : {box.min[a], box.max[a]})
+                        if (v > cell.min[a] + EPS && v < cell.max[a] - EPS)
+                            cuts[a].push_back(v);
             }
-            MaterialId material = mhs::core::invalid_id;
-            for (std::size_t x = 1; x < cuts[0].size(); ++x)
-                for (std::size_t y = 1; y < cuts[1].size(); ++y)
-                    for (std::size_t z = 1; z < cuts[2].size(); ++z) {
-                        Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2, (cuts[1][y - 1] + cuts[1][y]) / 2,
-                            (cuts[2][z - 1] + cuts[2][z]) / 2};
-                        const auto location = classify_point(volumes, p);
-                        // A block edge can cut a control volume and leave a piece
-                        // outside every block. Such a piece carries no source.
-                        if (!location)
-                            continue;
-                        const auto& volume_spec = volumes[*location];
-                        material = volume_spec.material;
-                        const double volume = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1])
-                            * (cuts[2][z] - cuts[2][z - 1]);
-                        if (volume_spec.source != invalid_id)
-                            model.source_terms.push_back({static_cast<CellId>(c), volume_spec.source, volume, p});
-                    }
-            model.cell_material.push_back(material);
+            if (relevant)
+                candidates.push_back(static_cast<RegionId>(r));
         }
+        if (candidates.empty())
+            return false;
+        for (auto& axis : cuts) {
+            std::sort(axis.begin(), axis.end());
+            axis.erase(std::unique(axis.begin(), axis.end()), axis.end());
+        }
+        mhs::core::Vector<bool> inside(regions.size(), false);
+        std::optional<MaterialId> cell_material;
+        const auto cell_id = static_cast<CellId>(model.discrete.cells.size());
+        for (std::size_t x = 1; x < cuts[0].size(); ++x)
+            for (std::size_t y = 1; y < cuts[1].size(); ++y)
+                for (std::size_t z = 1; z < cuts[2].size(); ++z) {
+                    const Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2, (cuts[1][y - 1] + cuts[1][y]) / 2,
+                        (cuts[2][z - 1] + cuts[2][z]) / 2};
+                    for (const auto r : candidates) {
+                        inside[r] = false;
+                        for (const auto& box : regions[r].geometry) {
+                            bool contains = true;
+                            for (int a = 0; a < 3; ++a)
+                                contains = contains && p[a] >= box.min[a] - EPS && p[a] <= box.max[a] + EPS;
+                            if (contains)
+                                inside[r] = box.operation == GeometryOperation::Add;
+                        }
+                    }
+                    MaterialId material = invalid_id;
+                    for (const auto& assignment : materials)
+                        if (inside[assignment.region])
+                            material = assignment.material;
+                    if (cell_material && *cell_material != material)
+                        throw std::invalid_argument("cell " + std::to_string(cell_id)
+                            + " crosses a material or domain boundary; align the mesh with the physical regions");
+                    cell_material = material;
+                    if (material == invalid_id)
+                        continue;
+                    const double volume
+                        = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1]) * (cuts[2][z] - cuts[2][z - 1]);
+                    // Replace is an explicit ordered field operation used by block adapters.
+                    // Independent sources use Add and may share the same region.
+                    std::size_t begin = 0;
+                    for (std::size_t i = 0; i < sources.size(); ++i)
+                        if (inside[sources[i].region] && sources[i].operation == SourceOperation::Replace)
+                            begin = i;
+                    for (std::size_t i = begin; i < sources.size(); ++i)
+                        if (inside[sources[i].region] && sources[i].source != invalid_id)
+                            model.source_terms.push_back({cell_id, sources[i].source, volume, p});
+                }
+        if (!cell_material || *cell_material == invalid_id)
+            return false;
+        model.cell_material.push_back(*cell_material);
+        return true;
     }
 
     void refine_exterior_facets(

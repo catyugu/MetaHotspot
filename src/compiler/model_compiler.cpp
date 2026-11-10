@@ -120,15 +120,38 @@ namespace mhs::compiler {
 
         for (const auto& source : definition.sources)
             model.heat_source_table.push_back(mhs::expression::parse(source, symbols));
+        // Temporary bridge for existing block callers during the input migration.
+        auto regions = definition.regions;
+        auto materials = definition.material_assignments;
+        auto sources = definition.source_assignments;
         for (const auto& volume : definition.volumes) {
-            if (volume.material >= definition.materials.size())
-                throw std::out_of_range("volume material ID out of range");
-            if (volume.source != mhs::core::invalid_id && volume.source >= definition.sources.size())
-                throw std::out_of_range("volume source ID out of range");
-            for (const auto& box : volume.geometry)
+            const auto region = static_cast<mhs::model::RegionId>(regions.size());
+            regions.push_back({volume.geometry});
+            materials.push_back({region, volume.material});
+            sources.push_back({region, volume.source, mhs::model::SourceOperation::Replace});
+        }
+        for (const auto& assignment : materials)
+            if (assignment.region >= regions.size() || assignment.material >= definition.materials.size())
+                throw std::out_of_range("material assignment region or material ID out of range");
+        for (const auto& assignment : sources) {
+            if (assignment.region >= regions.size()
+                || (assignment.source != mhs::core::invalid_id && assignment.source >= definition.sources.size()))
+                throw std::out_of_range("source assignment region or source ID out of range");
+            if (assignment.operation != mhs::model::SourceOperation::Add
+                && assignment.operation != mhs::model::SourceOperation::Replace)
+                throw std::invalid_argument("invalid source operation");
+            if (assignment.source == mhs::core::invalid_id && assignment.operation == mhs::model::SourceOperation::Add)
+                throw std::invalid_argument("additive source assignment requires a source");
+        }
+        for (const auto& region : regions) {
+            for (const auto& box : region.geometry) {
+                if (box.operation != mhs::model::GeometryOperation::Add
+                    && box.operation != mhs::model::GeometryOperation::Subtract)
+                    throw std::invalid_argument("invalid geometry operation");
                 for (int a = 0; a < 3; ++a)
                     if (!std::isfinite(box.min[a]) || !std::isfinite(box.max[a]) || box.min[a] >= box.max[a])
                         throw std::invalid_argument("box bounds must be finite and increasing");
+            }
         }
 
         // Compile boundary patches.
@@ -139,8 +162,7 @@ namespace mhs::compiler {
         auto default_thermal_boundary
             = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
 
-        compile_cartesian_mesh(model, definition.mesh, definition.volumes);
-        project_cell_regions(model, definition.volumes);
+        compile_cartesian_mesh(model, definition.mesh, regions, materials, sources);
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())
                 throw std::out_of_range("cell has no valid material assignment");

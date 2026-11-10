@@ -639,11 +639,8 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneThermalBoundarySpec)
             check_face(ix, ny - 1, iz, FaceDir::YP);
 }
 
-// A block rectangle that cuts through a control volume splits that cell into
-// pieces, and a piece can lie entirely outside every block (the mesh spans more
-// than the block).  Such a piece contributes no source projection; it must not
-// be attributed to a block, which previously indexed layers[-1] and crashed.
-TEST(PreprocessorTest, PartialBlockCoverageSkipsPiecesOutsideEveryBlock)
+// A full control volume cannot represent a partially occupied physical domain.
+TEST(PreprocessorTest, PartialBlockCoverageRequiresDomainAlignedMesh)
 {
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
@@ -680,10 +677,12 @@ TEST(PreprocessorTest, PartialBlockCoverageSkipsPiecesOutsideEveryBlock)
 
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
+    EXPECT_THROW(test_pta::build_model(io), std::invalid_argument);
+    io.model.mesh.x_vertices = io.model.mesh.y_vertices = {0.0, 3.0, 4.0};
     const auto model = test_pta::build_model(io);
     ASSERT_EQ(model.discrete.cells.size(), 1u);
 
-    // Only the covered piece (3 mm x 3 mm x 1 mm) carries the source.
+    // The aligned physical cell (3 mm x 3 mm x 1 mm) carries the source.
     double total = 0.0;
     for (const auto& term : model.source_terms)
         total += term.weight;
