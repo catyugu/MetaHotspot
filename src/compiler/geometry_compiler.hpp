@@ -32,12 +32,13 @@ namespace mhs::compiler {
     mhs::model::CellId locate_conformal_cell(
         const mhs::model::DiscreteMesh& mesh, const mhs::model::MeshSpec& input, const mhs::model::Vec3& point);
 
-    // Partition exterior facets once against the union of thermal and fluid regions,
-    // before building incidence and assigning physics-specific boundary conditions.
-    void refine_exterior_facets(
-        mhs::model::DiscreteMesh& mesh, const mhs::core::Vector<mhs::model::SurfaceRegion>& regions);
+    struct SurfaceRegionGroup {
+        std::span<const TaggedSurfaceRegion> regions;
+        SurfaceTag fallback = mhs::core::invalid_id;
+    };
 
-    // Later regions take precedence. Interior facets always have the invalid tag.
-    mhs::core::Vector<SurfaceTag> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<TaggedSurfaceRegion>& regions, SurfaceTag fallback = mhs::core::invalid_id);
+    // Share one geometric partition across tag groups. Later regions in each
+    // group take precedence; interior facets always receive the invalid tag.
+    mhs::core::Vector<mhs::core::Vector<SurfaceTag>> partition_exterior_facets(
+        mhs::model::DiscreteMesh& mesh, std::span<const SurfaceRegionGroup> groups);
 } // namespace mhs::compiler

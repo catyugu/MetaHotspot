@@ -153,24 +153,16 @@ namespace mhs::compiler {
         for (auto& probe : model.point_probes)
             probe.cell = locate_conformal_cell(model.discrete, mesh, probe.point);
 
-        // Canonical geometric partition shared by all boundary physics.
-        mhs::core::Vector<mhs::model::SurfaceRegion> cuts;
-        for (const auto& boundary : compiled_boundaries)
-            cuts.push_back(boundary.region);
         mhs::core::Vector<TaggedSurfaceRegion> fluid_regions;
         for (std::size_t id = 0; id < definition.fluid_boundaries.size(); ++id)
-            for (const auto& region : definition.fluid_boundaries[id].regions) {
-                cuts.push_back(region);
+            for (const auto& region : definition.fluid_boundaries[id].regions)
                 fluid_regions.push_back({region, static_cast<SurfaceTag>(id)});
-            }
-        refine_exterior_facets(model.discrete, cuts);
+        const std::array<SurfaceRegionGroup, 2> groups {
+            {{compiled_boundaries, default_thermal_boundary}, {fluid_regions}}};
+        auto boundary_tags = partition_exterior_facets(model.discrete, groups);
         build_cell_facet_incidence(model.discrete);
-
-        model.facet_thermal_condition
-            = assign_exterior_regions(model.discrete, compiled_boundaries, default_thermal_boundary);
-
-        // Hydraulic boundary assignments share the same canonical FacetIds.
-        auto fluid_tags = assign_exterior_regions(model.discrete, fluid_regions);
+        model.facet_thermal_condition = std::move(boundary_tags[0]);
+        auto& fluid_tags = boundary_tags[1];
         mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_tags, initial_viscosity);
 
         return model;
