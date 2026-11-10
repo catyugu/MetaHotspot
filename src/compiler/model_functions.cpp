@@ -1,5 +1,4 @@
 #include "compiler/model_functions.hpp"
-#include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
 #include "expression/expression.hpp"
 
