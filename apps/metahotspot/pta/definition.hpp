@@ -11,7 +11,7 @@ namespace mhs::app::pta {
 
     struct VariableSpec {
         std::string name;
-        std::string expression;
+        std::string value;
     };
 
     struct RectSpec {
