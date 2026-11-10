@@ -86,7 +86,8 @@ namespace mhs::compiler {
         mhs::model::Model model;
         model.reference_temperature = definition.reference_temperature;
 
-        auto symbols = build_symbol_table(definition);
+        mhs::expression::SymbolTable symbols;
+        register_all_functions(symbols, definition.functions);
         for (const auto& p : definition.point_probes)
             model.point_probes.push_back({p.name, {p.x, p.y, p.z}});
 

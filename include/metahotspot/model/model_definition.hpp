@@ -20,11 +20,6 @@ namespace mhs::model {
         mhs::core::Vector<double> z_vertices;
     };
 
-    struct VariableSpec {
-        std::string name;
-        Expression value;
-    };
-
     // SI geometry. Later volumes override earlier volumes; operations are ordered.
     struct BoxOperation {
         GeometryOperation operation = GeometryOperation::Add;
@@ -155,7 +150,6 @@ namespace mhs::model {
     struct ModelDefinition {
         double reference_temperature = 300.0;
         MeshSpec mesh;
-        mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;
         mhs::core::Vector<Expression> sources;

@@ -69,7 +69,6 @@ def test_model_native_boundary_and_function_calls():
     model.set_default_dirichlet("300")
     model.set_default_neumann("0")
     model.set_default_convection("10", "300")
-    model.add_variable("x0", "0")
     model.add_function_expr("constant", "1")
     model.add_function_gauss("gauss", 1.0, 1.0, 0.0)
     model.add_function_sine("sine", 1.0, 1.0, 0.0)

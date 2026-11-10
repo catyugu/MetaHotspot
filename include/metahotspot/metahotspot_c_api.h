@@ -234,7 +234,7 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  reference state, mesh, variables         */
+/*  Model construction  —  reference state, mesh         */
 /* ------------------------------------------------------------------ */
 
 /** Reference temperature used only by compile-time frozen-flow preprocessing
@@ -245,8 +245,6 @@ MHS_API mhs_status_t mhs_model_set_reference_temperature(mhs_model_t* m, double 
  * increasing and contain at least two entries. All axes are replaced atomically. */
 MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
-
-MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  materials, sources, volumes           */
