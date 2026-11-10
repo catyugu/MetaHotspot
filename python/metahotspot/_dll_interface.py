@@ -67,9 +67,17 @@ _CORE_FUNC_SIGS = [
         ],
     ),
     ("mhs_model_add_body", I32, [P(MhsModel), ctypes.c_uint32, P(ctypes.c_uint32)]),
-    ("mhs_model_body_add_box", I32, [P(MhsModel), ctypes.c_uint32, I32, P(F64), P(F64)]),
+    (
+        "mhs_model_body_add_box",
+        I32,
+        [P(MhsModel), ctypes.c_uint32, I32, P(F64), P(F64)],
+    ),
     ("mhs_model_add_volume_source", I32, [P(MhsModel), Text, P(ctypes.c_uint32)]),
-    ("mhs_model_volume_source_add_box", I32, [P(MhsModel), ctypes.c_uint32, I32, P(F64), P(F64)]),
+    (
+        "mhs_model_volume_source_add_box",
+        I32,
+        [P(MhsModel), ctypes.c_uint32, I32, P(F64), P(F64)],
+    ),
     ("mhs_model_add_dirichlet", I32, [P(MhsModel), P(MhsSurfaceRegion), Size, Text]),
     ("mhs_model_add_neumann", I32, [P(MhsModel), P(MhsSurfaceRegion), Size, Text]),
     (
