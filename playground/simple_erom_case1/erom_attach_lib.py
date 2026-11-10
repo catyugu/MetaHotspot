@@ -151,13 +151,12 @@ def build_geometry(cfg: AttachConfig, *, detail: bool, macro: bool):
     H = cfg.ext_thickness_mm
 
     def add_box(material, lo, hi, power_density=None):
-        source = (
-            model.add_source(f"{power_density:.17g}")
-            if power_density is not None
-            else 0xFFFFFFFF
-        )
-        volume = model.add_volume(material, source)
-        model.add_box(volume, np.array(lo) * 1e-3, np.array(hi) * 1e-3)
+        lower, upper = np.array(lo) * 1e-3, np.array(hi) * 1e-3
+        body = model.add_body(material)
+        model.body_add_box(body, lower, upper)
+        if power_density is not None:
+            source = model.add_volume_source(f"{power_density:.17g}")
+            model.volume_source_add_box(source, lower, upper)
 
     add_box(copper, [0, 0, H], [CUBE_MM, CUBE_MM, H + CUBE_MM])
     add_box(copper, [25, 25, H + 25], [75, 75, H + 75], CUBE_SOURCE_W / SOURCE_VOL_M3)

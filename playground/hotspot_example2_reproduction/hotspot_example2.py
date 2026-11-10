@@ -195,10 +195,11 @@ def build_model(
     )
 
     def box(material, lo, hi, source=None):
-        volume = m.add_volume(
-            material, m.add_source(source) if source is not None else 0xFFFFFFFF
-        )
-        m.add_box(volume, lo, hi)
+        body = m.add_body(material)
+        m.body_add_box(body, lo, hi)
+        if source is not None:
+            heating = m.add_volume_source(source)
+            m.volume_source_add_box(heating, lo, hi)
 
     z = T_CHIP + T_INTERFACE
     spreader_lo = -(S_SPREADER - CHIP_L) / 2

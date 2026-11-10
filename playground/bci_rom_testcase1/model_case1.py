@@ -215,13 +215,14 @@ def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
     air = model.add_material(AIR_MATERIAL, AIR_K, AIR_K, AIR_K, AIR_RHO, AIR_C)
 
     def add_box(material, lo, hi, power=0):
-        source = (
-            model.add_source(f"{power / (np.prod(np.array(hi) - lo) * 1e-9):.17g}")
-            if power > 0
-            else 0xFFFFFFFF
-        )
-        volume = model.add_volume(material, source)
-        model.add_box(volume, np.array(lo) * 1e-3, np.array(hi) * 1e-3)
+        lower, upper = np.array(lo) * 1e-3, np.array(hi) * 1e-3
+        body = model.add_body(material)
+        model.body_add_box(body, lower, upper)
+        if power > 0:
+            source = model.add_volume_source(
+                f"{power / np.prod(upper - lower):.17g}"
+            )
+            model.volume_source_add_box(source, lower, upper)
 
     z = 0.0
     for thickness, material, sx, sy, cx, cy, power in LAYERS:
