@@ -535,8 +535,7 @@ namespace mhs::app::pta {
                 }
             }
         }
-        if (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty()
-            || def.mesh.z_vertices.empty()) {
+        if (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()) {
             if (const XMLElement* generated_mesh = root->FirstChildElement("GeneratedMesh")) {
                 const auto read_vertices = [&](const char* axis, mhs::core::Vector<double>& vertices) {
                     const XMLElement* array = child_by_local_name(generated_mesh, axis);
