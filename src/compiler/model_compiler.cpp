@@ -121,15 +121,18 @@ namespace mhs::compiler {
         for (const auto& source : definition.sources)
             model.heat_source_table.push_back(mhs::expression::parse(source, symbols));
         for (const auto& volume : definition.volumes) {
+            if (volume.geometry >= definition.geometries.size())
+                throw std::out_of_range("volume geometry ID out of range");
             if (volume.material >= definition.materials.size())
                 throw std::out_of_range("volume material ID out of range");
             if (volume.source != mhs::core::invalid_id && volume.source >= definition.sources.size())
                 throw std::out_of_range("volume source ID out of range");
-            for (const auto& box : volume.geometry)
+        }
+        for (const auto& geometry : definition.geometries)
+            for (const auto& box : geometry.operations)
                 for (int a = 0; a < 3; ++a)
                     if (!std::isfinite(box.min[a]) || !std::isfinite(box.max[a]) || box.min[a] >= box.max[a])
                         throw std::invalid_argument("box bounds must be finite and increasing");
-        }
 
         // Compile boundary patches.
         auto& boundary_conditions = model.boundary_conditions;
@@ -139,8 +142,8 @@ namespace mhs::compiler {
         auto default_thermal_boundary
             = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
 
-        compile_cartesian_mesh(model, definition.mesh, definition.volumes);
-        project_cell_regions(model, definition.volumes);
+        compile_cartesian_mesh(model, definition.mesh, definition);
+        project_cell_regions(model, definition);
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())
                 throw std::out_of_range("cell has no valid material assignment");

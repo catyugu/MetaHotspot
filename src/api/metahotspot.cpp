@@ -284,8 +284,10 @@ MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, 
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
+        const auto geometry = static_cast<mhs::model::GeometryId>(m->def.geometries.size());
+        m->def.geometries.emplace_back();
         *out_id = static_cast<mhs_index_t>(m->def.volumes.size());
-        m->def.volumes.push_back({material, source, {}});
+        m->def.volumes.push_back({geometry, material, source});
     });
 }
 MHS_API mhs_status_t mhs_model_volume_add_box(
@@ -306,7 +308,7 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
             box.min[a] = min_xyz[a];
             box.max[a] = max_xyz[a];
         }
-        m->def.volumes[volume].geometry.push_back(box);
+        m->def.geometries[m->def.volumes[volume].geometry].operations.push_back(box);
     });
 }
 

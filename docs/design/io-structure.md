@@ -2,11 +2,11 @@
 
 `model/model_definition.hpp` 是库的建模契约。所有几何、网格坐标和探针坐标使用 SI 米；材料及边界表达式使用规范变量 `x/y/z/T/t`，编译器原样解析。材料中的 `T` 表示单元温度，热边界中的 `T` 表示表面迹温度。
 
-`ModelDefinition` 保存 reference_temperature、mesh、functions、materials、sources、volumes、thermal_boundaries、default_thermal_boundary、point_probes 和 fluid_boundaries。材料和热源采用有序表，`VolumeSpec` 使用表内 ID 引用；`core::invalid_id` 表示无热源。
+`ModelDefinition` 保存 reference_temperature、mesh、functions、materials、sources、geometries、volumes、thermal_boundaries、default_thermal_boundary、point_probes 和 fluid_boundaries。几何区域、材料和热源分别保存为表，`VolumeSpec` 通过 ID 引用它们；`core::invalid_id` 表示无热源。
 
 ## 体几何
 
-`VolumeSpec { material, source, geometry }` 的 geometry 为三维轴对齐 `BoxOperation { operation, min, max }` 序列。每个 box 的 min/max 是绝对 SI 坐标，必须有限且严格递增。操作按顺序执行：最后命中的 Add/Subtract 决定点是否属于体；后添加的体覆盖前面的体。当前网格离散保持笛卡尔六面体，不引入 CAD 对象树。
+`GeometrySpec { operations }` 独立描述三维轴对齐的 `BoxOperation { operation, min, max }` 序列。每个 box 的 min/max 是绝对 SI 坐标，必须有限且严格递增。`VolumeSpec { geometry, material, source }` 将几何区域与物理属性关联；geometry 是 geometries 表中的索引。操作按顺序执行：最后命中的 Add/Subtract 决定点是否属于该几何区域；后添加的体赋值覆盖先前的赋值。当前网格离散保持笛卡尔六面体，不引入 CAD 对象树。
 
 编译器消费 `ModelDefinition::mesh` 中显式给定、严格递增的 Cartesian 网格轴，构造内部 `DiscreteMesh`。热源按实际几何交叠体积积分，不要求源区域边界与单元边界重合。
 

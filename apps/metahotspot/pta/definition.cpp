@@ -128,6 +128,8 @@ namespace mhs::app::pta {
                 if (mat == out.materials.end())
                     throw std::invalid_argument("unknown material: " + b.material);
                 mhs::model::VolumeSpec v;
+                v.geometry = static_cast<mhs::model::GeometryId>(out.geometries.size());
+                out.geometries.emplace_back();
                 v.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
                 v.source = static_cast<mhs::model::SourceId>(out.sources.size());
                 out.sources.push_back(b.volumetric_heat_source);
@@ -136,7 +138,7 @@ namespace mhs::app::pta {
                 for (const auto& op : b.geometry) {
                     const auto& r = op.rect;
                     double x0 = x + eval(r.x), y0 = y + eval(r.y), x1 = x0 + eval(r.width), y1 = y0 + eval(r.height);
-                    v.geometry.push_back({op.operation, {std::min(x0, x1), std::min(y0, y1), z},
+                    out.geometries[v.geometry].operations.push_back({op.operation, {std::min(x0, x1), std::min(y0, y1), z},
                         {std::max(x0, x1), std::max(y0, y1), top}});
                 }
                 volumes.push_back(std::move(v));

@@ -20,11 +20,12 @@ namespace mhs::compiler {
     } // namespace
 
     std::optional<std::size_t> classify_point(
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& p)
+        const mhs::model::ModelDefinition& definition, const mhs::model::Vec3& p)
     {
+        const auto& volumes = definition.volumes;
         for (std::size_t i = volumes.size(); i-- > 0;) {
             bool inside = false;
-            for (const auto& box : volumes[i].geometry) {
+            for (const auto& box : definition.geometries[volumes[i].geometry].operations) {
                 bool contains = true;
                 for (int a = 0; a < 3; ++a)
                     contains = contains && p[a] >= box.min[a] - EPS && p[a] <= box.max[a] + EPS;
@@ -37,10 +38,11 @@ namespace mhs::compiler {
         return std::nullopt;
     }
 
-    void project_cell_regions(mhs::model::Model& model, const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
+    void project_cell_regions(mhs::model::Model& model, const mhs::model::ModelDefinition& definition)
     {
         using namespace mhs::core;
         using namespace mhs::model;
+        const auto& volumes = definition.volumes;
         model.cell_material.clear();
         model.source_terms.clear();
         for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
@@ -53,7 +55,7 @@ namespace mhs::compiler {
                     cuts[a].push_back(v);
             };
             for (const auto& volume : volumes)
-                for (const auto& box : volume.geometry) {
+                for (const auto& box : definition.geometries[volume.geometry].operations) {
                     bool overlaps = true;
                     for (int a = 0; a < 3; ++a)
                         overlaps = overlaps && box.max[a] > cell.min[a] && box.min[a] < cell.max[a];
@@ -73,7 +75,7 @@ namespace mhs::compiler {
                     for (std::size_t z = 1; z < cuts[2].size(); ++z) {
                         Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2, (cuts[1][y - 1] + cuts[1][y]) / 2,
                             (cuts[2][z - 1] + cuts[2][z]) / 2};
-                        const auto location = classify_point(volumes, p);
+                        const auto location = classify_point(definition, p);
                         // A block edge can cut a control volume and leave a piece
                         // outside every block. Such a piece carries no source.
                         if (!location)
