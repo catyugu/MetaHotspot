@@ -212,7 +212,7 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out)
 MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  settings, mesh, variables                   */
+/*  Model construction  —  settings, mesh                   */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_set_reference_temperature(mhs_model_t* m, double temperature_K)
@@ -236,14 +236,6 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
         mhs::model::MeshSpec mesh {axis(x, nx), axis(y, ny), axis(z, nz)};
         m->def.mesh = std::move(mesh);
     });
-}
-
-MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(name);
-    CHECK_NULL(expression);
-    MHS_TRY({ m->def.variables.push_back({name, expression}); });
 }
 
 /* ------------------------------------------------------------------ */
