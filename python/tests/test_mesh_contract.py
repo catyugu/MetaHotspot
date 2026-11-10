@@ -8,15 +8,16 @@ from metahotspot import SurfaceRegion
 from metahotspot.enums import MaterialKind
 
 
-def test_subcell_sources_keep_independent_power_columns():
+def test_conformal_sources_keep_independent_power_columns():
     from metahotspot.macromodel.affine import AffineParametricModel, SourcePort
 
     model = _model()
+    model.set_cartesian_mesh([0, 0.00025, 0.001], [0, 0.001], [0, 0.001])
     second = model.add_volume(0, model.add_source("2e6"))
     model.add_box(second, [0, 0, 0], [0.00025, 0.001, 0.001])
     compiled = model.compile()
     q = compiled.source_operator()
-    np.testing.assert_allclose(q.toarray(), [[0.00075, 0.0005]])
+    np.testing.assert_allclose(q.toarray(), [[0, 0.0005], [0.00075, 0]])
     np.testing.assert_allclose(q.sum(axis=1).A.ravel(), compiled.assemble().f)
     np.testing.assert_allclose(compiled.fields.projection_volume.sum(), 1e-9)
 
@@ -31,7 +32,7 @@ def test_subcell_sources_keep_independent_power_columns():
             ]
 
     ports = Ports()
-    np.testing.assert_allclose(ports.source_shape, [[1, 1]])
+    np.testing.assert_allclose(ports.source_shape, [[0, 1], [1, 0]])
     np.testing.assert_allclose(
         ports.source_shape @ ports.nominal_power(), compiled.assemble().f
     )

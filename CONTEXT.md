@@ -39,7 +39,7 @@ IO → (ModelDefinition, MeshSpec) → Compiler → Model → Solver → Solutio
 - 内部几何一律使用 SI 米。
 - 控制体、唯一有向面片与 CSR 关联构成离散网格；CellId 同时标识控制体与温度状态下标。
 - `DiscreteMesh::facets` 是唯一的积分面片集合，热学与流体边界矩形在几何编译阶段共同切分外表面；`facet_thermal_condition` 按 FacetId 绑定类型化 `BoundaryCondition`。边界表达式中的 `T` 指物理表面温度迹。
-- 当前 TPFA 要求轴对齐控制体的相邻中心沿面法向对齐，并采用对角导热张量；网格由调用方提供。
+- 当前 TPFA 要求轴对齐控制体的相邻中心沿面法向对齐，并采用对角导热张量；网格由调用方提供。共形体编译路径要求内部 Box 边界落在输入网格平面上。
 - 材料、边界和热源表达式在 setup 阶段编译，热循环中不解析字符串。
 - Layer / Block / Rect / Boundary 的输入顺序属于模型语义，后出现的覆盖先出现的。
 - 当前只支持三维网格。
