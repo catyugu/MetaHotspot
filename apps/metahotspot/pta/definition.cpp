@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <stdexcept>
 #include <string_view>
-#include <utility>
 #include <type_traits>
 namespace mhs::app::pta {
     inline double length_unit_to_si(LengthUnit unit)

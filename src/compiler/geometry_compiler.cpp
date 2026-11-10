@@ -95,13 +95,14 @@ namespace mhs::compiler {
                 for (std::size_t x = 1; x < cuts[0].size(); ++x)
                     for (std::size_t y = 1; y < cuts[1].size(); ++y)
                         for (std::size_t z = 1; z < cuts[2].size(); ++z) {
-                            const Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2,
-                                (cuts[1][y - 1] + cuts[1][y]) / 2, (cuts[2][z - 1] + cuts[2][z]) / 2};
+                            const Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2, (cuts[1][y - 1] + cuts[1][y]) / 2,
+                                (cuts[2][z - 1] + cuts[2][z]) / 2};
                             if (!geometry_contains(geometry, p))
                                 continue;
                             const double weight = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1])
                                 * (cuts[2][z] - cuts[2][z - 1]);
-                            model.source_terms.push_back({static_cast<CellId>(c), static_cast<SourceId>(id), weight, p});
+                            model.source_terms.push_back(
+                                {static_cast<CellId>(c), static_cast<SourceId>(id), weight, p});
                         }
             }
         }

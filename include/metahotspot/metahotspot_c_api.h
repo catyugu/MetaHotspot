@@ -262,8 +262,7 @@ MHS_API mhs_status_t mhs_model_body_add_box(
 
 /** Sources have independent geometry and additive volumetric power density (W/m^3).
  * Expressions use canonical x/y/z/T/t; geometry uses SI metres. */
-MHS_API mhs_status_t mhs_model_add_volume_source(
-    mhs_model_t* m, const char* power_density, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_add_volume_source(mhs_model_t* m, const char* power_density, mhs_index_t* out_id);
 MHS_API mhs_status_t mhs_model_volume_source_add_box(
     mhs_model_t* m, mhs_index_t source, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3]);
 

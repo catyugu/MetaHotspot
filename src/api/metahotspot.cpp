@@ -305,8 +305,7 @@ MHS_API mhs_status_t mhs_model_body_add_box(
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_volume_source(
-    mhs_model_t* m, const char* power_density, mhs_index_t* out_id)
+MHS_API mhs_status_t mhs_model_add_volume_source(mhs_model_t* m, const char* power_density, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(power_density);
