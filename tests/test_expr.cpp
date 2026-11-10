@@ -231,5 +231,4 @@ namespace {
         EXPECT_EQ(expr.eval(ctx), 10.0);
     }
 
-
 } // namespace
