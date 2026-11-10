@@ -11,15 +11,6 @@
 
 namespace mhs::compiler {
 
-    mhs::expression::SymbolTable build_symbol_table(const mhs::model::ModelDefinition& definition)
-    {
-        mhs::expression::SymbolTable symbols, empty;
-        for (const auto& variable : definition.variables)
-            symbols.variables[variable.name] = mhs::expression::eval_geometry(variable.value, empty);
-        register_all_functions(symbols, definition.functions);
-        return symbols;
-    }
-
     // ---- 5 类闭包构造器 ---------------------------------------------------
 
     // 闭包对每次 muparser 调用的约定：
