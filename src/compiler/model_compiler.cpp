@@ -140,10 +140,6 @@ namespace mhs::compiler {
             = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
 
         compile_cartesian_mesh(model, definition.mesh, definition.volumes);
-        project_cell_regions(model, definition.volumes);
-        for (const auto material : model.cell_material)
-            if (material >= model.material_table.size())
-                throw std::out_of_range("cell has no valid material assignment");
 
         // Canonical geometric partition shared by all boundary physics.
         mhs::core::Vector<mhs::model::SurfaceRegion> cuts;

@@ -1,5 +1,4 @@
 #pragma once
-#include <optional>
 
 #include "model/model.hpp"
 #include "model/model_definition.hpp"
@@ -17,9 +16,6 @@ namespace mhs::compiler {
         SurfaceTag tag;
     };
 
-    std::optional<std::size_t> classify_point(
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& point);
-    void project_cell_regions(mhs::model::Model& model, const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
     void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
 

@@ -8,7 +8,7 @@
 
 `VolumeSpec { material, source, geometry }` 的 geometry 为三维轴对齐 `BoxOperation { operation, min, max }` 序列。每个 box 的 min/max 是绝对 SI 坐标，必须有限且严格递增。操作按顺序执行：最后命中的 Add/Subtract 决定点是否属于体；后添加的体覆盖前面的体。当前网格离散保持笛卡尔六面体，不引入 CAD 对象树。
 
-编译器消费 `ModelDefinition::mesh` 中显式给定、严格递增的 Cartesian 网格轴，构造内部 `DiscreteMesh`。热源按实际几何交叠体积积分，不要求源区域边界与单元边界重合。
+编译器消费 `ModelDefinition::mesh` 中显式给定、严格递增的 Cartesian 网格轴，一次遍历生成有效 Cell、单元材料归属和热源积分项，再构造 Facet。热源按实际几何交叠体积积分，源区域边界可以穿过单元；同一单元的非空子体积不得对应不同材料，发现这种情况将拒绝编译。
 
 `SurfaceRegion { axis, coordinate, rectangle }` 描述 SI 平面区域。编译器验证轴、坐标有限性及矩形范围的严格递增，并将热学和流体区域用于同一套外部 Facet 切分。ThermalBoundarySpec 按添加顺序覆盖，default_thermal_boundary 覆盖未命中的外表面。流体边界共用 SurfaceRegion，并采用 PressureInlet、MassFlowInlet、PressureOutlet variant；入口缺省温度采用模型初温。
 
