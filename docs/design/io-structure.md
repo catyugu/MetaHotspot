@@ -2,7 +2,7 @@
 
 `model/model_definition.hpp` 是库的建模契约。所有几何、网格坐标和探针坐标使用 SI 米；材料及边界表达式使用规范变量 `x/y/z/T/t`，编译器原样解析。材料中的 `T` 表示单元温度，热边界中的 `T` 表示表面迹温度。
 
-`ModelDefinition` 保存 reference_temperature、mesh、variables、functions、materials、sources、volumes、thermal_boundaries、default_thermal_boundary、point_probes 和 fluid_boundaries。材料和热源采用有序表，`VolumeSpec` 使用表内 ID 引用；`core::invalid_id` 表示无热源。
+`ModelDefinition` 保存 reference_temperature、mesh、functions、materials、sources、volumes、thermal_boundaries、default_thermal_boundary、point_probes 和 fluid_boundaries。材料和热源采用有序表，`VolumeSpec` 使用表内 ID 引用；`core::invalid_id` 表示无热源。
 
 ## 体几何
 
@@ -14,7 +14,7 @@
 
 ## 应用层
 
-PTA 的 XML、LengthUnit、Layer、Block、Rect、FaceKey 和表达式形式参数规则全部位于 `apps/metahotspot`。`pta::normalize` 将层厚度/偏移/矩形展开成绝对三维 SI box，解析材料名，换算边界、网格和探针坐标，并完成 PTA 的 `x→T/t` 重写。随后才调用 `compiler::build_model`。
+PTA 的 XML、LengthUnit、Layer、Block、Rect、FaceKey、几何变量及表达式形式参数规则全部位于 `apps/metahotspot`。`pta::normalize` 使用独立的算术求值器解析几何表达式，将层厚度/偏移/矩形展开成绝对三维 SI box，解析材料名，换算边界、网格和探针坐标，并完成 PTA 的 `x→T/t` 重写。随后才调用 `compiler::build_model`。
 
 CLI 兼容 PTA 时保留从 XML 的 `Results/Mesh` 或 `GeneratedMesh` 读取网格坐标轴的行为。读取与单位换算属于应用层，转换后通过通用的 `ModelDefinition::mesh` 传入编译器；内核与公开 API 不包含 PTA 网格导入逻辑或外部 `DiscreteMesh` 输入入口。
 
