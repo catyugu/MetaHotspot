@@ -284,8 +284,10 @@ MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, 
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        *out_id = static_cast<mhs_index_t>(m->def.volumes.size());
-        m->def.volumes.push_back({material, source, {}});
+        *out_id = static_cast<mhs_index_t>(m->def.regions.size());
+        m->def.regions.push_back({});
+        m->def.material_assignments.push_back({*out_id, material});
+        m->def.source_assignments.push_back({*out_id, source, mhs::model::SourceOperation::Replace});
     });
 }
 MHS_API mhs_status_t mhs_model_volume_add_box(
@@ -295,7 +297,7 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
     CHECK_NULL(min_xyz);
     CHECK_NULL(max_xyz);
     MHS_TRY({
-        if (volume >= m->def.volumes.size())
+        if (volume >= m->def.regions.size())
             throw std::out_of_range("volume ID out of range");
         if (op != MHS_GEOM_ADD && op != MHS_GEOM_SUB)
             throw std::invalid_argument("invalid geometry operation");
@@ -306,7 +308,7 @@ MHS_API mhs_status_t mhs_model_volume_add_box(
             box.min[a] = min_xyz[a];
             box.max[a] = max_xyz[a];
         }
-        m->def.volumes[volume].geometry.push_back(box);
+        m->def.regions[volume].geometry.push_back(box);
     });
 }
 

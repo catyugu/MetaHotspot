@@ -116,18 +116,24 @@ namespace mhs::app::pta {
             thickness.push_back(t);
             z += t;
         }
+        // PTA blocks carry coupled material/source data only inside this adapter.
+        struct BlockVolume {
+            mhs::model::MaterialId material;
+            mhs::model::SourceId source;
+            mhs::core::Vector<mhs::model::BoxOperation> geometry;
+        };
         // Reverse the layer order so the first PTA layer wins at a shared plane.
-        mhs::core::Vector<mhs::core::Vector<mhs::model::VolumeSpec>> layers;
+        mhs::core::Vector<mhs::core::Vector<BlockVolume>> layers;
         for (std::size_t l = 0; l < pta.layers.size(); ++l) {
             z -= thickness[l];
             const auto& layer = pta.layers[l];
-            mhs::core::Vector<mhs::model::VolumeSpec> volumes;
+            mhs::core::Vector<BlockVolume> volumes;
             for (const auto& b : layer.blocks) {
                 auto mat = std::find_if(
                     out.materials.begin(), out.materials.end(), [&](const auto& m) { return m.name == b.material; });
                 if (mat == out.materials.end())
                     throw std::invalid_argument("unknown material: " + b.material);
-                mhs::model::VolumeSpec v;
+                BlockVolume v;
                 v.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
                 v.source = static_cast<mhs::model::SourceId>(out.sources.size());
                 out.sources.push_back(b.volumetric_heat_source);
@@ -144,8 +150,12 @@ namespace mhs::app::pta {
             layers.push_back(std::move(volumes));
         }
         for (auto it = layers.rbegin(); it != layers.rend(); ++it)
-            for (auto& v : *it)
-                out.volumes.push_back(std::move(v));
+            for (auto& v : *it) {
+                const auto region = static_cast<mhs::model::RegionId>(out.regions.size());
+                out.regions.push_back({std::move(v.geometry)});
+                out.material_assignments.push_back({region, v.material});
+                out.source_assignments.push_back({region, v.source, mhs::model::SourceOperation::Replace});
+            }
         for (auto* axis : {&out.mesh.x_vertices, &out.mesh.y_vertices, &out.mesh.z_vertices})
             for (auto& v : *axis)
                 v *= scale;

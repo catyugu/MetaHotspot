@@ -18,7 +18,9 @@ static mhs::model::ModelDefinition make_simple_cube_io()
     io.mesh.z_vertices = {0.0, 0.005, 0.01};
 
     io.sources = {"0"};
-    io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    io.regions = {{{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    io.material_assignments = {{0, 0}};
+    io.source_assignments = {{0, 0}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
@@ -63,7 +65,9 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     io.mesh.z_vertices = {0.0, 0.005, 0.01};
 
     io.sources = {"0"};
-    io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    io.regions = {{{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
+    io.material_assignments = {{0, 0}};
+    io.source_assignments = {{0, 0}};
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "100 + T";

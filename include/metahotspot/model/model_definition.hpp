@@ -20,18 +20,12 @@ namespace mhs::model {
         mhs::core::Vector<double> z_vertices;
     };
 
-    // SI geometry. Later volumes override earlier volumes; operations are ordered.
+    // SI geometry; operations within each region are ordered.
     struct BoxOperation {
         GeometryOperation operation = GeometryOperation::Add;
         std::array<double, 3> min {};
         std::array<double, 3> max {};
     };
-    struct VolumeSpec {
-        MaterialId material = mhs::core::invalid_id;
-        SourceId source = mhs::core::invalid_id;
-        mhs::core::Vector<BoxOperation> geometry;
-    };
-
     // Reusable continuous geometry; IDs are indices in ModelDefinition::regions.
     struct RegionSpec {
         mhs::core::Vector<BoxOperation> geometry;
@@ -174,7 +168,6 @@ namespace mhs::model {
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;
         mhs::core::Vector<Expression> sources;
-        mhs::core::Vector<VolumeSpec> volumes;
         mhs::core::Vector<RegionSpec> regions;
         mhs::core::Vector<MaterialAssignment> material_assignments;
         mhs::core::Vector<SourceAssignment> source_assignments;

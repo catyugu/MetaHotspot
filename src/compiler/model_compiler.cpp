@@ -120,16 +120,9 @@ namespace mhs::compiler {
 
         for (const auto& source : definition.sources)
             model.heat_source_table.push_back(mhs::expression::parse(source, symbols));
-        // Temporary bridge for existing block callers during the input migration.
-        auto regions = definition.regions;
-        auto materials = definition.material_assignments;
-        auto sources = definition.source_assignments;
-        for (const auto& volume : definition.volumes) {
-            const auto region = static_cast<mhs::model::RegionId>(regions.size());
-            regions.push_back({volume.geometry});
-            materials.push_back({region, volume.material});
-            sources.push_back({region, volume.source, mhs::model::SourceOperation::Replace});
-        }
+        const auto& regions = definition.regions;
+        const auto& materials = definition.material_assignments;
+        const auto& sources = definition.source_assignments;
         for (const auto& assignment : materials)
             if (assignment.region >= regions.size() || assignment.material >= definition.materials.size())
                 throw std::out_of_range("material assignment region or material ID out of range");

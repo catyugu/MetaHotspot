@@ -16,7 +16,9 @@ static mhs::model::ModelDefinition cube_definition()
     mat.density = mat.specific_heat = "1";
     d.materials.push_back({"solid", mat});
     d.sources = {"0"};
-    d.volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
+    d.regions.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
+    d.material_assignments = {{0, 0}};
+    d.source_assignments = {{0, 0}};
     return d;
 }
 

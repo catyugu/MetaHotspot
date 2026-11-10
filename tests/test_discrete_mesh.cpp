@@ -22,7 +22,9 @@ static mhs::model::ModelDefinition cube_definition()
     mat.density = mat.specific_heat = "1";
     d.materials.push_back({"solid", mat});
     d.sources = {"0"};
-    d.volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
+    d.regions.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
+    d.material_assignments = {{0, 0}};
+    d.source_assignments = {{0, 0}};
     return d;
 }
 
@@ -156,14 +158,15 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
 {
     auto d = cube_definition();
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
-    auto& first = d.volumes[0];
+    auto& first = d.regions[0];
     first.geometry = {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.25, 1, 1}}};
     d.sources[0] = "4*z";
     auto second = first;
     second.geometry = {{mhs::model::GeometryOperation::Add, {0.25, 0, 0}, {1, 1, 1}}};
     d.sources.push_back("8*z");
-    second.source = 1;
-    d.volumes.push_back(second);
+    d.regions.push_back(second);
+    d.material_assignments.push_back({1, 0});
+    d.source_assignments.push_back({1, 1});
     const auto model = mhs::compiler::build_model(d);
     const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
