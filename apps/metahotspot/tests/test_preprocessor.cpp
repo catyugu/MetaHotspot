@@ -1,7 +1,7 @@
 #include "expression/expression.hpp"
 #include "model/model_definition.hpp"
 #include "pta_test_utils.hpp"
-#include "solver/thermal_reconstruction.hpp"
+#include <algorithm>
 #include <gtest/gtest.h>
 
 using namespace mhs::core;
@@ -99,16 +99,16 @@ TEST(PreprocessorTest, CartesianAdapterPreservesSIBounds)
     }
 }
 
-// Test-only conversion of a supplied Cartesian fixture index to a physical query.
-// Runtime consumers receive neither these indices nor these axes.
+// Map an input-grid fixture index to a compiled cell by its lower corner.
+// These PTA test fixtures use millimeters; compiled cell geometry is in meters.
 static std::size_t input_cell(const Model& model, const mhs::model::MeshSpec& input, std::size_t flat)
 {
     const auto ny = input.y_vertices.size() - 1, nz = input.z_vertices.size() - 1;
     const auto x = flat / (ny * nz), y = (flat % (ny * nz)) / nz, z = flat % nz;
-    return mhs::solver::locate_cell(model.discrete,
-        {(input.x_vertices[x] + input.x_vertices[x + 1]) * 0.0005,
-            (input.y_vertices[y] + input.y_vertices[y + 1]) * 0.0005,
-            (input.z_vertices[z] + input.z_vertices[z + 1]) * 0.0005});
+    const Vec3 lower {input.x_vertices[x] * 0.001, input.y_vertices[y] * 0.001, input.z_vertices[z] * 0.001};
+    const auto& cells = model.discrete.cells;
+    const auto it = std::find_if(cells.begin(), cells.end(), [&](const CellGeometry& cell) { return cell.min == lower; });
+    return it == cells.end() ? mhs::core::invalid_id : static_cast<std::size_t>(it - cells.begin());
 }
 
 TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
@@ -228,9 +228,13 @@ TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)
     auto model = test_pta::build_model(io);
 
     // Layer 0 occupies z=10..30 mm; the substrate occupies z=0..10 mm.
-    EXPECT_TRUE((mhs::solver::locate_cell(model.discrete, {0.025, 0.075, 0.001}) != mhs::core::invalid_id));
-    EXPECT_TRUE((mhs::solver::locate_cell(model.discrete, {0.025, 0.025, 0.0125}) != mhs::core::invalid_id));
-    EXPECT_FALSE((mhs::solver::locate_cell(model.discrete, {0.025, 0.025, 0.009}) != mhs::core::invalid_id));
+    const auto has_cell_with_min = [&](const Vec3& lower) {
+        return std::any_of(model.discrete.cells.begin(), model.discrete.cells.end(),
+            [&](const CellGeometry& cell) { return cell.min == lower; });
+    };
+    EXPECT_TRUE(has_cell_with_min({0.0, 0.05, 0.0}));
+    EXPECT_TRUE(has_cell_with_min({0.0, 0.0, 0.01}));
+    EXPECT_FALSE(has_cell_with_min({0.0, 0.0, 0.008}));
 }
 
 // ---- Structured boundary-region tests ----

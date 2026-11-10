@@ -194,7 +194,7 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     EXPECT_DOUBLE_EQ(mhs::solver::sample_point(model, state, 0, static_cast<CellId>(0), {1, 0.8, 0.8}), 300);
 }
 
-TEST(DiscreteMesh, MissingReferencesRemainInvalid)
+TEST(DiscreteMesh, MissingFacetReferencesRemainInvalid)
 {
     DiscreteMesh mesh;
     mesh.cells.push_back({{0, 0, 0}, {1, 1, 1}});
@@ -205,8 +205,6 @@ TEST(DiscreteMesh, MissingReferencesRemainInvalid)
     mesh.facets.push_back(face);
     mhs::compiler::build_cell_facet_incidence(mesh);
     EXPECT_EQ(mesh.incident_facets(0).size(), 1u);
-    EXPECT_EQ(mhs::solver::locate_cell(mesh, {2, 2, 2}), invalid_id);
-    EXPECT_EQ(mhs::solver::locate_cell(mesh, {0.5, 0.5, 0.5}), 0u);
 }
 
 TEST(DiscreteMesh, InvalidSurfaceRegionsAreRejectedByCppCompiler)
