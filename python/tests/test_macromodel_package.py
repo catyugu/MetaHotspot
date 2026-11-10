@@ -26,9 +26,12 @@ def _build_operators(nx=2, ny=2, nz=3):
         np.linspace(0.0, float(nz) * 1e-3, nz + 1),
     )
     material = model.add_material("solid", "1", "1", "1", "1000", "500")
-    source = model.add_source("1e6")
-    volume = model.add_volume(material, source)
-    model.add_box(volume, [0, 0, 0], [nx * 1e-3, ny * 1e-3, nz * 1e-3])
+    body = model.add_body(material)
+    model.body_add_box(body, [0, 0, 0], [nx * 1e-3, ny * 1e-3, nz * 1e-3])
+    source = model.add_volume_source("1e6")
+    model.volume_source_add_box(
+        source, [0, 0, 0], [nx * 1e-3, ny * 1e-3, nz * 1e-3]
+    )
     model.set_default_neumann("0")
     compiled = model.compile()
     ops = compiled.assemble()
