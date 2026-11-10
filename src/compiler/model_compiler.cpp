@@ -151,12 +151,7 @@ namespace mhs::compiler {
                     {static_cast<mhs::model::CellId>(c), volume.source, cell.volume(), cell.center()});
         }
         for (auto& probe : model.point_probes)
-            for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
-                const auto& cell = model.discrete.cells[c];
-                if (probe.point[0] >= cell.min[0] && probe.point[0] <= cell.max[0] && probe.point[1] >= cell.min[1]
-                    && probe.point[1] <= cell.max[1] && probe.point[2] >= cell.min[2] && probe.point[2] <= cell.max[2])
-                    probe.cell = static_cast<mhs::model::CellId>(c);
-            }
+            probe.cell = locate_conformal_cell(model.discrete, mesh, probe.point);
 
         // Canonical geometric partition shared by all boundary physics.
         mhs::core::Vector<mhs::model::SurfaceRegion> cuts;

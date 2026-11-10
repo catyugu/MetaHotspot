@@ -1,6 +1,7 @@
 add_library(mhs_compiler STATIC
     discrete_mesh.cpp
     conformal_mesh.cpp
+    volume_rasterizer.cpp
     fluid_preprocessor.cpp
     geometry_compiler.cpp
     model_compiler.cpp
@@ -11,3 +12,4 @@ target_link_libraries(mhs_compiler
     PRIVATE mhs_linear
     PRIVATE $<BUILD_INTERFACE:mhs_options>
 )
+

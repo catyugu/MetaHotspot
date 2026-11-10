@@ -19,23 +19,6 @@ namespace mhs::compiler {
 
     } // namespace
 
-    std::optional<RegionId> classify_point(std::span<const VolumeGeometry> volumes, const mhs::model::Vec3& p)
-    {
-        for (std::size_t i = volumes.size(); i-- > 0;) {
-            bool inside = false;
-            for (const auto& box : volumes[i]) {
-                bool contains = true;
-                for (int a = 0; a < 3; ++a)
-                    contains = contains && p[a] >= box.min[a] - EPS && p[a] <= box.max[a] + EPS;
-                if (contains)
-                    inside = box.operation == mhs::model::GeometryOperation::Add;
-            }
-            if (inside)
-                return i;
-        }
-        return std::nullopt;
-    }
-
     void refine_exterior_facets(
         mhs::model::DiscreteMesh& mesh, const mhs::core::Vector<mhs::model::SurfaceRegion>& regions)
     {

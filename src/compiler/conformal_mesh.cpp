@@ -1,4 +1,5 @@
 #include "compiler/geometry_compiler.hpp"
+#include "compiler/volume_rasterizer.hpp"
 #include "core/vector.hpp"
 #include "model/constants.hpp"
 #include <algorithm>
@@ -6,15 +7,14 @@
 #include <stdexcept>
 
 namespace mhs::compiler {
-    // The only structured-index arithmetic in the compiled model pipeline.
-    // Conformal Cartesian cells: volume box faces inside the mesh must lie on input grid planes.
+    // Effective region boundaries inside the mesh must lie on input grid planes.
     CompiledGeometry compile_conformal_mesh(const mhs::model::MeshSpec& input, std::span<const VolumeGeometry> volumes)
     {
         using namespace mhs::core;
         using namespace mhs::model;
         CompiledGeometry result;
         auto& mesh = result.mesh;
-        std::array<mhs::core::Vector<double>, 3> axes {input.x_vertices, input.y_vertices, input.z_vertices};
+        const std::array<std::span<const double>, 3> axes {input.x_vertices, input.y_vertices, input.z_vertices};
         std::array<std::size_t, 3> n {};
         for (int a = 0; a < 3; ++a) {
             if (axes[a].size() < 2)
@@ -29,31 +29,23 @@ namespace mhs::compiler {
                 for (int a = 0; a < 3; ++a) {
                     if (!std::isfinite(box.min[a]) || !std::isfinite(box.max[a]) || box.min[a] >= box.max[a])
                         throw std::invalid_argument("box bounds must be finite and increasing");
-                    const auto& vertices = axes[a];
-                    for (double boundary : {box.min[a], box.max[a]}) {
-                        if (boundary <= vertices.front() || boundary >= vertices.back())
-                            continue;
-                        const auto it = std::lower_bound(vertices.begin(), vertices.end(), boundary);
-                        if ((it == vertices.end() || std::abs(*it - boundary) > geometry_eps)
-                            && (it == vertices.begin() || std::abs(*(it - 1) - boundary) > geometry_eps))
-                            throw std::invalid_argument("volume geometry must align with Cartesian mesh vertices");
-                    }
                 }
         auto flatten = [&](std::size_t x, std::size_t y, std::size_t z) { return (x * n[1] + y) * n[2] + z; };
-        mhs::core::Vector<CellId> active(n[0] * n[1] * n[2], invalid_id);
+        auto active = rasterize_volumes(axes, volumes);
         for (std::size_t x = 0; x < n[0]; ++x)
             for (std::size_t y = 0; y < n[1]; ++y)
                 for (std::size_t z = 0; z < n[2]; ++z) {
                     CellGeometry cell {
                         {axes[0][x], axes[1][y], axes[2][z]}, {axes[0][x + 1], axes[1][y + 1], axes[2][z + 1]}};
-                    const auto center = cell.center();
-                    const auto owner = classify_point(volumes, center);
-                    if (!owner)
+                    const auto owner = active[flatten(x, y, z)];
+                    if (owner == invalid_id)
                         continue;
+                    if (mesh.cells.size() >= invalid_id)
+                        throw std::length_error("too many Cartesian cells");
                     const auto cell_id = static_cast<CellId>(mesh.cells.size());
                     active[flatten(x, y, z)] = cell_id;
                     mesh.cells.push_back(cell);
-                    result.cell_regions.push_back(*owner);
+                    result.cell_regions.push_back(owner);
                 }
         for (std::size_t x = 0; x < n[0]; ++x)
             for (std::size_t y = 0; y < n[1]; ++y)
@@ -86,5 +78,35 @@ namespace mhs::compiler {
                         }
                 }
         return result;
+    }
+
+    mhs::model::CellId locate_conformal_cell(
+        const mhs::model::DiscreteMesh& mesh, const mhs::model::MeshSpec& input, const mhs::model::Vec3& point)
+    {
+        using namespace mhs::model;
+        const std::array<std::span<const double>, 3> axes {input.x_vertices, input.y_vertices, input.z_vertices};
+        std::array<std::array<double, 2>, 3> candidates {};
+        std::array<int, 3> counts {};
+        for (int a = 0; a < 3; ++a) {
+            const auto& vertices = axes[a];
+            if (!std::isfinite(point[a]) || point[a] < vertices.front() || point[a] > vertices.back())
+                return mhs::core::invalid_id;
+            const auto it = std::lower_bound(vertices.begin(), vertices.end(), point[a]);
+            if (it != vertices.begin())
+                candidates[a][counts[a]++] = *(it - 1);
+            if (it != vertices.end() - 1 && *it == point[a])
+                candidates[a][counts[a]++] = *it;
+        }
+        CellId found = mhs::core::invalid_id;
+        for (int x = 0; x < counts[0]; ++x)
+            for (int y = 0; y < counts[1]; ++y)
+                for (int z = 0; z < counts[2]; ++z) {
+                    const Vec3 minimum {candidates[0][x], candidates[1][y], candidates[2][z]};
+                    const auto it = std::lower_bound(mesh.cells.begin(), mesh.cells.end(), minimum,
+                        [](const CellGeometry& cell, const Vec3& p) { return cell.min < p; });
+                    if (it != mesh.cells.end() && it->min == minimum)
+                        found = static_cast<CellId>(it - mesh.cells.begin());
+                }
+        return found;
     }
 } // namespace mhs::compiler

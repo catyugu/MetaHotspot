@@ -1,5 +1,4 @@
 #pragma once
-#include <optional>
 #include <span>
 
 #include "model/discrete_mesh.hpp"
@@ -19,15 +18,19 @@ namespace mhs::compiler {
     };
 
     // Geometry borrows only box operations. Region IDs index the caller's input order.
-    using RegionId = std::size_t;
+    using RegionId = mhs::core::EntityIndex;
     using VolumeGeometry = std::span<const mhs::model::BoxOperation>;
     struct CompiledGeometry {
         mhs::model::DiscreteMesh mesh;
         mhs::core::Vector<RegionId> cell_regions;
     };
 
-    std::optional<RegionId> classify_point(std::span<const VolumeGeometry> volumes, const mhs::model::Vec3& point);
     CompiledGeometry compile_conformal_mesh(const mhs::model::MeshSpec& input, std::span<const VolumeGeometry> volumes);
+
+    // Cells are emitted in lexicographic grid order; a shared-plane probe chooses
+    // the last active containing cell, preserving the original closed-box rule.
+    mhs::model::CellId locate_conformal_cell(
+        const mhs::model::DiscreteMesh& mesh, const mhs::model::MeshSpec& input, const mhs::model::Vec3& point);
 
     // Partition exterior facets once against the union of thermal and fluid regions,
     // before building incidence and assigning physics-specific boundary conditions.
