@@ -16,8 +16,12 @@ namespace mhs::compiler {
         SurfaceTag tag;
     };
 
+    // Ordered Add/Subtract operations form one region; overlapping source objects add.
+    bool geometry_contains(const mhs::model::VolumeGeometry& geometry, const mhs::model::Vec3& point);
     void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
+        const mhs::core::Vector<mhs::model::BodySpec>& bodies);
+    void project_volume_sources(
+        mhs::model::Model& model, const mhs::core::Vector<mhs::model::VolumeSourceSpec>& sources);
 
     // Partition exterior facets once against the union of thermal and fluid regions,
     // before building incidence and assigning physics-specific boundary conditions.

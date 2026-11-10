@@ -19,6 +19,94 @@ namespace mhs::compiler {
 
     } // namespace
 
+    bool geometry_contains(const mhs::model::VolumeGeometry& geometry, const mhs::model::Vec3& point)
+    {
+        bool inside = false;
+        for (const auto& box : geometry.operations) {
+            bool contains = true;
+            for (int a = 0; a < 3; ++a)
+                contains = contains && point[a] >= box.min[a] - EPS && point[a] <= box.max[a] + EPS;
+            if (contains)
+                inside = box.operation == mhs::model::GeometryOperation::Add;
+        }
+        return inside;
+    }
+
+    void project_volume_sources(
+        mhs::model::Model& model, const mhs::core::Vector<mhs::model::VolumeSourceSpec>& sources)
+    {
+        using namespace mhs::core;
+        using namespace mhs::model;
+        model.source_terms.clear();
+        for (std::size_t id = 0; id < sources.size(); ++id) {
+            const auto& geometry = sources[id].geometry;
+            // An additive box is required for nonempty source geometry.
+            Vec3 lo {}, hi {};
+            bool has_add = false;
+            for (const auto& box : geometry.operations) {
+                if (box.operation != GeometryOperation::Add)
+                    continue;
+                if (!has_add) {
+                    lo = box.min;
+                    hi = box.max;
+                }
+                else
+                    for (int a = 0; a < 3; ++a) {
+                        lo[a] = std::min(lo[a], box.min[a]);
+                        hi[a] = std::max(hi[a], box.max[a]);
+                    }
+                has_add = true;
+            }
+            if (!has_add)
+                continue;
+
+            for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
+                const auto& cell = model.discrete.cells[c];
+                bool overlaps = true;
+                for (int a = 0; a < 3; ++a)
+                    overlaps = overlaps && hi[a] > cell.min[a] && lo[a] < cell.max[a];
+                if (!overlaps)
+                    continue;
+
+                std::array<Vector<double>, 3> cuts;
+                for (const auto& box : geometry.operations) {
+                    bool intersects = true;
+                    for (int a = 0; a < 3; ++a)
+                        intersects = intersects && box.max[a] > cell.min[a] && box.min[a] < cell.max[a];
+                    if (intersects)
+                        for (int a = 0; a < 3; ++a)
+                            for (double v : {box.min[a], box.max[a]})
+                                if (v > cell.min[a] + EPS && v < cell.max[a] - EPS)
+                                    cuts[a].push_back(v);
+                }
+
+                if (std::all_of(cuts.begin(), cuts.end(), [](const auto& v) { return v.empty(); })) {
+                    if (geometry_contains(geometry, cell.center()))
+                        model.source_terms.push_back(
+                            {static_cast<CellId>(c), static_cast<SourceId>(id), cell.volume(), cell.center()});
+                    continue;
+                }
+                for (int a = 0; a < 3; ++a) {
+                    cuts[a].push_back(cell.min[a]);
+                    cuts[a].push_back(cell.max[a]);
+                    std::sort(cuts[a].begin(), cuts[a].end());
+                    cuts[a].erase(std::unique(cuts[a].begin(), cuts[a].end()), cuts[a].end());
+                }
+                for (std::size_t x = 1; x < cuts[0].size(); ++x)
+                    for (std::size_t y = 1; y < cuts[1].size(); ++y)
+                        for (std::size_t z = 1; z < cuts[2].size(); ++z) {
+                            const Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2,
+                                (cuts[1][y - 1] + cuts[1][y]) / 2, (cuts[2][z - 1] + cuts[2][z]) / 2};
+                            if (!geometry_contains(geometry, p))
+                                continue;
+                            const double weight = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1])
+                                * (cuts[2][z] - cuts[2][z - 1]);
+                            model.source_terms.push_back({static_cast<CellId>(c), static_cast<SourceId>(id), weight, p});
+                        }
+            }
+        }
+    }
+
     void refine_exterior_facets(
         mhs::model::DiscreteMesh& mesh, const mhs::core::Vector<mhs::model::SurfaceRegion>& regions)
     {

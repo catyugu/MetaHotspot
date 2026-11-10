@@ -10,25 +10,16 @@ namespace mhs::compiler {
     namespace {
         constexpr double EPS = mhs::model::geometry_eps;
 
-        std::optional<std::size_t> classify_point(
-            const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& p)
+        std::optional<std::size_t> classify_body(
+            const mhs::core::Vector<mhs::model::BodySpec>& bodies, const mhs::model::Vec3& point)
         {
-            for (std::size_t i = volumes.size(); i-- > 0;) {
-                bool inside = false;
-                for (const auto& box : volumes[i].geometry) {
-                    bool contains = true;
-                    for (int a = 0; a < 3; ++a)
-                        contains = contains && p[a] >= box.min[a] - EPS && p[a] <= box.max[a] + EPS;
-                    if (contains)
-                        inside = box.operation == mhs::model::GeometryOperation::Add;
-                }
-                if (inside)
+            for (std::size_t i = bodies.size(); i-- > 0;)
+                if (geometry_contains(bodies[i].geometry, point))
                     return i;
-            }
             return std::nullopt;
         }
 
-        bool append_cell(mhs::model::Model& model, const mhs::core::Vector<mhs::model::VolumeSpec>& volumes,
+        bool append_cell(mhs::model::Model& model, const mhs::core::Vector<mhs::model::BodySpec>& bodies,
             const mhs::model::CellGeometry& cell)
         {
             using namespace mhs::core;
@@ -37,10 +28,10 @@ namespace mhs::compiler {
             std::optional<std::size_t> owner;
             std::array<Vector<double>, 3> cuts;
 
-            // Determine the winning volume and collect interior box cuts in one scan.
-            for (std::size_t i = 0; i < volumes.size(); ++i) {
+            // Classify the material and collect only geometry planes that cut the cell.
+            for (std::size_t i = 0; i < bodies.size(); ++i) {
                 bool inside = false;
-                for (const auto& box : volumes[i].geometry) {
+                for (const auto& box : bodies[i].geometry.operations) {
                     bool contains = true, overlaps = true;
                     for (int a = 0; a < 3; ++a) {
                         contains = contains && center[a] >= box.min[a] - EPS && center[a] <= box.max[a] + EPS;
@@ -60,43 +51,28 @@ namespace mhs::compiler {
             if (!owner)
                 return false;
 
-            const auto cell_id = static_cast<CellId>(model.discrete.cells.size());
-            const auto material = volumes[*owner].material;
+            const auto material = bodies[*owner].material;
+            if (!std::all_of(cuts.begin(), cuts.end(), [](const auto& axis) { return axis.empty(); })) {
+                for (int a = 0; a < 3; ++a) {
+                    cuts[a].push_back(cell.min[a]);
+                    cuts[a].push_back(cell.max[a]);
+                    std::sort(cuts[a].begin(), cuts[a].end());
+                    cuts[a].erase(std::unique(cuts[a].begin(), cuts[a].end()), cuts[a].end());
+                }
+                for (std::size_t x = 1; x < cuts[0].size(); ++x)
+                    for (std::size_t y = 1; y < cuts[1].size(); ++y)
+                        for (std::size_t z = 1; z < cuts[2].size(); ++z) {
+                            const Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2,
+                                (cuts[1][y - 1] + cuts[1][y]) / 2, (cuts[2][z - 1] + cuts[2][z]) / 2};
+                            const auto location = classify_body(bodies, p);
+                            if (location && bodies[*location].material != material)
+                                throw std::invalid_argument(
+                                    "material interfaces must align with Cartesian cell boundaries");
+                        }
+            }
+
             model.discrete.cells.push_back(cell);
             model.cell_material.push_back(material);
-
-            // A cell with no interior cuts has exactly one physical source region.
-            if (std::all_of(cuts.begin(), cuts.end(), [](const auto& axis) { return axis.empty(); })) {
-                const auto source = volumes[*owner].source;
-                if (source != invalid_id)
-                    model.source_terms.push_back({cell_id, source, cell.volume(), center});
-                return true;
-            }
-
-            for (int a = 0; a < 3; ++a) {
-                cuts[a].push_back(cell.min[a]);
-                cuts[a].push_back(cell.max[a]);
-                std::sort(cuts[a].begin(), cuts[a].end());
-                cuts[a].erase(std::unique(cuts[a].begin(), cuts[a].end()), cuts[a].end());
-            }
-            for (std::size_t x = 1; x < cuts[0].size(); ++x)
-                for (std::size_t y = 1; y < cuts[1].size(); ++y)
-                    for (std::size_t z = 1; z < cuts[2].size(); ++z) {
-                        const Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2, (cuts[1][y - 1] + cuts[1][y]) / 2,
-                            (cuts[2][z - 1] + cuts[2][z]) / 2};
-                        const auto location = classify_point(volumes, p);
-                        if (!location)
-                            continue;
-                        const auto& volume = volumes[*location];
-                        if (volume.material != material)
-                            throw std::invalid_argument(
-                                "material interfaces must align with Cartesian cell boundaries");
-                        if (volume.source != invalid_id) {
-                            const double weight = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1])
-                                * (cuts[2][z] - cuts[2][z - 1]);
-                            model.source_terms.push_back({cell_id, volume.source, weight, p});
-                        }
-                    }
             return true;
         }
     } // namespace
@@ -104,7 +80,7 @@ namespace mhs::compiler {
     // The only structured-index arithmetic in the compiled model pipeline.
     // This adapter consumes supplied axes; it does not choose/refine a mesh.
     void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
+        const mhs::core::Vector<mhs::model::BodySpec>& bodies)
     {
         using namespace mhs::core;
         using namespace mhs::model;
@@ -125,7 +101,7 @@ namespace mhs::compiler {
                 for (std::size_t z = 0; z < n[2]; ++z) {
                     CellGeometry cell {
                         {axes[0][x], axes[1][y], axes[2][z]}, {axes[0][x + 1], axes[1][y + 1], axes[2][z + 1]}};
-                    if (!append_cell(model, volumes, cell))
+                    if (!append_cell(model, bodies, cell))
                         continue;
                     const auto cell_id = static_cast<CellId>(model.discrete.cells.size() - 1);
                     active[flatten(x, y, z)] = cell_id;

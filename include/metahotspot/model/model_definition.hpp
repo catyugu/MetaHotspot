@@ -20,16 +20,24 @@ namespace mhs::model {
         mhs::core::Vector<double> z_vertices;
     };
 
-    // SI geometry. Later volumes override earlier volumes; operations are ordered.
+    // SI geometry. Operations within an object are ordered.
     struct BoxOperation {
         GeometryOperation operation = GeometryOperation::Add;
         std::array<double, 3> min {};
         std::array<double, 3> max {};
     };
-    struct VolumeSpec {
+    struct VolumeGeometry {
+        mhs::core::Vector<BoxOperation> operations;
+    };
+    // Later bodies override earlier bodies when assigning material.
+    struct BodySpec {
+        VolumeGeometry geometry;
         MaterialId material = mhs::core::invalid_id;
-        SourceId source = mhs::core::invalid_id;
-        mhs::core::Vector<BoxOperation> geometry;
+    };
+    // Sources are independent of bodies and add their volumetric power densities (W/m^3).
+    struct VolumeSourceSpec {
+        VolumeGeometry geometry;
+        Expression power_density = "0";
     };
 
     struct DirichletBoundary {
@@ -152,8 +160,8 @@ namespace mhs::model {
         MeshSpec mesh;
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;
-        mhs::core::Vector<Expression> sources;
-        mhs::core::Vector<VolumeSpec> volumes;
+        mhs::core::Vector<BodySpec> bodies;
+        mhs::core::Vector<VolumeSourceSpec> volume_sources;
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
         ThermalBoundary default_thermal_boundary = NeumannBoundary {};
         mhs::core::Vector<PointProbeSpec> point_probes;
