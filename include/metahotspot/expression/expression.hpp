@@ -64,5 +64,4 @@ namespace mhs::expression {
     // Parse a field expression string against the supplied SymbolTable.
     CompiledExpression parse(const std::string& formula, const SymbolTable& symbols);
 
-
 } // namespace mhs::expression
