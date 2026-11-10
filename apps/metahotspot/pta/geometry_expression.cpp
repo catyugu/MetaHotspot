@@ -1,7 +1,7 @@
 #include "geometry_expression.hpp"
 
-#include <charconv>
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -162,6 +162,6 @@ namespace mhs::app::pta {
         }
     }
 
-    double GeometryEvaluator::evaluate(std::string_view expression) const { return Parser(expression, values_).evaluate(); }
+    double GeometryEvaluator::evaluate(std::string_view expr) const { return Parser(expr, values_).evaluate(); }
 
 } // namespace mhs::app::pta
