@@ -59,12 +59,13 @@ namespace mhs::compiler {
         }
         auto flatten = [&](std::size_t x, std::size_t y, std::size_t z) { return (x * n[1] + y) * n[2] + z; };
         mhs::core::Vector<CellId> active(n[0] * n[1] * n[2], invalid_id);
+        RegionProjectionWorkspace workspace;
         for (std::size_t x = 0; x < n[0]; ++x)
             for (std::size_t y = 0; y < n[1]; ++y)
                 for (std::size_t z = 0; z < n[2]; ++z) {
                     CellGeometry cell {
                         {axes[0][x], axes[1][y], axes[2][z]}, {axes[0][x + 1], axes[1][y + 1], axes[2][z + 1]}};
-                    if (!project_cell_regions(model, cell, regions, materials, sources))
+                    if (!project_cell_regions(model, cell, regions, materials, sources, workspace))
                         continue;
                     const auto cell_id = static_cast<CellId>(model.discrete.cells.size());
                     active[flatten(x, y, z)] = cell_id;

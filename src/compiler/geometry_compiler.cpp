@@ -24,14 +24,15 @@ namespace mhs::compiler {
     bool project_cell_regions(mhs::model::Model& model, const mhs::model::CellGeometry& cell,
         const mhs::core::Vector<mhs::model::RegionSpec>& regions,
         const mhs::core::Vector<mhs::model::MaterialAssignment>& materials,
-        const mhs::core::Vector<mhs::model::SourceAssignment>& sources)
+        const mhs::core::Vector<mhs::model::SourceAssignment>& sources, RegionProjectionWorkspace& workspace)
     {
         using namespace mhs::core;
         using namespace mhs::model;
-        std::array<mhs::core::Vector<double>, 3> cuts;
+        auto& cuts = workspace.cuts;
         for (int a = 0; a < 3; ++a)
             cuts[a] = {cell.min[a], cell.max[a]};
-        mhs::core::Vector<RegionId> candidates;
+        auto& candidates = workspace.candidates;
+        candidates.clear();
         // Geometry is queried once per cell, shared by material and source assignments.
         for (std::size_t r = 0; r < regions.size(); ++r) {
             bool relevant = false;
@@ -56,7 +57,8 @@ namespace mhs::compiler {
             std::sort(axis.begin(), axis.end());
             axis.erase(std::unique(axis.begin(), axis.end()), axis.end());
         }
-        mhs::core::Vector<bool> inside(regions.size(), false);
+        auto& inside = workspace.inside;
+        inside.assign(regions.size(), false);
         std::optional<MaterialId> cell_material;
         const auto cell_id = static_cast<CellId>(model.discrete.cells.size());
         for (std::size_t x = 1; x < cuts[0].size(); ++x)

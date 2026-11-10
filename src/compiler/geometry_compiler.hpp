@@ -16,12 +16,19 @@ namespace mhs::compiler {
         SurfaceTag tag;
     };
 
+    // Reused across cells; contains no persistent physical or mesh state.
+    struct RegionProjectionWorkspace {
+        std::array<mhs::core::Vector<double>, 3> cuts;
+        mhs::core::Vector<mhs::model::RegionId> candidates;
+        mhs::core::Vector<bool> inside;
+    };
+
     // Returns false for cells wholly outside the material domain. Accepted cells
     // append one material and their source integrals before mesh insertion.
     bool project_cell_regions(mhs::model::Model& model, const mhs::model::CellGeometry& cell,
         const mhs::core::Vector<mhs::model::RegionSpec>& regions,
         const mhs::core::Vector<mhs::model::MaterialAssignment>& materials,
-        const mhs::core::Vector<mhs::model::SourceAssignment>& sources);
+        const mhs::core::Vector<mhs::model::SourceAssignment>& sources, RegionProjectionWorkspace& workspace);
     void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
         const mhs::core::Vector<mhs::model::RegionSpec>& regions,
         const mhs::core::Vector<mhs::model::MaterialAssignment>& materials,
