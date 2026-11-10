@@ -71,7 +71,6 @@ Native 内部桥接：模块以 `mu::multfun_userdata_type` (`value_type(*)(void
 namespace mhs::expression {
     // 空串或纯数字字面量 → make_constant；否则初始化当前线程解析器并返回句柄
     CompiledExpression parse(const std::string& formula, const SymbolTable& symbols);
-
 }
 ```
 
@@ -89,10 +88,10 @@ double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 
 ## 线程安全
 
-| 操作                                                     | 同步                                   |
-| -------------------------------------------------------- | -------------------------------------- |
-| `parse()` / `register_all_functions` | setup 阶段使用各自的本地 `SymbolTable` |
-| `CompiledExpression::eval()`                             | 每线程独立 AST，无应用层互斥锁         |
+| 操作 | 同步 |
+| --- | --- |
+| `parse()` / `register_all_functions()` | setup 阶段使用本地 `SymbolTable` |
+| `CompiledExpression::eval()` | 每线程独立 AST，无应用层互斥锁 |
 
 `SymbolTable` 是 setup 期间单线程构造的本地值；运行时（`CompiledExpression::eval`）无任何全局状态访问，因此多个 `build_model()` 调用互不干扰。
 
