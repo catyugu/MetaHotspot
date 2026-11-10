@@ -50,7 +50,6 @@ _CORE_FUNC_SIGS = [
         I32,
         [P(MhsModel), Size, P(F64), Size, P(F64), Size, P(F64)],
     ),
-    ("mhs_model_add_variable", I32, [P(MhsModel), Text, Text]),
     (
         "mhs_model_add_material",
         I32,
