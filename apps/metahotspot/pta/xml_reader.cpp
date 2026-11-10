@@ -206,7 +206,7 @@ namespace mhs::app::pta {
         // Variables
         if (const XMLElement* vars = root->FirstChildElement("Variables")) {
             for (const XMLElement* kv = vars->FirstChildElement(); kv; kv = kv->NextSiblingElement()) {
-                mhs::model::VariableSpec var;
+                VariableSpec var;
                 if (const XMLElement* key = child_by_local_name(kv, "Key")) {
                     var.name = get_text(key);
                 }
@@ -214,7 +214,7 @@ namespace mhs::app::pta {
                     var.value = get_text(val);
                 }
                 if (!var.name.empty()) {
-                    def.model.variables.push_back(std::move(var));
+                    def.variables.push_back(std::move(var));
                 }
             }
         }
