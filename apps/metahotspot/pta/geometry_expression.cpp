@@ -157,10 +157,10 @@ namespace mhs::app::pta {
                     throw std::invalid_argument("invalid PTA geometry variable name: '" + name + "'");
             if (values_.contains(name))
                 throw std::invalid_argument("duplicate PTA geometry variable: '" + name + "'");
-            if (variable.expression.empty())
+            if (variable.value.empty())
                 throw std::invalid_argument("empty PTA geometry variable: '" + name + "'");
             try {
-                values_.emplace(name, evaluate(variable.expression));
+                values_.emplace(name, evaluate(variable.value));
             }
             catch (const std::exception& e) {
                 throw std::invalid_argument("PTA geometry variable '" + name + "': " + e.what());
