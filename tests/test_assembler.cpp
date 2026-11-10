@@ -8,10 +8,7 @@
 using namespace mhs::solver;
 using namespace mhs::compiler;
 
-static mhs::model::MeshSpec cube_mesh()
-{
-    return {{0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}};
-}
+static mhs::model::MeshSpec cube_mesh() { return {{0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}}; }
 
 // Helper: build a minimal SI ModelDefinition for a simple uniform cube
 static mhs::model::ModelDefinition make_simple_cube_io()

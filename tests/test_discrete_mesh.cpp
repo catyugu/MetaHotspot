@@ -30,10 +30,7 @@ static CubeDefinition cube_definition()
     return d;
 }
 
-static mhs::model::Model build_fixture(const CubeDefinition& d)
-{
-    return mhs::compiler::build_model(d, d.mesh);
-}
+static mhs::model::Model build_fixture(const CubeDefinition& d) { return mhs::compiler::build_model(d, d.mesh); }
 
 TEST(DiscreteMesh, CartesianTopologyHasUniqueFacesAndClosedCellIncidence)
 {

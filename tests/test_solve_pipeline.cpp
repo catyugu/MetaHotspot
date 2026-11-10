@@ -4,10 +4,7 @@
 #include <gtest/gtest.h>
 #include <string>
 
-static mhs::model::MeshSpec cube_mesh()
-{
-    return {{0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}};
-}
+static mhs::model::MeshSpec cube_mesh() { return {{0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}}; }
 
 TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
