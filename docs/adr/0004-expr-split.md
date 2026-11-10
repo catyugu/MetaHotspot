@@ -1,4 +1,4 @@
-# ADR-0004: Expression Evaluation — Geometry vs Field/BC Split, with Lockless Field Eval
+# ADR-0004: Runtime expression evaluation
 
 ## Status
 
@@ -6,44 +6,34 @@ Accepted.
 
 ## Context
 
-XML expressions come in two flavours:
+Materials, thermal boundary laws, and volumetric heat sources depend on spatial coordinates, temperature, and time. They are evaluated during assembly and may be shared across threads.
 
-1. **Geometry**: `w_top/2`, `thickness_expr` — evaluated **once** at preprocessing. Context: named variables.
-2. **Field / BC**: `k(x,y,z,T,t)`, BC parameters, user-defined functions — evaluated **per cell per iteration**. Context: `{x, y, z, T, t}`.
-
-Conflating them would force geometry constants into every assembly call.
+PTA layer, block, rectangle, and probe coordinate expressions are input-format details. The PTA adapter resolves them into numerical SI coordinates before constructing the SDK model definition.
 
 ## Decision
 
-Two separate paths.
+The runtime expression system accepts field expressions in the canonical context \`x/y/z/T/t\` and supports registered native functions. It has no geometry variables or geometry-evaluation entry point.
 
-**Geometry.** Evaluated by `mhs::expression::eval_geometry(formula, symbols)` with muparser against a per-call `SymbolTable` of pre-registered variables.
+\`ModelDefinition\` holds numerical geometry and a table of runtime function specifications. The compiler builds a local \`SymbolTable\` containing only native function bindings; it parses material laws, heat sources, and thermal boundary laws into \`CompiledExpression\` handles.
 
-**Field / BC.** Handled by the `expr` module (muparser-backed). Context: `{x, y, z, T, t}`. Material laws, BC parameters, and per-block heat sources all flow through this path.
+PTA geometry arithmetic is handled entirely in \`apps/metahotspot/pta\` by a small evaluator, independently of the runtime expression system. Variables are resolved in input order, each referring only to previously defined variables. The evaluator supports numeric literals, identifiers, parentheses, unary signs, \`+ - * / ^\`, and yields a \`double\`. Geometry is converted to SI units by the PTA adapter.
 
 ### Thread safety
 
-- There is no global registry. Each `build_model()` call constructs a local `SymbolTable` (variables + native closures), threads it through every `parse()` / `eval_geometry()` call, and discards it on return. The setup path is single-threaded by construction.
-- `parse()` runs during setup and independent calls may run concurrently with separate symbol tables; it constructs and validates the creating thread's `MuCompiled` through `tls.local()` and returns a `CompiledExpression` handle that reuses it. The `MuCompiledTLS` inside the handle holds a value-copy of the `SymbolTable`, so the handle is independent of any external state and is safe to share across threads.
-- `CompiledExpression::eval()` uses per-thread parsers without an application-level mutex. Internally it holds a `shared_ptr<MuCompiledTLS>`, which wraps a `tbb::enumerable_thread_specific<std::unique_ptr<MuCompiled>>`. Each TBB worker thread lazily instantiates its own private muparser instance on first `tls.local()`; the formula string is captured by value and the ETS constructor lambda accesses the `SymbolTable` owned by its `MuCompiledTLS`; their lifetime is held by the shared handle. The `unique_ptr` element type keeps each AST's heap address stable so that the `NativeFnCtx` slots (registered with `DefineFunUserData`) keep their raw `FieldContext*` valid even when the ETS grows or the wrapper is copied. Each AST's `current_ctx_` field is written by the calling thread only on every `eval()`.
-- Constant expressions (`make_constant`) short-circuit before touching the TLS.
+- No global registry is used. Each \`build_model()\` constructs and passes a local native-function symbol table.
+- \`parse()\` validates the formula by constructing the creating thread's \`MuCompiled\` and returns a \`CompiledExpression\` that reuses this parser.
+- Each nonconstant expression contains a \`shared_ptr<MuCompiledTLS>\` with a value-copy of the native-function table. A TBB \`enumerable_thread_specific<std::unique_ptr<MuCompiled>>\` gives each evaluating thread a private parser.
+- \`MuCompiled\` keeps its \`FieldContext\` and the native-function callback slots at stable addresses; the parser updates the context before each evaluation.
+- Constant expressions short-circuit without accessing thread-local storage.
 
 ### Heat source table
 
-`Model::heat_source_table` is a `mhs::core::Vector<CompiledExpression>` with one entry per Block, referenced by `SourceTerm::source`. Each volume projection evaluates its source at the piece centroid and multiplies by the overlap volume; several sources may contribute to one cell.
+\`Model::heat_source_table\` holds one compiled expression per source definition. \`SourceTerm::source\` references this table. Source terms are evaluated at their physical integration points and multiplied by the subvolume weight.
 
 ### Native functions
 
-Native functions live in `SymbolTable::natives` — a `std::unordered_map<std::string, FieldEvaluator>` populated by the preprocessor via `mhs::solver::register_all_functions(symbols, definition.functions)`. At `parse()` time, every entry is bound into the compiled AST as a `DefineFunUserData` slot whose user data is a `NativeFnCtx { FieldEvaluator fe; const FieldContext* ctx_ptr; }` stored in a reserved vector owned by that `MuCompiled`. When muparser evaluates an expression like `fn(a, b)`, it first resolves each argument independently, then passes them as a raw `double*` + `int nargs` to the `native_fn_bridge` static, which forwards directly to the user's `FieldEvaluator` together with the current TLS `FieldContext*`. Because the `SymbolTable` is captured by value into the `MuCompiledTLS`, the expression engine needs no global registry. User-provided closures must themselves capture safe lifetimes and support concurrent calls.
+\`SymbolTable::natives\` contains callbacks and their temperature-dependency metadata. The compiler registers \`ModelDefinition::functions\` using \`register_all_functions()\`. Muparser evaluates callback arguments, then calls \`native_fn_bridge\` with the bound \`NativeFnCtx\` and the active \`FieldContext\`.
 
 ## Rationale
 
-- Geometry evaluation uses a separate muparser instance bound only to named variables; it requires no field context or native-function registration.
-- Field/BC expressions need muparser's full power (trig, exp, user functions, symbol table).
-- The TBB ETS pattern keeps the inner cell loop serialization-free, which matters because every nonlinear iteration re-evaluates every cell's materials, BC, and heat source.
-- Block-level heat-source sharing avoids per-cell expression objects.
-
-## Notes
-
-- `FieldContext`, `FieldEvaluator`, `CompiledExpression` are **defined** in `include/metahotspot/expression/expression.hpp` under namespace `mhs::expression`. The dependency arrows are `mhs::model → mhs::expression` and `mhs::solver → mhs::expression`, never the reverse.
-- The runtime model exposes compiled handles; nonconstant handles retain their formula strings internally to construct each thread's parser.
+Runtime expressions require reusable, thread-safe evaluation against the evolving physical state. PTA geometry arithmetic is an input-normalization operation and has no role in this runtime mechanism. Keeping them independent removes geometry variables from the public model contract and avoids compiling runtime functions during PTA geometry normalization.
