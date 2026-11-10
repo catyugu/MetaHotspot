@@ -239,7 +239,7 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
 }
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  materials, sources, volumes           */
+/*  Model construction  —  materials, bodies, volume sources    */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
@@ -269,44 +269,63 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id)
+static void _append_geometry_box(
+    mhs::model::VolumeGeometry& geometry, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3])
+{
+    if (op != MHS_GEOM_ADD && op != MHS_GEOM_SUB)
+        throw std::invalid_argument("invalid geometry operation");
+    mhs::model::BoxOperation box;
+    box.operation = op == MHS_GEOM_ADD ? mhs::model::GeometryOperation::Add : mhs::model::GeometryOperation::Subtract;
+    for (int a = 0; a < 3; ++a) {
+        box.min[a] = min_xyz[a];
+        box.max[a] = max_xyz[a];
+    }
+    geometry.operations.push_back(box);
+}
+
+MHS_API mhs_status_t mhs_model_add_body(mhs_model_t* m, mhs_index_t material, mhs_index_t* out_id)
 {
     CHECK_NULL(m);
-    CHECK_NULL(expression);
     CHECK_NULL(out_id);
     MHS_TRY({
-        *out_id = static_cast<mhs_index_t>(m->def.sources.size());
-        m->def.sources.push_back(expression);
+        *out_id = static_cast<mhs_index_t>(m->def.bodies.size());
+        m->def.bodies.push_back({{}, material});
     });
 }
-MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(out_id);
-    MHS_TRY({
-        *out_id = static_cast<mhs_index_t>(m->def.volumes.size());
-        m->def.volumes.push_back({material, source, {}});
-    });
-}
-MHS_API mhs_status_t mhs_model_volume_add_box(
-    mhs_model_t* m, mhs_index_t volume, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3])
+MHS_API mhs_status_t mhs_model_body_add_box(
+    mhs_model_t* m, mhs_index_t body, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3])
 {
     CHECK_NULL(m);
     CHECK_NULL(min_xyz);
     CHECK_NULL(max_xyz);
     MHS_TRY({
-        if (volume >= m->def.volumes.size())
-            throw std::out_of_range("volume ID out of range");
-        if (op != MHS_GEOM_ADD && op != MHS_GEOM_SUB)
-            throw std::invalid_argument("invalid geometry operation");
-        mhs::model::BoxOperation box;
-        box.operation
-            = op == MHS_GEOM_ADD ? mhs::model::GeometryOperation::Add : mhs::model::GeometryOperation::Subtract;
-        for (int a = 0; a < 3; ++a) {
-            box.min[a] = min_xyz[a];
-            box.max[a] = max_xyz[a];
-        }
-        m->def.volumes[volume].geometry.push_back(box);
+        if (body >= m->def.bodies.size())
+            throw std::out_of_range("body ID out of range");
+        _append_geometry_box(m->def.bodies[body].geometry, op, min_xyz, max_xyz);
+    });
+}
+
+MHS_API mhs_status_t mhs_model_add_volume_source(
+    mhs_model_t* m, const char* power_density, mhs_index_t* out_id)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(power_density);
+    CHECK_NULL(out_id);
+    MHS_TRY({
+        *out_id = static_cast<mhs_index_t>(m->def.volume_sources.size());
+        m->def.volume_sources.push_back({{}, power_density});
+    });
+}
+MHS_API mhs_status_t mhs_model_volume_source_add_box(
+    mhs_model_t* m, mhs_index_t source, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3])
+{
+    CHECK_NULL(m);
+    CHECK_NULL(min_xyz);
+    CHECK_NULL(max_xyz);
+    MHS_TRY({
+        if (source >= m->def.volume_sources.size())
+            throw std::out_of_range("volume source ID out of range");
+        _append_geometry_box(m->def.volume_sources[source].geometry, op, min_xyz, max_xyz);
     });
 }
 

@@ -5,7 +5,7 @@
  * MetaHotspot C API — opaque-pointer model construction, compilation, and solve.
  *
  * Four independently owned opaque handles:
- *   mhs_model_t     — mutable construction (add volumes, sources, BCs, materials)
+ *   mhs_model_t     — mutable construction (add bodies, independent sources, BCs, materials)
  *   mhs_compiled_t  — read-only compiled runtime model (reusable for repeated solves)
  *   mhs_solution_t  — read-only result (temperature field + probe traces)
  *   mhs_operators_t — owned K/C/f snapshot
@@ -247,7 +247,7 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  materials, sources, volumes           */
+/*  Model construction  —  materials, bodies, volume sources    */
 /* ------------------------------------------------------------------ */
 
 /** Material kind is explicit. Fluids require a non-NULL dynamic_viscosity; solids require NULL. */
@@ -255,13 +255,17 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
     const char* kz, const char* rho, const char* c, mhs_material_kind_t kind, const char* dynamic_viscosity,
     mhs_index_t* out_id);
 
-/** Geometry, mesh coordinates and probes use SI metres. Expressions use canonical x/y/z/T/t.
- * Later volumes override earlier volumes. MHS_INVALID_INDEX omits the heat source. */
-MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression, mhs_index_t* out_id);
-MHS_API mhs_status_t mhs_model_add_volume(
-    mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id);
-MHS_API mhs_status_t mhs_model_volume_add_box(
-    mhs_model_t* m, mhs_index_t volume, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3]);
+/** Bodies define material regions; later bodies override earlier ones. */
+MHS_API mhs_status_t mhs_model_add_body(mhs_model_t* m, mhs_index_t material, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_body_add_box(
+    mhs_model_t* m, mhs_index_t body, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3]);
+
+/** Sources have independent geometry and additive volumetric power density (W/m^3).
+ * Expressions use canonical x/y/z/T/t; geometry uses SI metres. */
+MHS_API mhs_status_t mhs_model_add_volume_source(
+    mhs_model_t* m, const char* power_density, mhs_index_t* out_id);
+MHS_API mhs_status_t mhs_model_volume_source_add_box(
+    mhs_model_t* m, mhs_index_t source, mhs_geometry_op_t op, const double min_xyz[3], const double max_xyz[3]);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  atomic boundary conditions                 */

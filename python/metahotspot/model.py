@@ -103,7 +103,7 @@ class Model(OwnedHandle):
     Usage::
 
         m = Model()
-        # Set SI mesh axes, materials and volumes before compiling.
+        # Set SI mesh axes, bodies, and volume sources before compiling.
         c = m.compile()
         sol = c.solve()
 
@@ -172,44 +172,53 @@ class Model(OwnedHandle):
 
         return identifier.value
 
-    def add_source(self, expression: str) -> int:
-        """Register a volumetric source in W/m³ (canonical x/y/z/T/t)."""
+    def add_body(self, material: int) -> int:
+        """Add a material-bearing body. Later bodies override earlier ones."""
         identifier = ctypes.c_uint32()
         self._call(
-            "mhs_model_add_source",
-            _text(expression),
-            ctypes.byref(identifier),
-            ctx="add_source",
+            "mhs_model_add_body", material, ctypes.byref(identifier), ctx="add_body"
         )
         return identifier.value
 
-    def add_volume(self, material: int, source: int = 0xFFFFFFFF) -> int:
-        """Return a volume ID. Later volumes override earlier volumes."""
+    def add_volume_source(self, power_density: str) -> int:
+        """Create an independent volumetric source (W/m³). Sources add."""
         identifier = ctypes.c_uint32()
         self._call(
-            "mhs_model_add_volume",
-            material,
-            source,
+            "mhs_model_add_volume_source",
+            _text(power_density),
             ctypes.byref(identifier),
-            ctx="add_volume",
+            ctx="add_volume_source",
         )
         return identifier.value
 
-    def add_box(
-        self, volume: int, minimum, maximum, op: GeometryOp = GeometryOp.ADD
+    def _add_geometry_box(
+        self, function: str, identifier: int, minimum, maximum, op: GeometryOp
     ) -> None:
-        """Append an axis-aligned box operation in SI metres."""
         lo = np.ascontiguousarray(minimum, dtype=np.float64)
         hi = np.ascontiguousarray(maximum, dtype=np.float64)
         if lo.shape != (3,) or hi.shape != (3,):
             raise ValueError("box bounds must each contain three coordinates")
         self._call(
-            "mhs_model_volume_add_box",
-            volume,
+            function,
+            identifier,
             int(op),
             _double_ptr(lo),
             _double_ptr(hi),
-            ctx="add_box",
+            ctx=function,
+        )
+
+    def body_add_box(
+        self, body: int, minimum, maximum, op: GeometryOp = GeometryOp.ADD
+    ) -> None:
+        """Append an ordered Add/Subtract box to a material body."""
+        self._add_geometry_box("mhs_model_body_add_box", body, minimum, maximum, op)
+
+    def volume_source_add_box(
+        self, source: int, minimum, maximum, op: GeometryOp = GeometryOp.ADD
+    ) -> None:
+        """Append an ordered Add/Subtract box to an independent heat source."""
+        self._add_geometry_box(
+            "mhs_model_volume_source_add_box", source, minimum, maximum, op
         )
 
     # ---- Atomic boundary conditions ----
