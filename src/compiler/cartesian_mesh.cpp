@@ -1,9 +1,43 @@
 #include "compiler/geometry_compiler.hpp"
 #include "core/vector.hpp"
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
 namespace mhs::compiler {
+    namespace {
+        void locate_point_probes(mhs::model::Model& model, const std::array<mhs::core::Vector<double>, 3>& axes,
+            const std::array<std::size_t, 3>& n, const mhs::core::Vector<mhs::model::CellId>& active)
+        {
+            using mhs::core::invalid_id;
+            auto flatten = [&](std::size_t x, std::size_t y, std::size_t z) { return (x * n[1] + y) * n[2] + z; };
+            // Query supplied axes after all active cells are known. At shared grid
+            // planes, preserve the former last-containing-active-cell convention.
+            for (auto& probe : model.point_probes) {
+                probe.cell = invalid_id;
+                std::array<std::size_t, 3> lo {}, hi {};
+                bool contained = true;
+                for (int a = 0; a < 3; ++a) {
+                    const double p = probe.point[a];
+                    if (!std::isfinite(p) || p < axes[a].front() || p > axes[a].back()) {
+                        contained = false;
+                        break;
+                    }
+                    const auto it = std::lower_bound(axes[a].begin(), axes[a].end(), p);
+                    const auto vertex = static_cast<std::size_t>(it - axes[a].begin());
+                    lo[a] = vertex > 0 ? vertex - 1 : 0;
+                    hi[a] = *it == p ? std::min(vertex, n[a] - 1) : lo[a];
+                }
+                if (!contained)
+                    continue;
+                for (std::size_t x = hi[0] + 1; x-- > lo[0] && probe.cell == invalid_id;)
+                    for (std::size_t y = hi[1] + 1; y-- > lo[1] && probe.cell == invalid_id;)
+                        for (std::size_t z = hi[2] + 1; z-- > lo[2] && probe.cell == invalid_id;)
+                            probe.cell = active[flatten(x, y, z)];
+            }
+        }
+    } // namespace
+
     // The only structured-index arithmetic in the compiled model pipeline.
     // This adapter consumes supplied axes; it does not choose/refine a mesh.
     void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
@@ -35,12 +69,8 @@ namespace mhs::compiler {
                     const auto cell_id = static_cast<CellId>(model.discrete.cells.size());
                     active[flatten(x, y, z)] = cell_id;
                     model.discrete.cells.push_back(cell);
-                    for (auto& probe : model.point_probes)
-                        if (probe.point[0] >= cell.min[0] && probe.point[0] <= cell.max[0]
-                            && probe.point[1] >= cell.min[1] && probe.point[1] <= cell.max[1]
-                            && probe.point[2] >= cell.min[2] && probe.point[2] <= cell.max[2])
-                            probe.cell = cell_id;
                 }
+        locate_point_probes(model, axes, n, active);
         for (std::size_t x = 0; x < n[0]; ++x)
             for (std::size_t y = 0; y < n[1]; ++y)
                 for (std::size_t z = 0; z < n[2]; ++z) {
