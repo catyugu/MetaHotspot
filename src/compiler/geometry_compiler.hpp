@@ -19,8 +19,7 @@ namespace mhs::compiler {
 
     std::optional<std::size_t> classify_point(
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& point);
-    void project_cell_regions(mhs::model::Model& model, const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
-    void compile_cartesian_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
+    void compile_conformal_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
 
     // Partition exterior facets once against the union of thermal and fluid regions,

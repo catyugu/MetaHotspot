@@ -639,18 +639,13 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneThermalBoundarySpec)
             check_face(ix, ny - 1, iz, FaceDir::YP);
 }
 
-// A block rectangle that cuts through a control volume splits that cell into
-// pieces, and a piece can lie entirely outside every block (the mesh spans more
-// than the block).  Such a piece contributes no source projection; it must not
-// be attributed to a block, which previously indexed layers[-1] and crashed.
-TEST(PreprocessorTest, PartialBlockCoverageSkipsPiecesOutsideEveryBlock)
+// Conformal compilation rejects blocks whose boundaries cut through supplied cells.
+TEST(PreprocessorTest, RejectsNonConformalBlockCoverage)
 {
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    // 4 mm x 4 mm mesh, one cell per direction; the block covers 0..3 mm, so the
-    // cell centre (2 mm) is inside a block and the cell is active, while the cut
-    // at 3 mm leaves a 3..4 mm piece that belongs to no block.
+    // The 3 mm block edge falls inside a 4 mm cell, which is unsupported.
     io.mesh.x_vertices = {0.0, 4.0};
     io.mesh.y_vertices = {0.0, 4.0};
     io.mesh.z_vertices = {0.0, 1.0};
@@ -680,13 +675,5 @@ TEST(PreprocessorTest, PartialBlockCoverageSkipsPiecesOutsideEveryBlock)
 
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    const auto model = test_pta::build_model(io);
-    ASSERT_EQ(model.discrete.cells.size(), 1u);
-
-    // Only the covered piece (3 mm x 3 mm x 1 mm) carries the source.
-    double total = 0.0;
-    for (const auto& term : model.source_terms)
-        total += term.weight;
-    EXPECT_NEAR(total, 9e-9, 1e-18);
-    EXPECT_EQ(model.source_terms.size(), 1u);
+    EXPECT_THROW(test_pta::build_model(io), std::invalid_argument);
 }

@@ -158,7 +158,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 0.1, 1e-14);
 }
 
-TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
+TEST(DiscreteMesh, SourcesIntegrateAcrossConformalCells)
 {
     auto d = cube_definition();
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
@@ -170,9 +170,14 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
     d.sources.push_back("8*z");
     second.source = 1;
     d.volumes.push_back(second);
+
+    // A source boundary inside one cell is rejected by the conformal compiler.
+    EXPECT_THROW(build_fixture(d), std::invalid_argument);
+    d.mesh.x_vertices = {0, 0.25, 1};
     const auto model = build_fixture(d);
-    const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
+    const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300, 300}, 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
+    ASSERT_EQ(model.discrete.cells.size(), 2u);
     ASSERT_EQ(model.source_terms.size(), 2u);
     EXPECT_NEAR(model.source_terms[0].weight, 0.25, 1e-14);
     EXPECT_NEAR(model.source_terms[1].weight, 0.75, 1e-14);

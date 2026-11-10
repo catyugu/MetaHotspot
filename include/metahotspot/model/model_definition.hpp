@@ -20,7 +20,7 @@ namespace mhs::model {
         mhs::core::Vector<double> z_vertices;
     };
 
-    // SI geometry. Later volumes override earlier volumes; operations are ordered.
+    // SI geometry. Later volumes override earlier ones; internal box faces must align with mesh planes.
     struct BoxOperation {
         GeometryOperation operation = GeometryOperation::Add;
         std::array<double, 3> min {};

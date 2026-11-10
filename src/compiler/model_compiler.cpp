@@ -139,8 +139,7 @@ namespace mhs::compiler {
         auto default_thermal_boundary
             = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
 
-        compile_cartesian_mesh(model, mesh, definition.volumes);
-        project_cell_regions(model, definition.volumes);
+        compile_conformal_mesh(model, mesh, definition.volumes);
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())
                 throw std::out_of_range("cell has no valid material assignment");
