@@ -32,6 +32,27 @@ namespace mhs::model {
         mhs::core::Vector<BoxOperation> geometry;
     };
 
+    // Reusable continuous geometry; IDs are indices in ModelDefinition::regions.
+    struct RegionSpec {
+        mhs::core::Vector<BoxOperation> geometry;
+    };
+
+    // The union of material regions defines the computational domain.
+    // Later assignments override earlier ones where their regions overlap.
+    struct MaterialAssignment {
+        RegionId region = mhs::core::invalid_id;
+        MaterialId material = mhs::core::invalid_id;
+    };
+
+    enum class SourceOperation : uint8_t { Add, Replace };
+
+    struct SourceAssignment {
+        RegionId region = mhs::core::invalid_id;
+        SourceId source = mhs::core::invalid_id;
+        // Replace also permits invalid_id to clear preceding sources locally.
+        SourceOperation operation = SourceOperation::Add;
+    };
+
     struct DirichletBoundary {
         Expression temperature = "300.0";
     };
@@ -154,6 +175,9 @@ namespace mhs::model {
         mhs::core::Vector<NamedMaterial> materials;
         mhs::core::Vector<Expression> sources;
         mhs::core::Vector<VolumeSpec> volumes;
+        mhs::core::Vector<RegionSpec> regions;
+        mhs::core::Vector<MaterialAssignment> material_assignments;
+        mhs::core::Vector<SourceAssignment> source_assignments;
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
         ThermalBoundary default_thermal_boundary = NeumannBoundary {};
         mhs::core::Vector<PointProbeSpec> point_probes;
