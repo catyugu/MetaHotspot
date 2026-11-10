@@ -17,20 +17,24 @@ namespace test_pta {
             std::array<std::size_t, 3> cartesian_shape {};
         } output;
     };
-    inline Model build_model(const mhs::model::ModelDefinition& d)
+    inline Model build_model(const mhs::model::ModelDefinition& d, const mhs::model::MeshSpec& mesh)
     {
         Model m;
-        static_cast<mhs::model::Model&>(m) = mhs::compiler::build_model(d);
-        m.sampling_grid = d.mesh;
-        m.output.cartesian_shape = {d.mesh.x_vertices.size(), d.mesh.y_vertices.size(), d.mesh.z_vertices.size()};
-        for (double x : d.mesh.x_vertices)
-            for (double y : d.mesh.y_vertices)
-                for (double z : d.mesh.z_vertices)
+        static_cast<mhs::model::Model&>(m) = mhs::compiler::build_model(d, mesh);
+        m.sampling_grid = mesh;
+        m.output.cartesian_shape = {mesh.x_vertices.size(), mesh.y_vertices.size(), mesh.z_vertices.size()};
+        for (double x : mesh.x_vertices)
+            for (double y : mesh.y_vertices)
+                for (double z : mesh.z_vertices)
                     m.output.points.push_back({x, y, z});
         return m;
     }
-    inline Model build_model(const mhs::app::pta::Definition& d) { return build_model(mhs::app::pta::normalize(d)); }
-    inline Model build_model(const mhs::app::pta::Input& input) { return build_model(input.model); }
+    inline Model build_model(mhs::app::pta::Definition d)
+    {
+        mhs::app::pta::normalize(d);
+        return build_model(d.model, d.mesh);
+    }
+    inline Model build_model(const mhs::app::pta::Input& input) { return build_model(input.model, input.mesh); }
     inline auto interpolate_cell_to_node(const Model& m, std::span<const double> t, double time)
     { return mhs::app::postprocess::interpolate_cell_to_node(m, m.sampling_grid, t, time); }
 }

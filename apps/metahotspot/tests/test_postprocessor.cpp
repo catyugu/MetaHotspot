@@ -11,9 +11,9 @@ static mhs::app::pta::Definition make_simple_uniform_grid_io()
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.model.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
@@ -91,9 +91,9 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.model.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
@@ -159,9 +159,9 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.model.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";

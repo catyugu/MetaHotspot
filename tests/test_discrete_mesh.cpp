@@ -13,9 +13,13 @@
 using namespace mhs::core;
 using namespace mhs::model;
 
-static mhs::model::ModelDefinition cube_definition()
+struct CubeDefinition : mhs::model::ModelDefinition {
+    mhs::model::MeshSpec mesh;
+};
+
+static CubeDefinition cube_definition()
 {
-    mhs::model::ModelDefinition d;
+    CubeDefinition d;
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 0.5, 1};
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
@@ -26,10 +30,15 @@ static mhs::model::ModelDefinition cube_definition()
     return d;
 }
 
+static mhs::model::Model build_fixture(const CubeDefinition& d)
+{
+    return mhs::compiler::build_model(d, d.mesh);
+}
+
 TEST(DiscreteMesh, CartesianTopologyHasUniqueFacesAndClosedCellIncidence)
 {
     auto definition = cube_definition();
-    const auto model = mhs::compiler::build_model(definition);
+    const auto model = build_fixture(definition);
     const auto& mesh = model.discrete;
     ASSERT_EQ(mesh.cells.size(), 8u);
     ASSERT_EQ(mesh.facets.size(), 36u);
@@ -64,7 +73,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         auto d = cube_definition();
         d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
         d.default_thermal_boundary = condition;
-        const auto model = mhs::compiler::build_model(d);
+        const auto model = build_fixture(d);
         ASSERT_EQ(model.discrete.facets.size(), 6u);
         const mhs::core::Vector<double> state {350};
         for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
@@ -103,7 +112,7 @@ TEST(DiscreteMesh, TemperatureDependentDirichletTemperatureIsRejected)
 {
     auto d = cube_definition();
     d.thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, mhs::model::DirichletBoundary {"300 + 0.1*T"}}};
-    EXPECT_THROW(mhs::compiler::build_model(d), std::invalid_argument);
+    EXPECT_THROW(build_fixture(d), std::invalid_argument);
 }
 
 TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
@@ -113,8 +122,8 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     bc.condition = mhs::model::NeumannBoundary {"10"};
     bc.regions.push_back({mhs::model::Axis::X, 1.0, {0.1, 0.2, 0.1, 0.2}});
     d.thermal_boundaries.push_back(bc);
-    const auto base = mhs::compiler::build_model(cube_definition()).discrete;
-    const auto model = mhs::compiler::build_model(d);
+    const auto base = build_fixture(cube_definition()).discrete;
+    const auto model = build_fixture(d);
     // Boundary-condition rectangles refine the canonical geometry itself.
     ASSERT_GT(model.discrete.facets.size(), base.facets.size());
     EXPECT_EQ(model.discrete.cells.size(), base.cells.size());
@@ -164,7 +173,7 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
     d.sources.push_back("8*z");
     second.source = 1;
     d.volumes.push_back(second);
-    const auto model = mhs::compiler::build_model(d);
+    const auto model = build_fixture(d);
     const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
     ASSERT_EQ(model.source_terms.size(), 2u);
@@ -180,7 +189,7 @@ TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)
     bc.condition = mhs::model::DirichletBoundary {"400"};
     bc.regions.push_back({mhs::model::Axis::X, 1, {0.1, 0.2, 0.1, 0.2}});
     d.thermal_boundaries.push_back(bc);
-    const auto model = mhs::compiler::build_model(d);
+    const auto model = build_fixture(d);
     const mhs::core::Vector<double> state {300};
     const auto ops = mhs::solver::assemble_thermal(model, state, 0);
     EXPECT_NEAR(ops.K.coeff(0, 0), 0.02, 1e-14);
@@ -219,9 +228,9 @@ TEST(DiscreteMesh, InvalidSurfaceRegionsAreRejectedByCppCompiler)
     for (const auto& region : invalid) {
         auto thermal = cube_definition();
         thermal.thermal_boundaries.push_back({{region}, mhs::model::NeumannBoundary {"0"}});
-        EXPECT_THROW(mhs::compiler::build_model(thermal), std::invalid_argument);
+        EXPECT_THROW(build_fixture(thermal), std::invalid_argument);
         auto fluid = cube_definition();
         fluid.fluid_boundaries.push_back({{region}, mhs::model::PressureOutlet {0}});
-        EXPECT_THROW(mhs::compiler::build_model(fluid), std::invalid_argument);
+        EXPECT_THROW(build_fixture(fluid), std::invalid_argument);
     }
 }
