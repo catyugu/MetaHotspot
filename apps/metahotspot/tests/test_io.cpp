@@ -143,12 +143,14 @@ TEST(IoTest, ReadXmlPreservesAppendOrderForBuilderAssembly)
     const auto definition = mhs::app::pta::read_xml(path.string());
     std::filesystem::remove(path);
 
-    ASSERT_EQ(definition.model.volumes.size(), 2u);
-    EXPECT_EQ(definition.model.materials[definition.model.volumes[0].material].name, "background");
-    EXPECT_EQ(definition.model.materials[definition.model.volumes[1].material].name, "foreground");
-    ASSERT_EQ(definition.model.volumes[0].geometry.size(), 2u);
-    EXPECT_EQ(definition.model.volumes[0].geometry[0].operation, mhs::model::GeometryOperation::Add);
-    EXPECT_EQ(definition.model.volumes[0].geometry[1].operation, mhs::model::GeometryOperation::Subtract);
+    ASSERT_EQ(definition.model.bodies.size(), 2u);
+    EXPECT_EQ(definition.model.materials[definition.model.bodies[0].material].name, "background");
+    EXPECT_EQ(definition.model.materials[definition.model.bodies[1].material].name, "foreground");
+    ASSERT_EQ(definition.model.bodies[0].geometry.operations.size(), 2u);
+    EXPECT_EQ(definition.model.bodies[0].geometry.operations[0].operation, mhs::model::GeometryOperation::Add);
+    EXPECT_EQ(definition.model.bodies[0].geometry.operations[1].operation, mhs::model::GeometryOperation::Subtract);
+    ASSERT_EQ(definition.model.volume_sources.size(), 1u);
+    EXPECT_EQ(definition.model.volume_sources[0].power_density, "2");
     ASSERT_EQ(definition.model.thermal_boundaries.size(), 2u);
     EXPECT_TRUE(
         std::holds_alternative<mhs::model::DirichletBoundary>(definition.model.thermal_boundaries[0].condition));

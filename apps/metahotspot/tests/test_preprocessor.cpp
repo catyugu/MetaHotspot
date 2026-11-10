@@ -402,7 +402,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // mhs::app::pta::BlockSpec 1: background substrate covering entire 100x100mm area (copper)
     mhs::app::pta::BlockSpec block1;
     block1.material = "copper";
-    block1.volumetric_heat_source = "0";
+    block1.volumetric_heat_source = "3e7";
 
     mhs::app::pta::RectOperation rect1;
     rect1.operation = mhs::model::GeometryOperation::Add;
@@ -465,7 +465,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     const auto background_heat_source = source_id(model, c_only_block1);
     EXPECT_DOUBLE_EQ(model.material_table[background_material].kx.eval(ctx), 400.0)
         << "Cell outside the overlap must retain the earlier block material";
-    EXPECT_DOUBLE_EQ(model.heat_source_table[background_heat_source].eval(ctx), 0.0)
+    EXPECT_DOUBLE_EQ(model.heat_source_table[background_heat_source].eval(ctx), 3e7)
         << "Cell outside the overlap must retain the earlier block heat source";
 }
 

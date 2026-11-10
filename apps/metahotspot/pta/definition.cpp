@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 #include <type_traits>
 namespace mhs::app::pta {
     inline double length_unit_to_si(LengthUnit unit)
@@ -98,6 +99,67 @@ namespace mhs::app::pta {
             }
     }
 
+    namespace {
+        using Box = mhs::model::BoxOperation;
+        using Boxes = mhs::core::Vector<Box>;
+
+        // The difference of two aligned boxes contains at most six pieces.
+        Boxes subtract_box(const Box& region, const Box& cut)
+        {
+            Box overlap = region;
+            for (int a = 0; a < 3; ++a) {
+                overlap.min[a] = std::max(region.min[a], cut.min[a]);
+                overlap.max[a] = std::min(region.max[a], cut.max[a]);
+                if (overlap.min[a] >= overlap.max[a])
+                    return {region};
+            }
+            Boxes result;
+            Box remaining = region;
+            for (int a = 0; a < 3; ++a) {
+                if (remaining.min[a] < overlap.min[a]) {
+                    Box piece = remaining;
+                    piece.max[a] = overlap.min[a];
+                    result.push_back(piece);
+                    remaining.min[a] = overlap.min[a];
+                }
+                if (overlap.max[a] < remaining.max[a]) {
+                    Box piece = remaining;
+                    piece.min[a] = overlap.max[a];
+                    result.push_back(piece);
+                    remaining.max[a] = overlap.max[a];
+                }
+            }
+            return result;
+        }
+
+        Boxes subtract(Boxes regions, const Box& cut)
+        {
+            Boxes result;
+            for (const auto& region : regions) {
+                auto pieces = subtract_box(region, cut);
+                result.insert(result.end(), pieces.begin(), pieces.end());
+            }
+            return result;
+        }
+
+        // Convert ordered Add/Subtract operations to disjoint positive boxes.
+        Boxes disjoint_boxes(const mhs::model::VolumeGeometry& geometry)
+        {
+            Boxes result;
+            for (const auto& op : geometry.operations) {
+                if (op.operation == mhs::model::GeometryOperation::Subtract) {
+                    result = subtract(std::move(result), op);
+                    continue;
+                }
+                Boxes added {op};
+                for (const auto& existing : result)
+                    added = subtract(std::move(added), existing);
+                result.insert(result.end(), added.begin(), added.end());
+            }
+            return result;
+        }
+    } // namespace
+
     mhs::model::ModelDefinition normalize(Definition pta)
     {
         normalize_pta_expressions(pta);
@@ -116,36 +178,61 @@ namespace mhs::app::pta {
             thickness.push_back(t);
             z += t;
         }
-        // Reverse the layer order so the first PTA layer wins at a shared plane.
-        mhs::core::Vector<mhs::core::Vector<mhs::model::VolumeSpec>> layers;
+        // PTA block ordering is retained for material precedence.
+        struct BlockBody {
+            mhs::model::BodySpec body;
+            mhs::model::Expression power_density;
+        };
+        mhs::core::Vector<mhs::core::Vector<BlockBody>> layers;
         for (std::size_t l = 0; l < pta.layers.size(); ++l) {
             z -= thickness[l];
             const auto& layer = pta.layers[l];
-            mhs::core::Vector<mhs::model::VolumeSpec> volumes;
+            mhs::core::Vector<BlockBody> blocks;
             for (const auto& b : layer.blocks) {
                 auto mat = std::find_if(
                     out.materials.begin(), out.materials.end(), [&](const auto& m) { return m.name == b.material; });
                 if (mat == out.materials.end())
                     throw std::invalid_argument("unknown material: " + b.material);
-                mhs::model::VolumeSpec v;
-                v.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
-                v.source = static_cast<mhs::model::SourceId>(out.sources.size());
-                out.sources.push_back(b.volumetric_heat_source);
+                BlockBody block;
+                block.body.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
+                block.power_density = b.volumetric_heat_source;
                 const double x = eval(layer.x_offset) + eval(b.x_offset), y = eval(layer.y_offset) + eval(b.y_offset);
                 const double top = z + ((l == 0 && b.thickness) ? eval(*b.thickness) : thickness[l]);
                 for (const auto& op : b.geometry) {
                     const auto& r = op.rect;
                     double x0 = x + eval(r.x), y0 = y + eval(r.y), x1 = x0 + eval(r.width), y1 = y0 + eval(r.height);
-                    v.geometry.push_back({op.operation, {std::min(x0, x1), std::min(y0, y1), z},
+                    block.body.geometry.operations.push_back({op.operation, {std::min(x0, x1), std::min(y0, y1), z},
                         {std::max(x0, x1), std::max(y0, y1), top}});
                 }
-                volumes.push_back(std::move(v));
+                blocks.push_back(std::move(block));
             }
-            layers.push_back(std::move(volumes));
+            layers.push_back(std::move(blocks));
         }
+        mhs::core::Vector<mhs::model::Expression> power;
         for (auto it = layers.rbegin(); it != layers.rend(); ++it)
-            for (auto& v : *it)
-                out.volumes.push_back(std::move(v));
+            for (auto& block : *it) {
+                power.push_back(std::move(block.power_density));
+                out.bodies.push_back(std::move(block.body));
+            }
+
+        // PTA block power follows the visible portion of its Block. Resolve
+        // precedence in this adapter; independent core sources always add.
+        mhs::core::Vector<mhs::model::VolumeSourceSpec> sources(out.bodies.size());
+        Boxes covered;
+        for (std::size_t i = out.bodies.size(); i-- > 0;) {
+            const auto region = disjoint_boxes(out.bodies[i].geometry);
+            if (!power[i].empty() && power[i] != "0" && power[i] != "0.0") {
+                Boxes visible = region;
+                for (const auto& occluder : covered)
+                    visible = subtract(std::move(visible), occluder);
+                if (!visible.empty())
+                    sources[i] = {{std::move(visible)}, std::move(power[i])};
+            }
+            covered.insert(covered.end(), region.begin(), region.end());
+        }
+        for (auto& source : sources)
+            if (!source.geometry.operations.empty())
+                out.volume_sources.push_back(std::move(source));
         for (auto* axis : {&out.mesh.x_vertices, &out.mesh.y_vertices, &out.mesh.z_vertices})
             for (auto& v : *axis)
                 v *= scale;
