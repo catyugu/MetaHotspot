@@ -77,7 +77,7 @@ namespace mhs::compiler {
 
     } // namespace
 
-    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition)
+    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition, const mhs::model::MeshSpec& mesh)
     {
         if (!std::isfinite(definition.reference_temperature))
             throw std::invalid_argument("reference temperature must be finite");
@@ -139,7 +139,7 @@ namespace mhs::compiler {
         auto default_thermal_boundary
             = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
 
-        compile_cartesian_mesh(model, definition.mesh, definition.volumes);
+        compile_cartesian_mesh(model, mesh, definition.volumes);
         project_cell_regions(model, definition.volumes);
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())

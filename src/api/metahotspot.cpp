@@ -69,6 +69,7 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts);
 
 struct mhs_model_t {
     mhs::model::ModelDefinition def;
+    mhs::model::MeshSpec mesh;
 };
 
 struct mhs_compiled_t {
@@ -234,7 +235,7 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
             return mhs::core::Vector<double>(data, data + count);
         };
         mhs::model::MeshSpec mesh {axis(x, nx), axis(y, ny), axis(z, nz)};
-        m->def.mesh = std::move(mesh);
+        m->mesh = std::move(mesh);
     });
 }
 
@@ -488,7 +489,7 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     CHECK_NULL(m);
     MHS_TRY({
         auto c = std::make_unique<mhs_compiled_t>();
-        c->model = mhs::compiler::build_model(m->def);
+        c->model = mhs::compiler::build_model(m->def, m->mesh);
         *out = c.release();
     });
 }
