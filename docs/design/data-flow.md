@@ -16,7 +16,8 @@
 | 阶段 | 输入 | 输出与规则 |
 | --- | --- | --- |
 | PTA 几何解析 | Layer / Block / Rect 和几何变量、算术表达式 | 应用层独立求值为 SI 米下的区域；同层后出现的 Block 覆盖前者，核心仅接收数值几何 |
-| 笛卡尔网格与体积归属 | Cartesian 坐标轴与有序物理区域 | 一次单元扫描生成有效 Cell、材料归属及热源积分项；仅遇到单元内部几何切分才细分积分区域；随后生成初始有向 Facet |
+| 笛卡尔网格与材料归属 | Cartesian 坐标轴与有序 Body | 一次单元扫描生成有效 Cell、材料归属和初始有向 Facet |
+| 独立热源投影 | VolumeSource 与有效 Cell | 按每个 Source 的 Add/Subtract 几何分别生成积分项；不同 Source 的功率直接相加 |
 | 网格契约 | 控制体与面片几何、连接 | 验证坐标轴有限且严格递增；发现单元内部存在多种材料时拒绝编译，边界细分后统一构建 CSR 关联 |
 | 边界细分与绑定 | 外露 Facet 与热、流体边界区域 | 在几何编译阶段共同切分外部 Facet，统一构建 Cell–Facet 关联；热学、流体边界分别按 FacetId 绑定，区域后者覆盖前者 |
 | 表达式编译 | 材料、源、边界运行时表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
@@ -27,7 +28,7 @@
 
 当前 TPFA 适用于轴对齐长方体、相邻中心沿面法向对齐及对角导热张量。编译器根据用户指定的笛卡尔轴生成控制体与面片，不执行自适应网格加密。
 
-`SourceTerm` 仅保存 CellId、源表索引、体积权重和积分点；一个控制体可以接收多个源。常数体热源按体积守恒，空间表达式在各交叠片上采用中点积分。材料归属仅保存每单元一个材料索引，以单元中心的最终覆盖 Volume 为准；存在几何切分时，编译器拒绝同一单元内出现不同材料。未命中物理区域的片段不贡献热源。调用者仍须保证物理域边界与控制体的离散契约。热与流体边界在共同的几何切分上分别采用后出现条件覆盖前者的绑定，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取模型参考温度。
+`SourceTerm` 仅保存 CellId、源表索引、体积权重和积分点；一个控制体可以接收多个源。常数体热源按体积守恒，空间表达式在各交叠片上采用中点积分。材料归属仅保存每单元一个材料索引，以单元中心的最终覆盖 Body 为准；存在几何切分时，编译器拒绝同一单元内出现不同材料。独立 Source 不创建计算域，落在有效 Cell 之外的部分不贡献热源。调用者仍须保证物理域边界与控制体的离散契约。热与流体边界在共同的几何切分上分别采用后出现条件覆盖前者的绑定，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取模型参考温度。
 
 `FluidBoundaryTerm` 保存 FacetId 和内联的 `FluidTransportCondition = variant<FluidInflow, FluidOutflow>`。两种记录均保存非负的质量流率（kg/s），仅 `FluidInflow` 保存流入温度；按压力解得到的实际流向选择类型，而非输入的入口/出口标签，因此压力边界反向流动时仍采用该边界的流入温度。零流量归入 `FluidOutflow`，能量贡献为零。这些记录只有数值和内联判别信息，无动态分配；每片的冻结流量独立，不需要额外条件表。
 
@@ -60,7 +61,7 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 ## C API 契约
 
 - 删除外部离散网格输入及 `build_model(definition, mesh)` 重载，模型编译统一通过 `ModelDefinition`。
-- PTA XML 的网格读取保留在 CLI 应用侧，适配为 `ModelDefinition::mesh`；PTA 文件格式与导入逻辑不进入内核或公开 API。
+- PTA XML 的网格读取保留在 CLI 应用侧，适配为 `ModelDefinition::mesh`；PTA Block 的功率覆盖在适配时通过几何裁剪转换成独立 Source，不进入核心。
 - `mhs_compiled_copy_fields` 导出单元、Facet 及热源投影数据；`mhs_operators_copy_k/c` 直接复制 CSR，布局为 `row_ptr[state_count+1]`、`col_idx[nnz]`、`values[nnz]`；Python `assemble()` 返回 SciPy CSR，需要 CSC 的算法自行转换。
 - `mhs_solution_info_t.converged` 和 Python `Solution.converged` 暴露求解收敛结果。API 成功表示调用完成，收敛状态由该字段判断。
 - 流体边界与热边界使用相同的区域数组；入口温度用可空指针表示，NULL 取参考温度。Python 保留原有单区域调用和 `None`。删除无操作的流体边界类型；空区域条件报错。
