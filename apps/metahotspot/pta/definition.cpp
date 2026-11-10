@@ -117,36 +117,40 @@ namespace mhs::app::pta {
             thickness.push_back(t);
             z += t;
         }
-        // Reverse the layer order so the first PTA layer wins at a shared plane.
-        mhs::core::Vector<mhs::core::Vector<mhs::model::VolumeSpec>> layers;
+        // Place lower layers first without staging per-layer volume vectors.
+        // Walk blocks in input order so source IDs keep their original numbering.
+        std::size_t volume_end = out.volumes.size();
+        for (const auto& layer : pta.layers)
+            volume_end += layer.blocks.size();
+        out.volumes.resize(volume_end);
         for (std::size_t l = 0; l < pta.layers.size(); ++l) {
             z -= thickness[l];
             const auto& layer = pta.layers[l];
-            mhs::core::Vector<mhs::model::VolumeSpec> volumes;
-            for (const auto& b : layer.blocks) {
-                auto mat = std::find_if(
-                    out.materials.begin(), out.materials.end(), [&](const auto& m) { return m.name == b.material; });
+            volume_end -= layer.blocks.size();
+            if (layer.blocks.empty())
+                continue;
+            const double layer_x = eval(layer.x_offset), layer_y = eval(layer.y_offset);
+            for (std::size_t b = 0; b < layer.blocks.size(); ++b) {
+                const auto& block = layer.blocks[b];
+                auto mat = std::find_if(out.materials.begin(), out.materials.end(),
+                    [&](const auto& m) { return m.name == block.material; });
                 if (mat == out.materials.end())
-                    throw std::invalid_argument("unknown material: " + b.material);
+                    throw std::invalid_argument("unknown material: " + block.material);
                 mhs::model::VolumeSpec v;
                 v.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
                 v.source = static_cast<mhs::model::SourceId>(out.sources.size());
-                out.sources.push_back(b.volumetric_heat_source);
-                const double x = eval(layer.x_offset) + eval(b.x_offset), y = eval(layer.y_offset) + eval(b.y_offset);
-                const double top = z + ((l == 0 && b.thickness) ? eval(*b.thickness) : thickness[l]);
-                for (const auto& op : b.geometry) {
+                out.sources.push_back(block.volumetric_heat_source);
+                const double x = layer_x + eval(block.x_offset), y = layer_y + eval(block.y_offset);
+                const double top = z + ((l == 0 && block.thickness) ? eval(*block.thickness) : thickness[l]);
+                for (const auto& op : block.geometry) {
                     const auto& r = op.rect;
                     double x0 = x + eval(r.x), y0 = y + eval(r.y), x1 = x0 + eval(r.width), y1 = y0 + eval(r.height);
                     v.geometry.push_back({op.operation, {std::min(x0, x1), std::min(y0, y1), z},
                         {std::max(x0, x1), std::max(y0, y1), top}});
                 }
-                volumes.push_back(std::move(v));
+                out.volumes[volume_end + b] = std::move(v);
             }
-            layers.push_back(std::move(volumes));
         }
-        for (auto it = layers.rbegin(); it != layers.rend(); ++it)
-            for (auto& v : *it)
-                out.volumes.push_back(std::move(v));
         for (auto* axis : {&out.mesh.x_vertices, &out.mesh.y_vertices, &out.mesh.z_vertices})
             for (auto& v : *axis)
                 v *= scale;
