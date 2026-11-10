@@ -4,6 +4,8 @@
 
 #include "core/vector.hpp"
 #include <cctype>
+#include <cmath>
+#include <cstdlib>
 #include <memory>
 #include <muParser.h>
 #include <stdexcept>
@@ -177,6 +179,12 @@ namespace mhs::expression {
         if (var_it != vars.end()) {
             return var_it->second;
         }
+
+        // Geometry literals do not need a muparser instance.
+        char* end = nullptr;
+        const double value = std::strtod(formula.c_str(), &end);
+        if (end != formula.c_str() && *end == '\0' && std::isfinite(value))
+            return value;
 
         mu::Parser parser;
         mhs::core::Vector<std::pair<std::string, double>> active_vars;
