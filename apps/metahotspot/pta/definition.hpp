@@ -9,8 +9,13 @@
 
 namespace mhs::app::pta {
 
+    struct VariableSpec {
+        std::string name;
+        std::string expression;
+    };
+
     struct RectSpec {
-        mhs::model::Expression x;
+        std::string x;
         mhs::model::Expression y;
         mhs::model::Expression width;
         mhs::model::Expression height;
@@ -56,6 +61,7 @@ namespace mhs::app::pta {
     // Parsing scratch state. PTA syntax never enters the library definition.
     struct Definition {
         mhs::model::ModelDefinition model;
+        mhs::core::Vector<VariableSpec> variables;
         LengthUnit length_unit = LengthUnit::Meter;
         mhs::core::Vector<LayerSpec> layers;
         mhs::core::Vector<PointProbeSpec> point_probes;
