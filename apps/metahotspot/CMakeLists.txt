@@ -1,5 +1,6 @@
 add_library(metahotspot_frontend STATIC
     pta/definition.cpp
+    pta/geometry_expression.cpp
     pta/xml_reader.cpp
     pta/xml_writer.cpp
     pta/face_region_parser.cpp
