@@ -3,6 +3,7 @@
 #include <tbb/enumerable_thread_specific.h>
 
 #include "core/vector.hpp"
+#include <cctype>
 #include <memory>
 #include <muParser.h>
 #include <stdexcept>
