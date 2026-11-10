@@ -56,7 +56,9 @@ static mhs::app::pta::Definition make_simple_io()
 
     // One layer, one block covering the whole area
     mhs::app::pta::LayerSpec layer;
-    layer.thickness = "10";
+    layer.thickness = "edge";
+    io.variables.push_back({"base", "2^3"});
+    io.variables.push_back({"edge", "base + 2"});
 
     mhs::app::pta::BlockSpec block;
     block.material = "test_material";
@@ -66,8 +68,8 @@ static mhs::app::pta::Definition make_simple_io()
     rect.operation = mhs::model::GeometryOperation::Add;
     rect.rect.x = "0";
     rect.rect.y = "0";
-    rect.rect.width = "10";
-    rect.rect.height = "10";
+    rect.rect.width = "edge";
+    rect.rect.height = "edge";
     block.geometry.push_back(rect);
 
     layer.blocks.push_back(block);
