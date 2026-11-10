@@ -25,7 +25,7 @@ namespace {
         using namespace mhs::model;
         mhs::app::pta::Definition d;
         d.length_unit = mhs::app::pta::LengthUnit::Meter;
-        d.model.mesh.x_vertices = d.model.mesh.y_vertices = d.model.mesh.z_vertices = {0, 1};
+        d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
         MaterialSpec mat;
         mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
         mat.density = mat.specific_heat = "1";
