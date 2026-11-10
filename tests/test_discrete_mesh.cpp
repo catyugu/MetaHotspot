@@ -21,8 +21,7 @@ static mhs::model::ModelDefinition cube_definition()
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
     mat.density = mat.specific_heat = "1";
     d.materials.push_back({"solid", mat});
-    d.sources = {"0"};
-    d.volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
+    d.bodies.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}, 0});
     return d;
 }
 
@@ -152,24 +151,20 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 0.1, 1e-14);
 }
 
-TEST(DiscreteMesh, SourcesIntegrateAcrossPhysicalRegionsWithinOneCell)
+TEST(DiscreteMesh, IndependentSourcesIntegrateAndOverlapWithinOneCell)
 {
     auto d = cube_definition();
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
-    auto& first = d.volumes[0];
-    first.geometry = {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.25, 1, 1}}};
-    d.sources[0] = "4*z";
-    auto second = first;
-    second.geometry = {{mhs::model::GeometryOperation::Add, {0.25, 0, 0}, {1, 1, 1}}};
-    d.sources.push_back("8*z");
-    second.source = 1;
-    d.volumes.push_back(second);
+    d.volume_sources.push_back({{{GeometryOperation::Add, {0, 0, 0}, {0.25, 1, 1}}}, "4*z"});
+    d.volume_sources.push_back({{{GeometryOperation::Add, {0.25, 0, 0}, {1, 1, 1}}}, "8*z"});
+    d.volume_sources.push_back({{{GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}, "2*z"});
     const auto model = mhs::compiler::build_model(d);
     const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
-    EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
-    ASSERT_EQ(model.source_terms.size(), 2u);
+    EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 4.5, 1e-13);
+    ASSERT_EQ(model.source_terms.size(), 3u);
     EXPECT_NEAR(model.source_terms[0].weight, 0.25, 1e-14);
     EXPECT_NEAR(model.source_terms[1].weight, 0.75, 1e-14);
+    EXPECT_NEAR(model.source_terms[2].weight, 1.0, 1e-14);
 }
 
 TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)

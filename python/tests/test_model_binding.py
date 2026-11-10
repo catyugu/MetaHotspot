@@ -19,9 +19,10 @@ def _model(*, transient: bool = False) -> metahotspot.Model:
         np.array([0.0, 0.001]),
     )
     material = model.add_material("solid", "1", "1", "1", "1000", "500")
-    source = model.add_source("1e6")
-    volume = model.add_volume(material, source)
-    model.add_box(volume, [0, 0, 0], [0.001, 0.001, 0.001])
+    body = model.add_body(material)
+    model.body_add_box(body, [0, 0, 0], [0.001, 0.001, 0.001])
+    source = model.add_volume_source("1e6")
+    model.volume_source_add_box(source, [0, 0, 0], [0.001, 0.001, 0.001])
     return model
 
 

@@ -12,13 +12,13 @@ def test_subcell_sources_keep_independent_power_columns():
     from metahotspot.macromodel.affine import AffineParametricModel, SourcePort
 
     model = _model()
-    second = model.add_volume(0, model.add_source("2e6"))
-    model.add_box(second, [0, 0, 0], [0.00025, 0.001, 0.001])
+    second = model.add_volume_source("2e6")
+    model.volume_source_add_box(second, [0, 0, 0], [0.00025, 0.001, 0.001])
     compiled = model.compile()
     q = compiled.source_operator()
-    np.testing.assert_allclose(q.toarray(), [[0.00075, 0.0005]])
+    np.testing.assert_allclose(q.toarray(), [[0.001, 0.0005]])
     np.testing.assert_allclose(q.sum(axis=1).A.ravel(), compiled.assemble().f)
-    np.testing.assert_allclose(compiled.fields.projection_volume.sum(), 1e-9)
+    np.testing.assert_allclose(compiled.fields.projection_volume.sum(), 1.25e-9)
 
     class Ports(AffineParametricModel):
         _full = compiled
@@ -26,7 +26,7 @@ def test_subcell_sources_keep_independent_power_columns():
 
         def source_ports(self):
             return [
-                SourcePort(source_ids=np.array([0]), power_W=0.00075),
+                SourcePort(source_ids=np.array([0]), power_W=0.001),
                 SourcePort(source_ids=np.array([1]), power_W=0.0005),
             ]
 
@@ -53,8 +53,8 @@ def test_cartesian_fluid_model_recompiles_consistently(case):
             kind=MaterialKind.FLUID,
             dynamic_viscosity="0.001",
         )
-        volume = model.add_volume(material, 0)
-        model.add_box(volume, [0, 0, 0], [0.001, 0.001, 0.001])
+        body = model.add_body(material)
+        model.body_add_box(body, [0, 0, 0], [0.001, 0.001, 0.001])
         model.set_cartesian_mesh(*(np.linspace(0, 0.001, 4) for _ in range(3)))
         model.set_default_convection("10", "300")
         model.add_fluid_boundary(
