@@ -125,10 +125,6 @@ namespace mhs::compiler {
                 throw std::out_of_range("volume material ID out of range");
             if (volume.source != mhs::core::invalid_id && volume.source >= definition.sources.size())
                 throw std::out_of_range("volume source ID out of range");
-            for (const auto& box : volume.geometry)
-                for (int a = 0; a < 3; ++a)
-                    if (!std::isfinite(box.min[a]) || !std::isfinite(box.max[a]) || box.min[a] >= box.max[a])
-                        throw std::invalid_argument("box bounds must be finite and increasing");
         }
 
         // Compile boundary patches.
@@ -139,10 +135,28 @@ namespace mhs::compiler {
         auto default_thermal_boundary
             = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
 
-        compile_conformal_mesh(model, mesh, definition.volumes);
-        for (const auto material : model.cell_material)
-            if (material >= model.material_table.size())
-                throw std::out_of_range("cell has no valid material assignment");
+        mhs::core::Vector<VolumeGeometry> volumes;
+        volumes.reserve(definition.volumes.size());
+        for (const auto& volume : definition.volumes)
+            volumes.emplace_back(volume.geometry);
+        auto geometry = compile_conformal_mesh(mesh, volumes);
+        model.discrete = std::move(geometry.mesh);
+        model.cell_material.reserve(geometry.cell_regions.size());
+        for (std::size_t c = 0; c < geometry.cell_regions.size(); ++c) {
+            const auto& volume = definition.volumes[geometry.cell_regions[c]];
+            const auto& cell = model.discrete.cells[c];
+            model.cell_material.push_back(volume.material);
+            if (volume.source != mhs::core::invalid_id)
+                model.source_terms.push_back(
+                    {static_cast<mhs::model::CellId>(c), volume.source, cell.volume(), cell.center()});
+        }
+        for (auto& probe : model.point_probes)
+            for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
+                const auto& cell = model.discrete.cells[c];
+                if (probe.point[0] >= cell.min[0] && probe.point[0] <= cell.max[0] && probe.point[1] >= cell.min[1]
+                    && probe.point[1] <= cell.max[1] && probe.point[2] >= cell.min[2] && probe.point[2] <= cell.max[2])
+                    probe.cell = static_cast<mhs::model::CellId>(c);
+            }
 
         // Canonical geometric partition shared by all boundary physics.
         mhs::core::Vector<mhs::model::SurfaceRegion> cuts;

@@ -19,12 +19,11 @@ namespace mhs::compiler {
 
     } // namespace
 
-    std::optional<std::size_t> classify_point(
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& p)
+    std::optional<RegionId> classify_point(std::span<const VolumeGeometry> volumes, const mhs::model::Vec3& p)
     {
         for (std::size_t i = volumes.size(); i-- > 0;) {
             bool inside = false;
-            for (const auto& box : volumes[i].geometry) {
+            for (const auto& box : volumes[i]) {
                 bool contains = true;
                 for (int a = 0; a < 3; ++a)
                     contains = contains && p[a] >= box.min[a] - EPS && p[a] <= box.max[a] + EPS;

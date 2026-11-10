@@ -1,7 +1,8 @@
 #pragma once
 #include <optional>
+#include <span>
 
-#include "model/model.hpp"
+#include "model/discrete_mesh.hpp"
 #include "model/model_definition.hpp"
 
 #include "core/vector.hpp"
@@ -17,10 +18,16 @@ namespace mhs::compiler {
         SurfaceTag tag;
     };
 
-    std::optional<std::size_t> classify_point(
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& point);
-    void compile_conformal_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
+    // Geometry borrows only box operations. Region IDs index the caller's input order.
+    using RegionId = std::size_t;
+    using VolumeGeometry = std::span<const mhs::model::BoxOperation>;
+    struct CompiledGeometry {
+        mhs::model::DiscreteMesh mesh;
+        mhs::core::Vector<RegionId> cell_regions;
+    };
+
+    std::optional<RegionId> classify_point(std::span<const VolumeGeometry> volumes, const mhs::model::Vec3& point);
+    CompiledGeometry compile_conformal_mesh(const mhs::model::MeshSpec& input, std::span<const VolumeGeometry> volumes);
 
     // Partition exterior facets once against the union of thermal and fluid regions,
     // before building incidence and assigning physics-specific boundary conditions.
