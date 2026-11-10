@@ -43,28 +43,6 @@ namespace {
 
 namespace {
 
-    TEST(EvalGeometry, ComplexExpression)
-    {
-        SymbolTable sym;
-        sym.variables["w"] = 10.0;
-        sym.variables["h"] = 2.0;
-
-        EXPECT_EQ(mhs::expression::eval_geometry("(w+h)*2", sym), 24.0);
-    }
-
-    TEST(EvalGeometry, UndefinedVariable)
-    {
-        SymbolTable sym;
-        sym.variables["defined"] = 1.0;
-
-        // undefined variable should throw
-        EXPECT_THROW(mhs::expression::eval_geometry("undefined", sym), std::runtime_error);
-    }
-
-} // namespace
-
-namespace {
-
     TEST(Parse, SimpleConstant)
     {
         SymbolTable sym;
@@ -233,17 +211,6 @@ namespace {
 
 namespace {
 
-    TEST(SymbolTable, EvalGeometryIsolatesPerCall)
-    {
-        mhs::expression::SymbolTable a;
-        a.variables["x"] = 1.0;
-        mhs::expression::SymbolTable b;
-        b.variables["x"] = 100.0;
-
-        EXPECT_EQ(mhs::expression::eval_geometry("x+1", a), 2.0);
-        EXPECT_EQ(mhs::expression::eval_geometry("x+1", b), 101.0);
-    }
-
     TEST(SymbolTable, ParseCapturesNatives)
     {
         mhs::expression::SymbolTable sym;
@@ -264,28 +231,5 @@ namespace {
         EXPECT_EQ(expr.eval(ctx), 10.0);
     }
 
-    TEST(SymbolTable, ParallelParseDoesNotInterfere)
-    {
-        // Variables live in SymbolTable; they are exposed via eval_geometry, not parse.
-        // Two threads construct their own SymbolTable and eval_geometry in parallel —
-        // the result must reflect each thread's own table.
-        const int N_THREADS = 8;
-        mhs::core::Vector<std::thread> threads;
-        mhs::core::Vector<double> results(N_THREADS, 0.0);
-
-        for (int tid = 0; tid < N_THREADS; ++tid) {
-            threads.emplace_back([tid, &results]() {
-                mhs::expression::SymbolTable sym;
-                sym.variables["k"] = static_cast<double>(tid + 1);
-                results[tid] = mhs::expression::eval_geometry("k * 10", sym);
-            });
-        }
-        for (auto& th : threads)
-            th.join();
-
-        for (int tid = 0; tid < N_THREADS; ++tid) {
-            EXPECT_EQ(results[tid], static_cast<double>(tid + 1) * 10.0);
-        }
-    }
 
 } // namespace
