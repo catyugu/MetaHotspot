@@ -1,22 +1,16 @@
 #include "geometry_expression.hpp"
 
 #include <charconv>
-#include <cmath>
 #include <cctype>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
 namespace mhs::app::pta {
     namespace {
-        bool identifier_start(char c)
-        {
-            return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
-        }
+        bool identifier_start(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
 
-        bool identifier_part(char c)
-        {
-            return identifier_start(c) || (c >= '0' && c <= '9');
-        }
+        bool identifier_part(char c) { return identifier_start(c) || (c >= '0' && c <= '9'); }
 
         class Parser {
         public:
@@ -168,9 +162,6 @@ namespace mhs::app::pta {
         }
     }
 
-    double GeometryEvaluator::evaluate(std::string_view expression) const
-    {
-        return Parser(expression, values_).evaluate();
-    }
+    double GeometryEvaluator::evaluate(std::string_view expression) const { return Parser(expression, values_).evaluate(); }
 
 } // namespace mhs::app::pta
