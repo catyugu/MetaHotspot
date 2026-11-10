@@ -107,7 +107,8 @@ static std::size_t input_cell(const Model& model, const mhs::model::MeshSpec& in
     const auto x = flat / (ny * nz), y = (flat % (ny * nz)) / nz, z = flat % nz;
     const Vec3 lower {input.x_vertices[x] * 0.001, input.y_vertices[y] * 0.001, input.z_vertices[z] * 0.001};
     const auto& cells = model.discrete.cells;
-    const auto it = std::find_if(cells.begin(), cells.end(), [&](const CellGeometry& cell) { return cell.min == lower; });
+    const auto matches_lower_corner = [&](const CellGeometry& cell) { return cell.min == lower; };
+    const auto it = std::find_if(cells.begin(), cells.end(), matches_lower_corner);
     return it == cells.end() ? mhs::core::invalid_id : static_cast<std::size_t>(it - cells.begin());
 }
 
