@@ -39,9 +39,10 @@ from metahotspot import SolveOptions
 model = metahotspot.Model()
 model.set_cartesian_mesh(*(np.linspace(0, 0.01, 26) for _ in range(3)))
 material = model.add_material("solid", "1", "1", "1", "1000", "500")
-source = model.add_source("1e6")
-volume = model.add_volume(material, source)
-model.add_box(volume, [0, 0, 0], [0.01, 0.01, 0.01])
+body = model.add_body(material)
+model.body_add_box(body, [0, 0, 0], [0.01, 0.01, 0.01])
+source = model.add_volume_source("1e6")
+model.volume_source_add_box(source, [0, 0, 0], [0.01, 0.01, 0.01])
 model.set_default_dirichlet("300")
 solution = model.compile().solve(opts=SolveOptions(linear_solver="Amg"))
 assert solution.state.size == 15625, solution.state.size

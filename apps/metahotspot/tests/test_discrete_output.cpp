@@ -15,8 +15,8 @@ static mhs::model::ModelDefinition cube_definition()
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
     mat.density = mat.specific_heat = "1";
     d.materials.push_back({"solid", mat});
-    d.bodies.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}, 0});
-    d.volume_sources.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}, "0"});
+    d.bodies.push_back({{{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}}, 0});
+    d.volume_sources.push_back({{{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}}, "0"});
     return d;
 }
 

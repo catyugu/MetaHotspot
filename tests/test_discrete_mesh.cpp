@@ -21,7 +21,7 @@ static mhs::model::ModelDefinition cube_definition()
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
     mat.density = mat.specific_heat = "1";
     d.materials.push_back({"solid", mat});
-    d.bodies.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}, 0});
+    d.bodies.push_back({{{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}}, 0});
     return d;
 }
 
@@ -155,9 +155,9 @@ TEST(DiscreteMesh, IndependentSourcesIntegrateAndOverlapWithinOneCell)
 {
     auto d = cube_definition();
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
-    d.volume_sources.push_back({{{GeometryOperation::Add, {0, 0, 0}, {0.25, 1, 1}}}, "4*z"});
-    d.volume_sources.push_back({{{GeometryOperation::Add, {0.25, 0, 0}, {1, 1, 1}}}, "8*z"});
-    d.volume_sources.push_back({{{GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}, "2*z"});
+    d.volume_sources.push_back({{{{GeometryOperation::Add, {0, 0, 0}, {0.25, 1, 1}}}}, "4*z"});
+    d.volume_sources.push_back({{{{GeometryOperation::Add, {0.25, 0, 0}, {1, 1, 1}}}}, "8*z"});
+    d.volume_sources.push_back({{{{GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}}, "2*z"});
     const auto model = mhs::compiler::build_model(d);
     const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 4.5, 1e-13);

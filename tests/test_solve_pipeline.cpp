@@ -13,8 +13,8 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     io.mesh.y_vertices = {0.0, 0.005, 0.01};
     io.mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.bodies.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}, 0});
-    io.volume_sources.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}, "1e6"});
+    io.bodies.push_back({{{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}, 0});
+    io.volume_sources.push_back({{{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}, "1e6"});
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
@@ -51,8 +51,8 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     io.mesh.y_vertices = {0.0, 0.005, 0.01};
     io.mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.bodies.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}, 0});
-    io.volume_sources.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}, "1e8"});
+    io.bodies.push_back({{{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}, 0});
+    io.volume_sources.push_back({{{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}, "1e8"});
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
@@ -118,7 +118,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     io.mesh.y_vertices = {0.0, 0.005, 0.01};
     io.mesh.z_vertices = {0.0, 0.005, 0.01};
 
-    io.bodies.push_back({{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}, 0});
+    io.bodies.push_back({{{{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}, 0});
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
