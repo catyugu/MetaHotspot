@@ -82,14 +82,15 @@ namespace mhs::compiler {
             for (std::size_t x = 1; x < cuts[0].size(); ++x)
                 for (std::size_t y = 1; y < cuts[1].size(); ++y)
                     for (std::size_t z = 1; z < cuts[2].size(); ++z) {
-                        const Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2,
-                            (cuts[1][y - 1] + cuts[1][y]) / 2, (cuts[2][z - 1] + cuts[2][z]) / 2};
+                        const Vec3 p {(cuts[0][x - 1] + cuts[0][x]) / 2, (cuts[1][y - 1] + cuts[1][y]) / 2,
+                            (cuts[2][z - 1] + cuts[2][z]) / 2};
                         const auto location = classify_point(volumes, p);
                         if (!location)
                             continue;
                         const auto& volume = volumes[*location];
                         if (volume.material != material)
-                            throw std::invalid_argument("material interfaces must align with Cartesian cell boundaries");
+                            throw std::invalid_argument(
+                                "material interfaces must align with Cartesian cell boundaries");
                         if (volume.source != invalid_id) {
                             const double weight = (cuts[0][x] - cuts[0][x - 1]) * (cuts[1][y] - cuts[1][y - 1])
                                 * (cuts[2][z] - cuts[2][z - 1]);
