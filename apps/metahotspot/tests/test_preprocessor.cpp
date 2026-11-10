@@ -50,9 +50,9 @@ static mhs::app::pta::Definition make_simple_io()
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
     // Simple 10x10x10 mm cube, 2 cells each direction
-    io.model.mesh.x_vertices = {0.0, 5.0, 10.0};
-    io.model.mesh.y_vertices = {0.0, 5.0, 10.0};
-    io.model.mesh.z_vertices = {0.0, 5.0, 10.0};
+    io.mesh.x_vertices = {0.0, 5.0, 10.0};
+    io.mesh.y_vertices = {0.0, 5.0, 10.0};
+    io.mesh.z_vertices = {0.0, 5.0, 10.0};
 
     // One layer, one block covering the whole area
     mhs::app::pta::LayerSpec layer;
@@ -117,9 +117,9 @@ static std::size_t input_cell(const Model& model, const mhs::model::MeshSpec& in
 TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
 {
     auto definition = make_simple_io();
-    definition.model.mesh.x_vertices = {0.0, 5.0, 10.0, 15.0};
-    definition.model.mesh.y_vertices = {0.0, 5.0};
-    definition.model.mesh.z_vertices = {0.0, 5.0};
+    definition.mesh.x_vertices = {0.0, 5.0, 10.0, 15.0};
+    definition.mesh.y_vertices = {0.0, 5.0};
+    definition.mesh.z_vertices = {0.0, 5.0};
     definition.layers[0].thickness = "5";
 
     auto& rects = definition.layers[0].blocks[0].geometry;
@@ -144,11 +144,11 @@ TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
 
     const auto model = test_pta::build_model(definition);
 
-    EXPECT_NE(input_cell(model, definition.model.mesh, 0), mhs::core::invalid_id)
+    EXPECT_NE(input_cell(model, definition.mesh, 0), mhs::core::invalid_id)
         << "The initial Add must keep the first cell";
-    EXPECT_EQ(input_cell(model, definition.model.mesh, 1), mhs::core::invalid_id)
+    EXPECT_EQ(input_cell(model, definition.mesh, 1), mhs::core::invalid_id)
         << "The later Subtract must remove the middle cell";
-    EXPECT_NE(input_cell(model, definition.model.mesh, 2), mhs::core::invalid_id)
+    EXPECT_NE(input_cell(model, definition.mesh, 2), mhs::core::invalid_id)
         << "The final Add must restore the last cell";
 }
 
@@ -158,9 +158,9 @@ TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
     // 100x100x30mm, with cells at x:0,50,100 y:0,50,100 z:0,2,4,6,8,10,15,20,25,30
-    io.model.mesh.x_vertices = {0, 50, 100};
-    io.model.mesh.y_vertices = {0, 50, 100};
-    io.model.mesh.z_vertices = {0, 2, 4, 6, 8, 10, 15, 20, 25, 30};
+    io.mesh.x_vertices = {0, 50, 100};
+    io.mesh.y_vertices = {0, 50, 100};
+    io.mesh.z_vertices = {0, 2, 4, 6, 8, 10, 15, 20, 25, 30};
 
     // mhs::app::pta::LayerSpec 1 (top): 2 blocks, with add/sub rects creating L-shape
     mhs::app::pta::LayerSpec layer1;
@@ -247,9 +247,9 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.mesh.x_vertices = {0, 50, 100};
-    io.model.mesh.y_vertices = {0, 50, 100};
-    io.model.mesh.z_vertices = {0, 10, 20, 30};
+    io.mesh.x_vertices = {0, 50, 100};
+    io.mesh.y_vertices = {0, 50, 100};
+    io.mesh.z_vertices = {0, 10, 20, 30};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "30";
@@ -288,10 +288,10 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     // Face key "Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100"
     // Rects: {x:0-50, y:50-100}, {x:50-100, y:0-50}, {x:50-100, y:50-100}
     // Cell (ix=0, iy=1, iz=0) has cx=25mm, cy=75mm -> in rect1 -> Dirichlet on ZM
-    const auto ny_bc = (io.model.mesh.y_vertices.size() - 1);
-    const auto nz_bc = (io.model.mesh.z_vertices.size() - 1);
+    const auto ny_bc = (io.mesh.y_vertices.size() - 1);
+    const auto nz_bc = (io.mesh.z_vertices.size() - 1);
     const auto idx_bc = 0 * ny_bc * nz_bc + 1 * nz_bc + 0;
-    const auto compact = input_cell(model, io.model.mesh, idx_bc);
+    const auto compact = input_cell(model, io.mesh, idx_bc);
     ASSERT_NE(compact, mhs::core::invalid_id);
 
     const auto* condition = find_condition<Dirichlet>(model, compact, FaceDir::ZM);
@@ -314,10 +314,10 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     // YM (y=0 face): domain boundary -> Neumann
     // ZM (z=0 face): domain boundary -> Neumann
     // XP, YP, ZP: interior or domain boundary
-    const auto ny = (io.model.mesh.y_vertices.size() - 1);
-    const auto nz = (io.model.mesh.z_vertices.size() - 1);
+    const auto ny = (io.mesh.y_vertices.size() - 1);
+    const auto nz = (io.mesh.z_vertices.size() - 1);
     const auto idx = 0 * ny * nz + 0 * nz + 0;
-    const auto compact = input_cell(model, io.model.mesh, idx);
+    const auto compact = input_cell(model, io.mesh, idx);
     ASSERT_NE(compact, mhs::core::invalid_id);
 
     EXPECT_NE(find_condition<Neumann>(model, compact, FaceDir::XM), nullptr);
@@ -327,7 +327,7 @@ TEST(PreprocessorTest, DefaultBoundaryFallback)
     // Interior cell (1,1,1): XP, YP, ZP are domain boundaries
     // XM, YM, ZM are interior -> no boundary term
     const auto idx_inner = 1 * ny * nz + 1 * nz + 1;
-    const auto compact_inner = input_cell(model, io.model.mesh, idx_inner);
+    const auto compact_inner = input_cell(model, io.mesh, idx_inner);
     ASSERT_NE(compact_inner, mhs::core::invalid_id);
 
     EXPECT_EQ(find_boundary_facet(model, compact_inner, FaceDir::XM), mhs::core::invalid_id);
@@ -346,9 +346,9 @@ TEST(PreprocessorTest, UsesSuppliedDomainAlignedControlVolumes)
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.mesh.x_vertices = {25, 50, 75};
-    io.model.mesh.y_vertices = {0, 50, 100};
-    io.model.mesh.z_vertices = {0, 10, 20, 30};
+    io.mesh.x_vertices = {25, 50, 75};
+    io.mesh.y_vertices = {0, 50, 100};
+    io.mesh.z_vertices = {0, 10, 20, 30};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "30";
@@ -392,9 +392,9 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.mesh.x_vertices = {0, 50, 100};
-    io.model.mesh.y_vertices = {0, 50, 100};
-    io.model.mesh.z_vertices = {0, 10, 20, 30};
+    io.mesh.x_vertices = {0, 50, 100};
+    io.mesh.y_vertices = {0, 50, 100};
+    io.mesh.z_vertices = {0, 10, 20, 30};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "30";
@@ -441,14 +441,14 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
 
     auto model = test_pta::build_model(io);
 
-    const auto ny = (io.model.mesh.y_vertices.size() - 1);
-    const auto nz = (io.model.mesh.z_vertices.size() - 1);
+    const auto ny = (io.mesh.y_vertices.size() - 1);
+    const auto nz = (io.mesh.z_vertices.size() - 1);
 
     // Cell (ix=0, iy=0, iz=0): cx=25mm, cy=25mm — in overlap of both blocks.
     // Last block (block2 = silicon) should override first block (block1 = copper).
     const auto idx_overlap = 0 * ny * nz + 0 * nz + 0;
-    EXPECT_NE(input_cell(model, io.model.mesh, idx_overlap), mhs::core::invalid_id);
-    const auto c_overlap = input_cell(model, io.model.mesh, idx_overlap);
+    EXPECT_NE(input_cell(model, io.mesh, idx_overlap), mhs::core::invalid_id);
+    const auto c_overlap = input_cell(model, io.mesh, idx_overlap);
 
     const mhs::expression::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
     const auto overlap_material = model.cell_material[c_overlap];
@@ -460,7 +460,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
 
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
     const auto idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
-    const auto c_only_block1 = input_cell(model, io.model.mesh, idx_only_block1);
+    const auto c_only_block1 = input_cell(model, io.mesh, idx_only_block1);
     const auto background_material = model.cell_material[c_only_block1];
     const auto background_heat_source = source_id(model, c_only_block1);
     EXPECT_DOUBLE_EQ(model.material_table[background_material].kx.eval(ctx), 400.0)
@@ -484,7 +484,7 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     definition.model.thermal_boundaries.push_back(later);
 
     const auto model = test_pta::build_model(definition);
-    const auto cell = input_cell(model, definition.model.mesh, 0);
+    const auto cell = input_cell(model, definition.mesh, 0);
     ASSERT_NE(cell, mhs::core::invalid_id);
     const auto* condition = find_condition<Convection>(model, cell, FaceDir::ZM);
     ASSERT_NE(condition, nullptr);
@@ -502,9 +502,9 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.mesh.x_vertices = {0, 5, 10};
-    io.model.mesh.y_vertices = {0, 5, 10};
-    io.model.mesh.z_vertices = {0, 5, 10};
+    io.mesh.x_vertices = {0, 5, 10};
+    io.mesh.y_vertices = {0, 5, 10};
+    io.mesh.z_vertices = {0, 5, 10};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
@@ -543,11 +543,11 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     // Cells with iz=0 (cz=2.5) are inside the rect and get Convection.
     // Cells with iz=1 (cz=7.5) are outside the rect and fall through to
     // the default boundary (Neumann).
-    const auto ny = (io.model.mesh.y_vertices.size() - 1);
-    const auto nz = (io.model.mesh.z_vertices.size() - 1);
+    const auto ny = (io.mesh.y_vertices.size() - 1);
+    const auto nz = (io.mesh.z_vertices.size() - 1);
     for (int ix = 0; ix < 2; ++ix) {
         const auto idx = ix * ny * nz + 1 * nz + 0; // iz=0 -> cz=2.5 in [0,5]
-        const auto compact = input_cell(model, io.model.mesh, idx);
+        const auto compact = input_cell(model, io.mesh, idx);
         EXPECT_NE(find_condition<Convection>(model, compact, FaceDir::YP), nullptr)
             << "Y region should assign Convection to YP face at (" << ix << ",1,0)";
     }
@@ -555,7 +555,7 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
     // Cells with iz=1 (cz=7.5) fall outside the rect and must NOT get this BC;
     // they should fall through to the default boundary (Neumann).
     const auto idx_outside = 0 * ny * nz + 1 * nz + 1; // ix=0, iy=1, iz=1 -> cz=7.5
-    const auto compact_out = input_cell(model, io.model.mesh, idx_outside);
+    const auto compact_out = input_cell(model, io.mesh, idx_outside);
     EXPECT_EQ(find_condition<Convection>(model, compact_out, FaceDir::YP), nullptr)
         << "Cell outside rect must not get the Convection BC";
 }
@@ -569,9 +569,9 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneThermalBoundarySpec)
     mhs::app::pta::Definition io;
     io.length_unit = mhs::app::pta::LengthUnit::Millimeter;
 
-    io.model.mesh.x_vertices = {0, 5, 10};
-    io.model.mesh.y_vertices = {0, 5, 10};
-    io.model.mesh.z_vertices = {0, 5, 10};
+    io.mesh.x_vertices = {0, 5, 10};
+    io.mesh.y_vertices = {0, 5, 10};
+    io.mesh.z_vertices = {0, 5, 10};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "10";
@@ -609,15 +609,15 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneThermalBoundarySpec)
 
     auto model = test_pta::build_model(io);
 
-    const auto ny = (io.model.mesh.y_vertices.size() - 1);
-    const auto nz = (io.model.mesh.z_vertices.size() - 1);
-    const auto nx = (io.model.mesh.x_vertices.size() - 1);
+    const auto ny = (io.mesh.y_vertices.size() - 1);
+    const auto nz = (io.mesh.z_vertices.size() - 1);
+    const auto nx = (io.mesh.x_vertices.size() - 1);
 
     // Every exposed face of every cell on the domain boundary (ix=0 XP/XP, etc.)
     // and specifically the three faces the keys target must be Convection.
     auto check_face = [&](std::size_t ix, std::size_t iy, std::size_t iz, FaceDir dir) {
         const auto idx = ix * ny * nz + iy * nz + iz;
-        const auto compact = input_cell(model, io.model.mesh, idx);
+        const auto compact = input_cell(model, io.mesh, idx);
         EXPECT_NE(find_condition<Convection>(model, compact, dir), nullptr)
             << "Face " << (int)dir << " of cell (" << ix << "," << iy << "," << iz
             << ") should be Convection from one of the boundary regions";
@@ -651,9 +651,9 @@ TEST(PreprocessorTest, PartialBlockCoverageSkipsPiecesOutsideEveryBlock)
     // 4 mm x 4 mm mesh, one cell per direction; the block covers 0..3 mm, so the
     // cell centre (2 mm) is inside a block and the cell is active, while the cut
     // at 3 mm leaves a 3..4 mm piece that belongs to no block.
-    io.model.mesh.x_vertices = {0.0, 4.0};
-    io.model.mesh.y_vertices = {0.0, 4.0};
-    io.model.mesh.z_vertices = {0.0, 1.0};
+    io.mesh.x_vertices = {0.0, 4.0};
+    io.mesh.y_vertices = {0.0, 4.0};
+    io.mesh.z_vertices = {0.0, 1.0};
 
     mhs::app::pta::LayerSpec layer;
     layer.thickness = "1";

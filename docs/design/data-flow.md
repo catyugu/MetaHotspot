@@ -16,7 +16,7 @@
 | 阶段 | 输入 | 输出与规则 |
 | --- | --- | --- |
 | PTA 几何解析 | Layer / Block / Rect 和几何变量、算术表达式 | 应用层独立求值为 SI 米下的区域；同层后出现的 Block 覆盖前者，核心仅接收数值几何 |
-| 网格输入 | Cartesian 坐标轴与物理区域 | `DiscreteMesh`：单元边界、初始有向 Facet 几何 |
+| 网格输入 | 独立的 Cartesian `MeshSpec` 与物理区域 | `DiscreteMesh`：单元边界、初始有向 Facet 几何 |
 | 网格契约 | 控制体与面片几何、连接 | 验证坐标轴有限且严格递增；生成控制体及有向面片，边界细分后统一构建 CSR 关联 |
 | 体积投影 | 网格与物理区域 | `cell_material` 和 `source_terms`；调用者保证控制体与材料及物理域边界对齐，编译器不校验 |
 | 边界细分与绑定 | 外露 Facet 与热、流体边界区域 | 在几何编译阶段共同切分外部 Facet，统一构建 Cell–Facet 关联；热学、流体边界分别按 FacetId 绑定，区域后者覆盖前者 |
@@ -40,7 +40,7 @@
 
 ## 输入与数组约定
 
-- C++ 的 `ModelDefinition::mesh`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Model.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
+- C++ 的 `MeshSpec`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Model.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
 - C/Python 网格导出使用 `facet_minus`、`facet_plus`、`facet_axis`、`facet_coordinate` 和 `facet_bounds`。前四者为 `(facet_count,)`，bounds 为 `(facet_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量由 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
 - Facet 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 `facet_coordinate` 给出，外法向由缺失的一侧确定。一个 cell side 可有多个外边界 Facet。跨子域非匹配连接尚未实现。单元至 Facet 只保留一套 CSR 关联索引。
 - 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。

@@ -11,7 +11,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 依赖方向：
 
 ```text
-IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
+IO → (ModelDefinition, MeshSpec) → Compiler → Model → Solver → Solution → IO
 ```
 
 `mhs::core` 是编译后的公共内核，提供容器、内存池与低级 kernel；`model` 保存输入定义和运行期领域数据。依赖为 `model → expression → core`、`linear → core`，compiler/solver 在其上工作。Eigen 仅用于内部小规模 QR 与可选 PARDISO 实现，不属于公开头或 SDK 链接依赖。

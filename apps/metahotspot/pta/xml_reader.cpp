@@ -517,26 +517,25 @@ namespace mhs::app::pta {
                     if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
                         for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.model.mesh.x_vertices.push_back(parse_double(get_text(val)));
+                            def.mesh.x_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
                         for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.model.mesh.y_vertices.push_back(parse_double(get_text(val)));
+                            def.mesh.y_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
                         for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.model.mesh.z_vertices.push_back(parse_double(get_text(val)));
+                            def.mesh.z_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                 }
             }
         }
-        if (def.model.mesh.x_vertices.empty() || def.model.mesh.y_vertices.empty()
-            || def.model.mesh.z_vertices.empty()) {
+        if (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()) {
             if (const XMLElement* generated_mesh = root->FirstChildElement("GeneratedMesh")) {
                 const auto read_vertices = [&](const char* axis, mhs::core::Vector<double>& vertices) {
                     const XMLElement* array = child_by_local_name(generated_mesh, axis);
@@ -552,9 +551,9 @@ namespace mhs::app::pta {
                             vertices.push_back(parse_double(get_text(value)));
                     }
                 };
-                read_vertices("XArray", def.model.mesh.x_vertices);
-                read_vertices("YArray", def.model.mesh.y_vertices);
-                read_vertices("ZArray", def.model.mesh.z_vertices);
+                read_vertices("XArray", def.mesh.x_vertices);
+                read_vertices("YArray", def.mesh.y_vertices);
+                read_vertices("ZArray", def.mesh.z_vertices);
             }
         }
 
@@ -580,7 +579,8 @@ namespace mhs::app::pta {
         }
 
         def.model.default_thermal_boundary = std::move(default_thermal_boundary);
-        return {study, normalize(std::move(def))};
+        normalize(def);
+        return {study, std::move(def.model), std::move(def.mesh)};
     }
 
 } // namespace mhs::app::pta
