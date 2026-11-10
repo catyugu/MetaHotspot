@@ -1,6 +1,5 @@
 #include "definition.hpp"
-#include "compiler/model_compiler.hpp"
-#include "expression/expression.hpp"
+#include "geometry_expression.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <string_view>
@@ -104,8 +103,8 @@ namespace mhs::app::pta {
         normalize_pta_expressions(pta);
         auto out = std::move(pta.model);
         const double scale = length_unit_to_si(pta.length_unit);
-        auto symbols = mhs::compiler::build_symbol_table(out);
-        auto eval = [&](const auto& e) { return mhs::expression::eval_geometry(e, symbols) * scale; };
+        const GeometryEvaluator geometry(pta.variables);
+        auto eval = [&](const auto& e) { return geometry.evaluate(e) * scale; };
         mhs::core::Vector<double> thickness;
         double z = 0;
         for (std::size_t l = 0; l < pta.layers.size(); ++l) {
