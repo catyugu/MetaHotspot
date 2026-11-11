@@ -1,6 +1,5 @@
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/fluid_physics.hpp"
-#include "compiler/geometry_compiler.hpp"
 #include "core/csr_ops.hpp"
 #include "core/vector.hpp"
 #include "linear/solver.hpp"

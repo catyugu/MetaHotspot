@@ -3,7 +3,6 @@
 
 #include "core/vector.hpp"
 #include <algorithm>
-#include <cstdint>
 #include <limits>
 #include <memory>
 #include <span>

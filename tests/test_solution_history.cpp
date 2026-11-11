@@ -1,8 +1,6 @@
 #include "core/csr_ops.hpp"
-#include "core/vector_ops.hpp"
-#include "solver/solve.hpp"
-
 #include "core/vector.hpp"
+#include "solver/solve.hpp"
 #include <cmath>
 #include <gtest/gtest.h>
 

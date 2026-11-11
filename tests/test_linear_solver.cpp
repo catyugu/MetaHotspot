@@ -1,5 +1,4 @@
 #include "core/csr_ops.hpp"
-#include "core/vector_ops.hpp"
 #include "linear/solver.hpp"
 #include "solver/solve.hpp"
 #include <cmath>

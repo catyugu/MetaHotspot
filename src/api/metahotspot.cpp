@@ -10,7 +10,6 @@
 #include "core/vector.hpp"
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <optional>

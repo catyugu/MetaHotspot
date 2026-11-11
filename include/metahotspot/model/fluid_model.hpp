@@ -1,8 +1,7 @@
 #pragma once
 
-#include "model/discrete_mesh.hpp"
-
 #include "core/vector.hpp"
+#include "model/types.hpp"
 #include <variant>
 
 namespace mhs::model {
