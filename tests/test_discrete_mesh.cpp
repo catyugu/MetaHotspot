@@ -225,6 +225,8 @@ TEST(DiscreteMesh, InvalidSurfaceRegionsAreRejectedByCppCompiler)
         {Axis::X, nan, {0, 1, 0, 1}},
         {Axis::X, 0, {0, nan, 0, 1}},
         {Axis::X, 0, {1, 0, 0, 1}},
+        // Deliberately exercise rejection of an unnamed value of this uint8_t enum.
+        // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
         {static_cast<Axis>(3), 0, {0, 1, 0, 1}},
     };
     for (const auto& region : invalid) {

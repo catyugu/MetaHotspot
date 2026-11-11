@@ -39,6 +39,18 @@ jobs:
           find src include tests apps -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print0 | xargs -0 clang-format --dry-run --Werror
           ruff check python .github/scripts
           ruff format --check python .github/scripts
+      - uses: actions/cache@v6
+        with:
+          path: ${{ env.CPM_SOURCE_CACHE }}
+          key: cpm-${{ runner.os }}-${{ hashFiles('cmake/Dependencies.cmake') }}
+          restore-keys: cpm-${{ runner.os }}-
+      - name: Configure compilation database
+        env:
+          CC: clang-18
+          CXX: clang++-18
+        run: cmake -S . -B build-lint -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMHS_INSTALL=OFF
+      - name: Check clang-tidy
+        run: python .github/scripts/check_clang_tidy.py
 
   linux:
     runs-on: ubuntu-latest

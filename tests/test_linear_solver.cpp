@@ -24,7 +24,7 @@ namespace {
     {
         mhs::core::CSRMatrix<double> A(n, n);
         mhs::core::Vector<mhs::core::Triplet<double>> triplets;
-        triplets.reserve(static_cast<std::size_t>(3 * n));
+        triplets.reserve(3 * static_cast<std::size_t>(n));
         for (int i = 0; i < n; ++i) {
             triplets.emplace_back(i, i, 2.0);
             if (i > 0)

@@ -88,8 +88,8 @@ namespace mhs::solver {
         };
     }
 
-    bool nonlinear_solve(LinearSystemProvider ls_provider, core::Vector<double>& state, linear::SolverPtr& solver,
-        const NonLinearConfig& cfg)
+    bool nonlinear_solve(const LinearSystemProvider& ls_provider, core::Vector<double>& state,
+        linear::SolverPtr& solver, const NonLinearConfig& cfg)
     {
         const double omega = cfg.underrelaxation > 0.0 ? cfg.underrelaxation : 1.0;
         const double rel_tol = cfg.relative_tolerance, abs_tol = cfg.absolute_tolerance;

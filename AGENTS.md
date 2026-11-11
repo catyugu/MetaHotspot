@@ -31,7 +31,7 @@ python -m pip install dist/*.whl
 python -m pytest python/tests
 ```
 
-- **Formatting and lint**: GitHub Actions checks clang-format for `src`, `include` and `tests`, and ruff for `python` and `.github/scripts`. Local formatting and tests are optional development tools; no commit hook or local CI acceptance is required.
+- **Formatting and lint**: GitHub Actions checks clang-format and clang-tidy for project C++ code (`src`, `include`, `tests`, `apps`), and ruff for `python` and `.github/scripts`. Tools and the clang-tidy binary version are pinned in `pyproject.toml`; see [.github/CI.md](.github/CI.md) for the local clang-tidy command. Local formatting and tests are optional development tools; no commit hook or local CI acceptance is required.
 
 - **Versions**: the library version is defined once, as `MHS_VERSION_*` macros in `include/metahotspot/metahotspot_c_api.h`; CMake and the Python package derive from it.
 

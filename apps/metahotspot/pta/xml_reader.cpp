@@ -316,21 +316,21 @@ namespace mhs::app::pta {
                         read_double_member(val, "A", de.amplitude);
                         read_double_member(val, "Alpha", de.alpha);
                         read_double_member(val, "Beta", de.beta);
-                        fn = std::move(de);
+                        fn = de;
                     }
                     else if (type_str.find("GaussFunction") != std::string::npos) {
                         mhs::model::GaussFunctionSpec g;
                         read_double_member(val, "A", g.amplitude);
                         read_double_member(val, "Tau", g.tau);
                         read_double_member(val, "X0", g.center);
-                        fn = std::move(g);
+                        fn = g;
                     }
                     else if (type_str.find("SineFunction") != std::string::npos) {
                         mhs::model::SineFunctionSpec s;
                         read_double_member(val, "A", s.amplitude);
                         read_double_member(val, "Omega", s.angular_frequency);
                         read_double_member(val, "Phi", s.phase);
-                        fn = std::move(s);
+                        fn = s;
                     }
                     else if (type_str.find("PieceWiseFunction") != std::string::npos) {
                         mhs::model::PiecewiseFunctionSpec pw;

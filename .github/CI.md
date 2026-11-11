@@ -99,10 +99,34 @@ successes that never exercise the AMG solver.
 
 ## Formatting and lint
 
-The independent lint job runs clang-format in check mode for `src`, `include` and
-`tests`, plus ruff lint and format checks for `python` and `.github/scripts`,
-using the pinned development tools from `pyproject.toml`. These checks run once
-per workflow and never rewrite sources or the Git index.
+The independent lint job runs clang-format for `src`, `include`, `tests` and
+`apps`, ruff lint and format checks for `python` and `.github/scripts`, and
+clang-tidy for all project translation units and their project headers. Tools
+are pinned in `pyproject.toml`. Because PyPI's clang-tidy wheels skip 21.1.8,
+the pinned `clang-tools` installer downloads that exact binary and its resource
+headers; the check script rejects a different version.
+
+The root `.clang-tidy` selects static analyzer, bugprone, performance and focused
+cleanup checks, following [LLVM/MLIR's per-check configuration](https://github.com/llvm/llvm-project/blob/main/mlir/.clang-tidy).
+`bugprone-easily-swappable-parameters` is excluded because geometry and numerical
+APIs intentionally take adjacent coordinates or coefficients of the same type;
+`performance-enum-size` is excluded because enum storage is part of the data
+layout. All enabled diagnostics fail lint. Dependency sources are excluded and
+system headers are not diagnosed.
+
+To reproduce clang-tidy after installing the `dev` dependency group (Python 3.11+
+and a native Clang toolchain with OpenMP):
+
+```bash
+CC=clang CXX=clang++ cmake -S . -B build-lint -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMHS_INSTALL=OFF
+python .github/scripts/check_clang_tidy.py
+```
+
+CMake exports `compile_commands.json` with tests, CLI and the C API enabled.
+The lint job configures with Clang 18 from the Ubuntu image; clang-tidy itself is
+21.1.8. Optional MKL code requires a separate `MHS_USE_MKL=ON` configuration and
+an installed MKL. Checks run once per workflow and never rewrite sources or the
+Git index.
 
 All CI-specific scripts and acceptance policy live under `.github/` and are
 excluded from the sdist. GitHub Actions runs artifact acceptance; contributors

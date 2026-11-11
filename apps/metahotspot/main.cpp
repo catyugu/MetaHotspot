@@ -18,7 +18,7 @@ int main(int argc, char* argv[])
         return 0;
     }
     if (cli.status == mhs::app::cli::ParseStatus::Error || !cli.options.has_value()) {
-        std::cerr << cli.message << std::endl;
+        std::cerr << cli.message << '\n';
         std::cerr << "\n" << mhs::app::cli::usage_text(cli.program_name);
         return 1;
     }

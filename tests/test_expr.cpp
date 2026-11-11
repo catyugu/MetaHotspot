@@ -107,7 +107,7 @@ namespace {
         const int num_threads = 16;
         const int num_iterations = 10000;
 
-        mhs::core::Vector<double> results(num_threads * num_iterations, 0.0);
+        mhs::core::Vector<double> results(static_cast<std::size_t>(num_threads) * num_iterations, 0.0);
         mhs::core::Vector<std::thread> threads;
 
         for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
@@ -157,7 +157,7 @@ namespace {
         const int num_threads = 16;
         const int num_iterations = 5000;
 
-        mhs::core::Vector<double> results(num_threads * num_iterations, 0.0);
+        mhs::core::Vector<double> results(static_cast<std::size_t>(num_threads) * num_iterations, 0.0);
         mhs::core::Vector<std::thread> threads;
 
         for (int thread_id = 0; thread_id < num_threads; ++thread_id) {
@@ -169,7 +169,7 @@ namespace {
                     double T = 300.0 + thread_id;
                     double t_time = 1.0 + i * 0.1;
 
-                    int expr_idx = (thread_id + i) % dict.size();
+                    const auto expr_idx = (thread_id + i) % dict.size();
                     FieldContext ctx {x, y, z, T, t_time};
 
                     results[thread_id * num_iterations + i] = dict[expr_idx].eval(ctx);
@@ -189,7 +189,7 @@ namespace {
                 double T = 300.0 + thread_id;
                 double t_time = 1.0 + i * 0.1;
 
-                int expr_idx = (thread_id + i) % dict.size();
+                const auto expr_idx = (thread_id + i) % dict.size();
                 double expected = 0.0;
 
                 if (expr_idx == 0)

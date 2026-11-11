@@ -20,7 +20,7 @@ namespace mhs::solver {
     /// until the next provider call.
     using LinearSystemProvider = std::function<LinearSystemView(std::span<const double>)>;
 
-    bool nonlinear_solve(LinearSystemProvider ls_provider, mhs::core::Vector<double>& state,
+    bool nonlinear_solve(const LinearSystemProvider& ls_provider, mhs::core::Vector<double>& state,
         mhs::linear::SolverPtr& solver, const NonLinearConfig& cfg = {});
 
 } // namespace mhs::solver

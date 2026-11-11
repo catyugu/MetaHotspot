@@ -1,0 +1,30 @@
+# Select checks as LLVM/MLIR does, without imposing another project's naming or
+# API style: https://github.com/llvm/llvm-project/blob/main/mlir/.clang-tidy
+Checks: >-
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  performance-*,
+  -performance-enum-size,
+  misc-redundant-expression,
+  misc-static-assert,
+  misc-uniqueptr-reset-release,
+  misc-unused-using-decls,
+  modernize-use-bool-literals,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  modernize-use-nullptr,
+  modernize-use-override,
+  readability-container-size-empty,
+  readability-misleading-indentation,
+  readability-redundant-control-flow,
+  readability-redundant-smartptr-get,
+  readability-simplify-boolean-expr
+# Diagnose project headers, including component-internal and CLI headers.
+HeaderFilterRegex: '(^|/)(include/metahotspot|src|apps/metahotspot|tests)/'
+WarningsAsErrors: '*'
+SystemHeaders: false
+FormatStyle: file
+# Allow a compilation database generated with GCC's warning flags.
+ExtraArgs: ['-Wno-unknown-warning-option']

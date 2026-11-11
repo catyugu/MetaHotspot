@@ -158,7 +158,7 @@ namespace {
 
         auto compiled = mhs::expression::parse("singleppc(t)", sym);
         FieldContext ctx {};
-        for (double t = -20.0; t <= 20.0; t += 5.0) {
+        for (int t = -20; t <= 20; t += 5) {
             ctx.t = t;
             EXPECT_DOUBLE_EQ(compiled.eval(ctx), 42.0);
         }

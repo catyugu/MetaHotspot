@@ -17,7 +17,12 @@ Homepage = "https://github.com/catyugu/MetaHotspot"
 
 # Pinned development tools, also used by the CI formatting and lint check.
 [dependency-groups]
-dev = ["clang-format==21.1.8", "ruff==0.17.1", "pytest==8.4.2"]
+dev = ["clang-format==21.1.8", "clang-tools==2.0.0", "ruff==0.17.1", "pytest==8.4.2"]
+
+# PyPI's clang-tidy wheels skip 21.1.8. clang-tools installs the exact upstream
+# binary; .github/scripts/check_clang_tidy.py verifies it before checking code.
+[tool.metahotspot.clang-tidy]
+version = "21.1.8"
 
 # The wheel ships the ctypes-loaded C API library built by this same CMake
 # project, so `pip install .` produces a working package; the tests and the

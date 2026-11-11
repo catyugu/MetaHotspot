@@ -62,9 +62,9 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
     // is shared by all 8 cells. The node is at the geometric center
     // of the 8 cell centers, so all distances are equal,
     // and weighted average equals arithmetic mean.
-    int node_ny = (model.output.cartesian_shape[1] - 1) + 1;
-    int node_nz = (model.output.cartesian_shape[2] - 1) + 1;
-    int interior_node = 1 * node_ny * node_nz + 1 * node_nz + 1;
+    const auto node_ny = model.output.cartesian_shape[1];
+    const auto node_nz = model.output.cartesian_shape[2];
+    const auto interior_node = node_ny * node_nz + node_nz + 1;
 
     // The 8 cells are at (0,0,0),(1,0,0),(0,1,0),(1,1,0),
     //                    (0,0,1),(1,0,1),(0,1,1),(1,1,1)
@@ -198,10 +198,10 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> cell_T(N, 400.0);
 
-    int node_ny = (model.output.cartesian_shape[1] - 1) + 1;
-    int node_nz = (model.output.cartesian_shape[2] - 1) + 1;
+    const auto node_ny = model.output.cartesian_shape[1];
+    const auto node_nz = model.output.cartesian_shape[2];
     // z=0 面的中心节点 (vx=1, vy=1, vz=0)
-    int node_idx = 1 * node_ny * node_nz + 1 * node_nz + 0;
+    const auto node_idx = node_ny * node_nz + node_nz;
 
     // t=0 时刻：500 + 100*0 = 500
     auto node_T_0 = test_pta::interpolate_cell_to_node(model, cell_T, 0.0);
