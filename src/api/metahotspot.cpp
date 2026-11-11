@@ -143,8 +143,8 @@ template <typename Boundary> static void _add_thermal_boundary(
     m->def.thermal_boundaries.push_back({_copy_surface_regions(regions, n_regions), std::move(condition)});
 }
 
-static void _add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    mhs::model::FluidBoundaryCondition condition)
+static void _add_fluid_boundary(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, mhs::model::FluidBoundaryCondition condition)
 {
     if (!n_regions)
         throw std::invalid_argument("surface regions must not be empty");
@@ -480,16 +480,17 @@ MHS_API mhs_status_t mhs_model_add_pressure_inlet(mhs_model_t* m, const mhs_surf
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_mass_flow_inlet(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    double mass_flow_rate, const double* inlet_temperature)
+MHS_API mhs_status_t mhs_model_add_mass_flow_inlet(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, double mass_flow_rate,
+    const double* inlet_temperature)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
     MHS_TRY({
         if (!std::isfinite(mass_flow_rate))
             throw std::invalid_argument("mass flow inlet must have finite mass flow rate");
-        _add_fluid_boundary(m, regions, n_regions,
-            mhs::model::MassFlowInlet {mass_flow_rate, _inlet_temperature(inlet_temperature)});
+        _add_fluid_boundary(
+            m, regions, n_regions, mhs::model::MassFlowInlet {mass_flow_rate, _inlet_temperature(inlet_temperature)});
     });
 }
 

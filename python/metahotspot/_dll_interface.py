@@ -112,7 +112,11 @@ _CORE_FUNC_SIGS = [
         I32,
         [P(MhsModel), P(MhsSurfaceRegion), Size, F64, P(F64)],
     ),
-    ("mhs_model_add_pressure_outlet", I32, [P(MhsModel), P(MhsSurfaceRegion), Size, F64]),
+    (
+        "mhs_model_add_pressure_outlet",
+        I32,
+        [P(MhsModel), P(MhsSurfaceRegion), Size, F64],
+    ),
     ("mhs_model_compile", I32, [P(MhsModel), P(P(MhsCompiled))]),
     ("mhs_compiled_destroy", None, [P(MhsCompiled)]),
     ("mhs_compiled_get_info", I32, [P(MhsCompiled), P(MhsCompiledInfo)]),
