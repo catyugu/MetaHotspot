@@ -99,15 +99,13 @@ namespace mhs::compiler::fluid {
         constexpr std::size_t no_pump = std::numeric_limits<std::size_t>::max();
         mhs::core::Vector<std::size_t> pump_dof(boundaries.size(), no_pump);
         std::size_t system_size = n;
-        for (const auto& boundary : boundaries) {
-            const auto* inlet = std::get_if<PressureInlet>(&boundary.condition);
-            if (inlet && (!std::isfinite(inlet->pump_resistance) || inlet->pump_resistance < 0))
-                throw std::invalid_argument("pressure inlet PumpResistance must be finite and nonnegative");
-        }
-        for (const auto facet_id : projected) {
-            const auto tag = facet_boundary_tags[facet_id];
+        for (std::size_t tag = 0; tag < boundaries.size(); ++tag) {
             const auto* inlet = std::get_if<PressureInlet>(&boundaries[tag].condition);
-            if (inlet && inlet->pump_resistance > 0 && pump_dof[tag] == no_pump)
+            if (!inlet)
+                continue;
+            if (!std::isfinite(inlet->pump_resistance) || inlet->pump_resistance < 0)
+                throw std::invalid_argument("pressure inlet PumpResistance must be finite and nonnegative");
+            if (inlet->pump_resistance > 0 && total_area[tag] > 0)
                 pump_dof[tag] = system_size++;
         }
         mhs::core::detail::checked_sparse_size(system_size);
@@ -149,15 +147,10 @@ namespace mhs::compiler::fluid {
                         const double g = facet.area() * mobility[i] / distance;
                         boundary_conductance[t] = g;
                         diagonal[i] += g;
-                        if constexpr (std::is_same_v<T, mhs::model::PressureInlet>) {
-                            if (pump_dof[tag] != no_pump) {
-                                const auto port = pump_dof[tag];
-                                diagonal[port] += g;
-                                entries.emplace_back(static_cast<SparseIndex>(i), static_cast<SparseIndex>(port), -g);
-                                entries.emplace_back(static_cast<SparseIndex>(port), static_cast<SparseIndex>(i), -g);
-                            }
-                            else
-                                rhs[i] += g * bc.pressure;
+                        if (const auto port = pump_dof[tag]; port != no_pump) {
+                            diagonal[port] += g;
+                            entries.emplace_back(static_cast<SparseIndex>(i), static_cast<SparseIndex>(port), -g);
+                            entries.emplace_back(static_cast<SparseIndex>(port), static_cast<SparseIndex>(i), -g);
                         }
                         else
                             rhs[i] += g * bc.pressure;
@@ -166,12 +159,13 @@ namespace mhs::compiler::fluid {
                 boundaries[tag].condition);
         }
         for (std::size_t tag = 0; tag < boundaries.size(); ++tag) {
-            if (pump_dof[tag] == no_pump)
+            const auto port = pump_dof[tag];
+            if (port == no_pump)
                 continue;
             const auto& inlet = std::get<PressureInlet>(boundaries[tag].condition);
             const double g = 1.0 / inlet.pump_resistance;
-            diagonal[pump_dof[tag]] += g;
-            rhs[pump_dof[tag]] += g * inlet.pressure;
+            diagonal[port] += g;
+            rhs[port] += g * inlet.pressure;
         }
         if (!reference)
             throw std::runtime_error(
@@ -204,10 +198,8 @@ namespace mhs::compiler::fluid {
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
                         return -bc.mass_flow_rate * facet.area() / total_area[tag];
                     else {
-                        double boundary_pressure = bc.pressure;
-                        if constexpr (std::is_same_v<T, mhs::model::PressureInlet>)
-                            if (pump_dof[tag] != no_pump)
-                                boundary_pressure = pressure[pump_dof[tag]];
+                        const auto port = pump_dof[tag];
+                        const double boundary_pressure = port == no_pump ? bc.pressure : pressure[port];
                         return rho[i] * boundary_conductance[t] * (pressure[i] - boundary_pressure);
                     }
                 },
