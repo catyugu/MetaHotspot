@@ -78,10 +78,11 @@ def test_model_native_boundary_and_function_calls():
         "periodic", np.array([0.0, 0.001]), 1.0
     )
     model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
-    with pytest.raises(MetaHotspotError, match="invalid fluid boundary kind"):
-        model.add_fluid_boundary(
-            [SurfaceRegion(Axis.Z, 0.0, 0.0, 1.0, 0.0, 1.0)], 0, 0.0
-        )
+    model.add_pressure_inlet(region, 100.0, inlet_temperature=300.0)
+    model.add_mass_flow_inlet(region, 1e-6, inlet_temperature=300.0)
+    model.add_pressure_outlet(region, 0.0)
+    with pytest.raises(MetaHotspotError, match="PumpResistance"):
+        model.add_pressure_inlet(region, 100.0, pump_resistance=-1.0)
 
     compiled = model.compile()
     assert compiled.cell_count == 1

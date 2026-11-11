@@ -143,6 +143,21 @@ template <typename Boundary> static void _add_thermal_boundary(
     m->def.thermal_boundaries.push_back({_copy_surface_regions(regions, n_regions), std::move(condition)});
 }
 
+static void _add_fluid_boundary(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, mhs::model::FluidBoundaryCondition condition)
+{
+    if (!n_regions)
+        throw std::invalid_argument("surface regions must not be empty");
+    m->def.fluid_boundaries.push_back({_copy_surface_regions(regions, n_regions), std::move(condition)});
+}
+
+static std::optional<double> _inlet_temperature(const double* temperature)
+{
+    if (temperature && !std::isfinite(*temperature))
+        throw std::invalid_argument("inlet temperature must be finite");
+    return temperature ? std::optional<double>(*temperature) : std::nullopt;
+}
+
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
 {
     switch (t) {
@@ -450,31 +465,43 @@ MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name,
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    mhs_fluid_bc_t kind, double value, const double* inlet_temperature)
+MHS_API mhs_status_t mhs_model_add_pressure_inlet(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
+    double pressure, const double* inlet_temperature, double pump_resistance)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
     MHS_TRY({
-        if (!n_regions || !std::isfinite(value) || (inlet_temperature && !std::isfinite(*inlet_temperature)))
-            throw std::invalid_argument("fluid boundary requires regions and finite values");
-        mhs::model::FluidBoundarySpec fb;
-        fb.regions = _copy_surface_regions(regions, n_regions);
-        const auto temperature = inlet_temperature ? std::optional<double>(*inlet_temperature) : std::nullopt;
-        switch (kind) {
-        case MHS_FLUID_PRESSURE_INLET:
-            fb.condition = mhs::model::PressureInlet {value, temperature};
-            break;
-        case MHS_FLUID_MASS_FLOW_INLET:
-            fb.condition = mhs::model::MassFlowInlet {value, temperature};
-            break;
-        case MHS_FLUID_OUTLET:
-            fb.condition = mhs::model::PressureOutlet {value};
-            break;
-        default:
-            throw std::invalid_argument("invalid fluid boundary kind");
-        }
-        m->def.fluid_boundaries.push_back(std::move(fb));
+        if (!std::isfinite(pressure))
+            throw std::invalid_argument("pressure inlet must have finite pressure");
+        if (!std::isfinite(pump_resistance) || pump_resistance < 0)
+            throw std::invalid_argument("PumpResistance must be finite and nonnegative");
+        _add_fluid_boundary(m, regions, n_regions,
+            mhs::model::PressureInlet {pressure, _inlet_temperature(inlet_temperature), pump_resistance});
+    });
+}
+
+MHS_API mhs_status_t mhs_model_add_mass_flow_inlet(mhs_model_t* m, const mhs_surface_region_t* regions,
+    size_t n_regions, double mass_flow_rate, const double* inlet_temperature)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(regions);
+    MHS_TRY({
+        if (!std::isfinite(mass_flow_rate))
+            throw std::invalid_argument("mass flow inlet must have finite mass flow rate");
+        _add_fluid_boundary(
+            m, regions, n_regions, mhs::model::MassFlowInlet {mass_flow_rate, _inlet_temperature(inlet_temperature)});
+    });
+}
+
+MHS_API mhs_status_t mhs_model_add_pressure_outlet(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, double pressure)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(regions);
+    MHS_TRY({
+        if (!std::isfinite(pressure))
+            throw std::invalid_argument("pressure outlet must have finite pressure");
+        _add_fluid_boundary(m, regions, n_regions, mhs::model::PressureOutlet {pressure});
     });
 }
 

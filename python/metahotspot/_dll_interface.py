@@ -103,9 +103,19 @@ _CORE_FUNC_SIGS = [
     ),
     ("mhs_model_add_point_probe", I32, [P(MhsModel), Text, P(F64)]),
     (
-        "mhs_model_add_fluid_boundary",
+        "mhs_model_add_pressure_inlet",
         I32,
-        [P(MhsModel), P(MhsSurfaceRegion), Size, I32, F64, P(F64)],
+        [P(MhsModel), P(MhsSurfaceRegion), Size, F64, P(F64), F64],
+    ),
+    (
+        "mhs_model_add_mass_flow_inlet",
+        I32,
+        [P(MhsModel), P(MhsSurfaceRegion), Size, F64, P(F64)],
+    ),
+    (
+        "mhs_model_add_pressure_outlet",
+        I32,
+        [P(MhsModel), P(MhsSurfaceRegion), Size, F64],
     ),
     ("mhs_model_compile", I32, [P(MhsModel), P(P(MhsCompiled))]),
     ("mhs_compiled_destroy", None, [P(MhsCompiled)]),
