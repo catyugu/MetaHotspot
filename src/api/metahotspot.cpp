@@ -480,9 +480,8 @@ MHS_API mhs_status_t mhs_model_add_pressure_inlet(mhs_model_t* m, const mhs_surf
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_mass_flow_inlet(
-    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, double mass_flow_rate,
-    const double* inlet_temperature)
+MHS_API mhs_status_t mhs_model_add_mass_flow_inlet(mhs_model_t* m, const mhs_surface_region_t* regions,
+    size_t n_regions, double mass_flow_rate, const double* inlet_temperature)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
