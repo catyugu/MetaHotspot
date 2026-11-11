@@ -88,9 +88,6 @@ enum { MHS_MATERIAL_SOLID = 0, MHS_MATERIAL_FLUID = 1 };
 typedef int32_t mhs_solver_type_t;
 enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
 
-typedef int32_t mhs_fluid_bc_t;
-enum { MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
-
 typedef int32_t mhs_status_t;
 enum {
     MHS_OK = 0,
@@ -305,10 +302,15 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 
 /** Named point probe, with three finite SI coordinates copied into the model. */
 MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3]);
-/* Same region layout as thermal boundaries. NULL inlet_temperature selects the
- * model reference temperature; outlets ignore it. value is pressure (Pa), or mass flow (kg/s). */
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    mhs_fluid_bc_t kind, double value, const double* inlet_temperature);
+/** All fluid boundaries use nonempty SI surface regions, as for thermal boundaries.
+ * A NULL inlet_temperature selects the model reference temperature. Pump resistance
+ * is a nonnegative lumped pressure-drop coefficient (Pa s/m^3) for the total inlet flow. */
+MHS_API mhs_status_t mhs_model_add_pressure_inlet(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
+    double pressure, const double* inlet_temperature, double pump_resistance);
+MHS_API mhs_status_t mhs_model_add_mass_flow_inlet(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
+    double mass_flow_rate, const double* inlet_temperature);
+MHS_API mhs_status_t mhs_model_add_pressure_outlet(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, double pressure);
 
 /* ------------------------------------------------------------------ */
 /*  Compilation                                                        */

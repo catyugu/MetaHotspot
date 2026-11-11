@@ -49,7 +49,7 @@ with Model() as model:
 
 `SurfaceRegion` 表示一个连续矩形，切向坐标顺序为 X→(y,z)、Y→(x,z)、Z→(x,y)。
 多个矩形直接组成区域序列。默认热边界通过 `set_default_*` 指定；空区域调用报错。
-流体边界同样使用 `add_fluid_boundary(regions, kind, value, inlet_temperature=None)`。
+流体边界分别使用 `add_pressure_inlet(regions, pressure, inlet_temperature=None, pump_resistance=0.0)`、`add_mass_flow_inlet(regions, mass_flow_rate, inlet_temperature=None)` 和 `add_pressure_outlet(regions, pressure)`；C ABI 提供对应的 `mhs_model_add_pressure_inlet`、`mhs_model_add_mass_flow_inlet` 和 `mhs_model_add_pressure_outlet`。泵阻单位为 Pa·s/m³，作用于整个入口总流量。
 
 `mhs_model_t` 是可变建模入口，保存模型定义与点探针；study 在求解调用时提供。`compile` 创建独立、
 不可变的 compiled handle。材料通过 `MaterialKind::{Solid, Fluid}` 显式分类；

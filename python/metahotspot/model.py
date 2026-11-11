@@ -12,7 +12,7 @@ import numpy as np
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot._lib import get_dll
-from metahotspot.enums import Axis, FluidBC, GeometryOp, MaterialKind, StudyType
+from metahotspot.enums import Axis, GeometryOp, MaterialKind, StudyType
 from metahotspot.types import MhsModel, MhsStudy, MhsSurfaceRegion, Point2D, Rect2D
 
 if TYPE_CHECKING:
@@ -346,26 +346,59 @@ class Model(OwnedHandle):
             ctx="add_point_probe",
         )
 
-    def add_fluid_boundary(
+    def add_pressure_inlet(
         self,
         regions: Sequence[SurfaceRegion],
-        kind: FluidBC,
-        value: float,
+        pressure: float,
         inlet_temperature: float | None = None,
+        pump_resistance: float = 0.0,
     ) -> None:
-        """Apply a hydraulic condition on nonempty surface regions."""
+        """Set an inlet pressure (Pa) and optional series resistance (Pa s/m³)."""
         native, count = _surface_regions(regions)
         temperature = (
             None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
         )
         self._call(
-            "mhs_model_add_fluid_boundary",
+            "mhs_model_add_pressure_inlet",
             native,
             count,
-            int(kind),
-            value,
+            pressure,
             None if temperature is None else ctypes.byref(temperature),
-            ctx="add_fluid_boundary",
+            pump_resistance,
+            ctx="add_pressure_inlet",
+        )
+
+    def add_mass_flow_inlet(
+        self,
+        regions: Sequence[SurfaceRegion],
+        mass_flow_rate: float,
+        inlet_temperature: float | None = None,
+    ) -> None:
+        """Set a mass-flow inlet (kg/s) with optional inlet temperature (K)."""
+        native, count = _surface_regions(regions)
+        temperature = (
+            None if inlet_temperature is None else ctypes.c_double(inlet_temperature)
+        )
+        self._call(
+            "mhs_model_add_mass_flow_inlet",
+            native,
+            count,
+            mass_flow_rate,
+            None if temperature is None else ctypes.byref(temperature),
+            ctx="add_mass_flow_inlet",
+        )
+
+    def add_pressure_outlet(
+        self, regions: Sequence[SurfaceRegion], pressure: float
+    ) -> None:
+        """Set an outlet pressure (Pa)."""
+        native, count = _surface_regions(regions)
+        self._call(
+            "mhs_model_add_pressure_outlet",
+            native,
+            count,
+            pressure,
+            ctx="add_pressure_outlet",
         )
 
     # ---- Compile ----
