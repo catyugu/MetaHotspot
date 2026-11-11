@@ -196,9 +196,10 @@ TEST(FluidModuleTest, PressureInletPumpResistanceIsLumpedAcrossFacetSplits)
     const auto unrestricted = test_pta::build_model(d);
     const double q0 = total_inflow(unrestricted);
     ASSERT_GT(q0, 0);
-    constexpr double resistance = 40.0;
+    // Match the baseline hydraulic resistance so the pump halves the flow.
+    const double resistance = 200.0 / q0;
     std::get<PressureInlet>(d.model.fluid_boundaries.front().condition).pump_resistance = resistance;
-    const double expected = 200.0 / (200.0 / q0 + resistance);
+    const double expected = q0 / 2;
     const auto restricted = test_pta::build_model(d);
     EXPECT_NEAR(total_inflow(restricted), expected, expected * 1e-7);
 
