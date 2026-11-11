@@ -128,7 +128,7 @@ class Model(OwnedHandle):
             ctx="set_reference_temperature",
         )
 
-    def set_cartesian_mesh(
+    def set_conformal_mesh(
         self,
         x: Sequence[float] | np.ndarray,
         y: Sequence[float] | np.ndarray,
@@ -141,9 +141,42 @@ class Model(OwnedHandle):
                 "each mesh axis needs a 1D array with at least two vertices"
             )
         self._call(
-            "mhs_model_set_cartesian_mesh",
+            "mhs_model_set_conformal_mesh",
             *[v for a in arrays for v in (a.size, _double_ptr(a))],
-            ctx="set_cartesian_mesh",
+            ctx="set_conformal_mesh",
+        )
+
+    def set_nonconformal_mesh(self, cell_min, cell_max, connections) -> None:
+        """Set explicit Cartesian cells and all touching CellId pairs (SI metres).
+
+        Bounds have shape (N,3); connections have shape (E,2). The compiler
+        rejects overlaps, duplicate/missing contacts and cells cut by materials.
+        XML import of this mesh representation is not supported.
+        """
+        lower = np.ascontiguousarray(cell_min, dtype=np.float64)
+        upper = np.ascontiguousarray(cell_max, dtype=np.float64)
+        pairs = np.asarray(connections)
+        if lower.ndim != 2 or lower.shape[1] != 3 or upper.shape != lower.shape:
+            raise ValueError("cell_min and cell_max must have matching (N,3) shapes")
+        if pairs.size == 0:
+            pairs = np.empty((0, 2), dtype=np.uint32)
+        if pairs.ndim != 2 or pairs.shape[1] != 2:
+            raise ValueError("connections must have shape (E,2)")
+        if (
+            not np.issubdtype(pairs.dtype, np.integer)
+            or np.any(pairs < 0)
+            or np.any(pairs >= len(lower))
+        ):
+            raise ValueError("connections must contain valid integer CellIds")
+        pairs = np.ascontiguousarray(pairs, dtype=np.uint32)
+        self._call(
+            "mhs_model_set_nonconformal_mesh",
+            len(lower),
+            _double_ptr(lower),
+            _double_ptr(upper),
+            len(pairs),
+            pairs.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
+            ctx="set_nonconformal_mesh",
         )
 
     def add_material(

@@ -517,10 +517,23 @@ namespace mhs::app::pta {
             }
         }
 
+        const auto validate_mesh_elements = [](const XMLElement* mesh) {
+            for (const auto* child = mesh->FirstChildElement(); child; child = child->NextSiblingElement()) {
+                std::string_view name(child->Name());
+                if (const auto colon = name.rfind(':'); colon != std::string_view::npos)
+                    name.remove_prefix(colon + 1);
+                if (name != "XArray" && name != "YArray" && name != "ZArray")
+                    throw std::invalid_argument("unsupported PTA mesh element '" + std::string(name)
+                        + "': XML input supports only conformal X/Y/Z arrays; construct NonConformalMesh "
+                          "programmatically");
+            }
+        };
+
         // Mesh vertex coordinates from Results -> a:anyType -> Mesh -> b:XArray/YArray/ZArray
         if (const XMLElement* results_elem = root->FirstChildElement("Results")) {
             if (const XMLElement* any_type = results_elem->FirstChildElement("a:anyType")) {
                 if (const XMLElement* mesh_elem = any_type->FirstChildElement("Mesh")) {
+                    validate_mesh_elements(mesh_elem);
                     if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
                         for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
@@ -544,6 +557,7 @@ namespace mhs::app::pta {
         }
         if (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()) {
             if (const XMLElement* generated_mesh = root->FirstChildElement("GeneratedMesh")) {
+                validate_mesh_elements(generated_mesh);
                 const auto read_vertices = [&](const char* axis, mhs::core::Vector<double>& vertices) {
                     const XMLElement* array = child_by_local_name(generated_mesh, axis);
                     if (!array)

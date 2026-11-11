@@ -183,7 +183,7 @@ def build_model(
         T_CHIP + T_INTERFACE + T_SPREADER, TOTAL_Z, NZ_SINK + 1, endpoint=True
     )[1:]
     z_verts = np.concatenate([z_chip, z_interface, z_spreader, z_sink])
-    m.set_cartesian_mesh(x=X_VERTS, y=Y_VERTS, z=z_verts)
+    m.set_conformal_mesh(x=X_VERTS, y=Y_VERTS, z=z_verts)
 
     # Material IDs and explicit SI volumes.
     silicon = m.add_material(

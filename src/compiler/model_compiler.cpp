@@ -139,10 +139,24 @@ namespace mhs::compiler {
         auto default_thermal_boundary
             = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
 
-        compile_conformal_mesh(model, mesh, definition.volumes);
-        for (const auto material : model.cell_material)
-            if (material >= model.material_table.size())
-                throw std::out_of_range("cell has no valid material assignment");
+        std::visit(
+            [&](const auto& spec) {
+                using T = std::decay_t<decltype(spec)>;
+                if constexpr (std::is_same_v<T, mhs::model::ConformalMeshSpec>)
+                    compile_conformal_mesh(model, spec, definition.volumes);
+                else
+                    compile_nonconformal_mesh(model, spec, definition.volumes);
+            },
+            mesh);
+        for (auto& probe : model.point_probes)
+            for (std::size_t c = 0; c < model.cells.size(); ++c) {
+                const auto cell = cell_geometry(model.mesh, static_cast<mhs::model::CellId>(c));
+                bool contains = true;
+                for (int a = 0; a < 3; ++a)
+                    contains = contains && probe.point[a] >= cell.min[a] && probe.point[a] <= cell.max[a];
+                if (contains)
+                    probe.cell = static_cast<mhs::model::CellId>(c);
+            }
 
         // Canonical geometric partition shared by all boundary physics.
         mhs::core::Vector<mhs::model::SurfaceRegion> cuts;
@@ -154,14 +168,13 @@ namespace mhs::compiler {
                 cuts.push_back(region);
                 fluid_regions.push_back({region, static_cast<SurfaceTag>(id)});
             }
-        refine_exterior_facets(model.discrete, cuts);
-        build_cell_facet_incidence(model.discrete);
+        refine_boundary_facets(model.boundary_facets, cuts);
 
-        model.facet_thermal_condition
-            = assign_exterior_regions(model.discrete, compiled_boundaries, default_thermal_boundary);
+        model.boundary_thermal_condition
+            = assign_boundary_regions(model.boundary_facets, compiled_boundaries, default_thermal_boundary);
 
-        // Hydraulic boundary assignments share the same canonical FacetIds.
-        auto fluid_tags = assign_exterior_regions(model.discrete, fluid_regions);
+        // Hydraulic boundary assignments share the same BoundaryFacetIds.
+        auto fluid_tags = assign_boundary_regions(model.boundary_facets, fluid_regions);
         mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_tags, initial_viscosity);
 
         return model;

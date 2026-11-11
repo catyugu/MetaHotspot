@@ -9,15 +9,16 @@
 #include <variant>
 
 namespace mhs::solver {
-    std::pair<double, double> interior_facet_resistances(
-        const mhs::model::Model& model, const mhs::model::Facet& facet, double k_minus, double k_plus)
+    std::pair<double, double> connection_resistances(const mhs::model::Model& model, mhs::model::Connection connection,
+        const mhs::model::CellGeometry& a, const mhs::model::CellGeometry& b, mhs::model::Axis normal, double k_minus,
+        double k_plus)
     {
-        const auto axis = static_cast<std::size_t>(facet.axis);
-        double minus = side_thermal_resistance(model.discrete.cells[facet.minus].size()[axis] / 2, k_minus);
-        double plus = side_thermal_resistance(model.discrete.cells[facet.plus].size()[axis] / 2, k_plus);
+        const auto axis = static_cast<std::size_t>(normal);
+        double minus = side_thermal_resistance(a.size()[axis] / 2, k_minus);
+        double plus = side_thermal_resistance(b.size()[axis] / 2, k_plus);
         const auto& fluid = model.fluid;
         if (!fluid.global_to_fluid.empty()) {
-            const auto fi = fluid.global_to_fluid[facet.minus], fj = fluid.global_to_fluid[facet.plus];
+            const auto fi = fluid.global_to_fluid[connection.a], fj = fluid.global_to_fluid[connection.b];
             if (fi != mhs::core::invalid_id && fj == mhs::core::invalid_id)
                 minus = fluid_film_resistance(fluid.interface_heat_transfer_factor[fi], k_minus);
             else if (fj != mhs::core::invalid_id && fi == mhs::core::invalid_id)

@@ -93,7 +93,7 @@ def build_current_detailed(x: np.ndarray, y: np.ndarray):
     model = metahotspot.Model()
     model.set_reference_temperature(AMBIENT_K)
     grid_mm = current_grid_axis_mm()
-    model.set_cartesian_mesh(grid_mm * 1e-3, grid_mm * 1e-3, grid_mm * 1e-3)
+    model.set_conformal_mesh(grid_mm * 1e-3, grid_mm * 1e-3, grid_mm * 1e-3)
     material_id = model.add_material(name, k, k, k, rho, c)
     body = model.add_volume(material_id)
     model.add_box(body, base_pos, np.array(base_pos) + base_size)

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/vector.hpp"
+#include "model/mesh.hpp"
 #include "model/types.hpp"
 #include <array>
 #include <cstdint>
@@ -14,13 +15,15 @@ namespace mhs::model {
 
     enum class GeometryOperation : uint8_t { Add, Subtract };
 
-    struct MeshSpec {
+    struct ConformalMeshSpec {
         mhs::core::Vector<double> x_vertices;
         mhs::core::Vector<double> y_vertices;
         mhs::core::Vector<double> z_vertices;
     };
 
-    // SI geometry. Later volumes override earlier ones; internal box faces must align with mesh planes.
+    using MeshSpec = std::variant<ConformalMeshSpec, NonConformalMesh>;
+
+    // SI geometry. Later volumes override earlier ones; effective material/domain interfaces must follow cell faces.
     struct BoxOperation {
         GeometryOperation operation = GeometryOperation::Add;
         std::array<double, 3> min {};

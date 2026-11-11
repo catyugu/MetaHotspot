@@ -20,7 +20,7 @@ from metahotspot.macromodel.geometry import CellGeometry
 
 def _build_operators(nx=2, ny=2, nz=3):
     model = metahotspot.Model()
-    model.set_cartesian_mesh(
+    model.set_conformal_mesh(
         np.linspace(0.0, float(nx) * 1e-3, nx + 1),
         np.linspace(0.0, float(ny) * 1e-3, ny + 1),
         np.linspace(0.0, float(nz) * 1e-3, nz + 1),

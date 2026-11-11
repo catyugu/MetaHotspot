@@ -1,8 +1,8 @@
 #pragma once
 
 #include "expression/expression.hpp"
-#include "model/discrete_mesh.hpp"
 #include "model/fluid_model.hpp"
+#include "model/mesh.hpp"
 #include "model/types.hpp"
 
 #include "core/vector.hpp"
@@ -33,7 +33,7 @@ namespace mhs::model {
         mhs::expression::CompiledExpression ambient_temperature;
     };
 
-    // Compiled laws are assigned independently to canonical exterior FacetIds.
+    // Compiled laws are assigned independently to exterior BoundaryFacetIds.
     using BoundaryCondition = std::variant<Dirichlet, Neumann, Convection>;
 
     // Midpoint quadrature on a physical source subvolume.
@@ -50,15 +50,21 @@ namespace mhs::model {
         CellId cell = mhs::core::invalid_id;
     };
 
-    struct Model {
-        DiscreteMesh discrete;
+    struct Cell {
+        MaterialId material = core::invalid_id;
+        bool is_fluid = false;
+    };
 
-        mhs::core::Vector<MaterialId> cell_material;
+    struct Model {
+        Mesh mesh;
+        core::Vector<Cell> cells;
+        core::Vector<BoundaryFacet> boundary_facets;
+
         mhs::core::Vector<MaterialProps> material_table;
         mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
         mhs::core::Vector<BoundaryCondition> boundary_conditions;
         mhs::core::Vector<SourceTerm> source_terms;
-        mhs::core::Vector<BoundaryConditionId> facet_thermal_condition; // by FacetId; invalid for interior facets
+        mhs::core::Vector<BoundaryConditionId> boundary_thermal_condition; // by BoundaryFacetId
         FluidModel fluid;
 
         double reference_temperature = 300.0;

@@ -144,28 +144,42 @@ def enumerate_interface_ports(model, cells, *, include_ambient=False) -> list[Fa
         int(f) for group in model.boundary_groups() for f in group.surface.facet_ids
     }
     by_key = {}
-    invalid = np.iinfo(fields.facet_plus.dtype).max
-    for fid, (minus, plus) in enumerate(
-        zip(fields.facet_minus, fields.facet_plus, strict=True)
-    ):
-        for cell, other, sign in (
-            (int(minus), int(plus), 1),
-            (int(plus), int(minus), -1),
-        ):
-            if cell == invalid or cell not in local or other in local:
-                continue
-            ambient = other == invalid and fid in ambient_faces
-            if ambient and not include_ambient:
-                continue
-            key = (int(fields.facet_axis[fid]), sign, ambient)
-            by_key.setdefault(key, []).append((local[cell], fid))
+    for fid, cell in enumerate(fields.boundary_owner):
+        cell = int(cell)
+        if cell not in local:
+            continue
+        ambient = fid in ambient_faces
+        if ambient and not include_ambient:
+            continue
+        key = (int(fields.boundary_axis[fid]), int(fields.boundary_side[fid]), ambient)
+        by_key.setdefault(key, []).append((local[cell], fields.boundary_bounds[fid]))
+    # Artificial cuts come from the native CellId connections, with rectangle
+    # intersections calculated only for contacts crossing this selected subset.
+    for a, b in model._full.connections():
+        a, b = int(a), int(b)
+        if (a in local) == (b in local):
+            continue
+        cell, other = (a, b) if a in local else (b, a)
+        touching = np.isclose(
+            fields.cell_max[cell], fields.cell_min[other], atol=1e-9, rtol=0
+        ) | np.isclose(fields.cell_min[cell], fields.cell_max[other], atol=1e-9, rtol=0)
+        lower = np.maximum(fields.cell_min[cell], fields.cell_min[other])
+        upper = np.minimum(fields.cell_max[cell], fields.cell_max[other])
+        overlap = upper - lower
+        positive_area = np.array(
+            [np.all(overlap[np.arange(3) != a] > 0) for a in range(3)]
+        )
+        axis = int(np.flatnonzero(touching & positive_area)[0])
+        direction = 1 if full.centers[cell, axis] < full.centers[other, axis] else -1
+        t1, t2 = _tangent_pair(axis)
+        rect = np.array([lower[t1], upper[t1], lower[t2], upper[t2]])
+        by_key.setdefault((axis, direction, False), []).append((local[cell], rect))
     ports = []
     for (axis, direction, ambient), entries in by_key.items():
         rows = np.asarray([r for r, _ in entries], dtype=np.int64)
-        facet_ids = np.asarray([f for _, f in entries], dtype=np.int64)
         fc = cells[rows]
         t1, t2 = _tangent_pair(axis)
-        rects = fields.facet_bounds[facet_ids]
+        rects = np.asarray([rect for _, rect in entries])
         distances = full.half_sizes[fc, axis]
         ports.append(
             FacePort(
@@ -580,7 +594,7 @@ def connect(
     paper's Section 5).  The shared-node block sees ``gl + gr`` and off-diagonal
     ``-gl``/``-gr``, so the whole system is symmetric PSD and identity coupling
     reproduces the monolithic solve.
-    Returns ``(K, C, rhs, left_order, right_order, interfacet_count)``.
+    Returns ``(K, C, rhs, left_order, right_order, interboundary_count)``.
     """
     areas, E_l, E_r, xi_l, xi_r, _li, _ri = common_patches(left_port, right_port)
     Vl, hl = left.interface_trace(left_port, E_l, xi_l)

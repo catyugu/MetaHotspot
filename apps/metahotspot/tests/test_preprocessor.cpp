@@ -11,11 +11,11 @@ using namespace mhs::compiler;
 enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 
 // Select a canonical exterior facet by its owner cell and outward direction.
-static FacetId find_boundary_facet(const Model& model, std::size_t cell_idx, FaceDir dir)
+static BoundaryFacetId find_boundary_facet(const Model& model, std::size_t cell_idx, FaceDir dir)
 {
-    for (auto id : model.discrete.incident_facets(static_cast<CellId>(cell_idx))) {
-        const auto& facet = model.discrete.facets[id];
-        if (facet.exterior() && static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
+    for (std::size_t id = 0; id < model.boundary_facets.size(); ++id) {
+        const auto& facet = model.boundary_facets[id];
+        if (facet.cell == cell_idx && static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
             && facet.outward_sign() == (static_cast<int>(dir) % 2 ? 1 : -1))
             return id;
     }
@@ -25,11 +25,12 @@ static FacetId find_boundary_facet(const Model& model, std::size_t cell_idx, Fac
 template <typename Condition>
 static const Condition* find_condition(const Model& model, std::size_t cell_idx, FaceDir dir)
 {
-    for (auto id : model.discrete.incident_facets(static_cast<CellId>(cell_idx))) {
-        const auto& facet = model.discrete.facets[id];
-        if (facet.exterior() && static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
+    for (std::size_t id = 0; id < model.boundary_facets.size(); ++id) {
+        const auto& facet = model.boundary_facets[id];
+        if (facet.cell == cell_idx && static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
             && facet.outward_sign() == (static_cast<int>(dir) % 2 ? 1 : -1))
-            if (auto* condition = std::get_if<Condition>(&model.boundary_conditions[model.facet_thermal_condition[id]]))
+            if (auto* condition
+                = std::get_if<Condition>(&model.boundary_conditions[model.boundary_thermal_condition[id]]))
                 return condition;
     }
     return nullptr;
@@ -91,9 +92,9 @@ static mhs::app::pta::Definition make_simple_io()
 TEST(PreprocessorTest, CartesianAdapterPreservesSIBounds)
 {
     const auto model = test_pta::build_model(make_simple_io());
-    ASSERT_EQ(model.discrete.cells.size(), 8u);
-    const auto& first = model.discrete.cells.front();
-    const auto& last = model.discrete.cells.back();
+    ASSERT_EQ(model.cells.size(), 8u);
+    const auto& first = cell_geometry(model.mesh, 0);
+    const auto& last = cell_geometry(model.mesh, static_cast<CellId>(model.cells.size() - 1));
     for (int a = 0; a < 3; ++a) {
         EXPECT_NEAR(first.min[a], 0, 1e-12);
         EXPECT_NEAR(first.max[a], 0.005, 1e-12);
@@ -103,15 +104,15 @@ TEST(PreprocessorTest, CartesianAdapterPreservesSIBounds)
 
 // Map an input-grid fixture index to a compiled cell by its lower corner.
 // These PTA test fixtures use millimeters; compiled cell geometry is in meters.
-static std::size_t input_cell(const Model& model, const mhs::model::MeshSpec& input, std::size_t flat)
+static std::size_t input_cell(const Model& model, const mhs::model::ConformalMeshSpec& input, std::size_t flat)
 {
     const auto ny = input.y_vertices.size() - 1, nz = input.z_vertices.size() - 1;
     const auto x = flat / (ny * nz), y = (flat % (ny * nz)) / nz, z = flat % nz;
     const Vec3 lower {input.x_vertices[x] * 0.001, input.y_vertices[y] * 0.001, input.z_vertices[z] * 0.001};
-    const auto& cells = model.discrete.cells;
-    const auto matches_lower_corner = [&](const CellGeometry& cell) { return cell.min == lower; };
-    const auto it = std::find_if(cells.begin(), cells.end(), matches_lower_corner);
-    return it == cells.end() ? mhs::core::invalid_id : static_cast<std::size_t>(it - cells.begin());
+    for (std::size_t i = 0; i < model.cells.size(); ++i)
+        if (cell_geometry(model.mesh, static_cast<CellId>(i)).min == lower)
+            return i;
+    return invalid_id;
 }
 
 TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
@@ -232,8 +233,10 @@ TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)
 
     // Layer 0 occupies z=10..30 mm; the substrate occupies z=0..10 mm.
     const auto has_cell_with_min = [&](const Vec3& lower) {
-        return std::any_of(model.discrete.cells.begin(), model.discrete.cells.end(),
-            [&](const CellGeometry& cell) { return cell.min == lower; });
+        for (std::size_t i = 0; i < model.cells.size(); ++i)
+            if (cell_geometry(model.mesh, static_cast<CellId>(i)).min == lower)
+                return true;
+        return false;
     };
     EXPECT_TRUE(has_cell_with_min({0.0, 0.05, 0.0}));
     EXPECT_TRUE(has_cell_with_min({0.0, 0.0, 0.01}));
@@ -375,9 +378,9 @@ TEST(PreprocessorTest, UsesSuppliedDomainAlignedControlVolumes)
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     const auto model = test_pta::build_model(io);
-    ASSERT_EQ(model.discrete.cells.size(), 12u);
-    EXPECT_NEAR(model.discrete.cells.front().min[0], 0.025, 1e-12);
-    EXPECT_NEAR(model.discrete.cells.back().max[0], 0.075, 1e-12);
+    ASSERT_EQ(model.cells.size(), 12u);
+    EXPECT_NEAR(cell_geometry(model.mesh, 0).min[0], 0.025, 1e-12);
+    EXPECT_NEAR(cell_geometry(model.mesh, static_cast<CellId>(model.cells.size() - 1)).max[0], 0.075, 1e-12);
 }
 
 TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
@@ -451,7 +454,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     const auto c_overlap = input_cell(model, io.mesh, idx_overlap);
 
     const mhs::expression::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
-    const auto overlap_material = model.cell_material[c_overlap];
+    const auto overlap_material = model.cells[c_overlap].material;
     const auto overlap_heat_source = source_id(model, c_overlap);
     EXPECT_DOUBLE_EQ(model.material_table[overlap_material].kx.eval(ctx), 130.0)
         << "Overlapping cell must get material from the later block";
@@ -461,7 +464,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
     const auto idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
     const auto c_only_block1 = input_cell(model, io.mesh, idx_only_block1);
-    const auto background_material = model.cell_material[c_only_block1];
+    const auto background_material = model.cells[c_only_block1].material;
     const auto background_heat_source = source_id(model, c_only_block1);
     EXPECT_DOUBLE_EQ(model.material_table[background_material].kx.eval(ctx), 400.0)
         << "Cell outside the overlap must retain the earlier block material";

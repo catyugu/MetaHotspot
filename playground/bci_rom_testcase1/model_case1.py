@@ -206,7 +206,7 @@ def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
         raise ValueError("at least one domain must be enabled")
     model = metahotspot.Model()
     model.set_reference_temperature(cfg.ambient_K)
-    model.set_cartesian_mesh(
+    model.set_conformal_mesh(
         cfg.x_vertices_mm * 1e-3, cfg.y_vertices_mm * 1e-3, cfg.z_vertices_mm * 1e-3
     )
     materials = {

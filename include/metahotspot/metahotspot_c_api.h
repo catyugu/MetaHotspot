@@ -148,31 +148,35 @@ typedef struct {
 
 /** Explicit compiled geometry sizes. State order is CellId order. */
 typedef struct {
-    size_t cell_count, facet_count, projection_count, source_count;
+    size_t cell_count, boundary_count, projection_count, source_count;
     double reference_temperature;
 } mhs_compiled_info_t;
 
-/** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
- * Facet bounds are (facet_count,4) in ascending
- * tangential axes: YZ for X, XZ for Y, XY for Z, each [a_min,a_max,b_min,b_max].
- * Facet coordinates are (facet_count,) in the normal axis. Positive flux
- * runs facet_minus -> facet_plus along facet_axis. Exterior facets
- * have exactly one MHS_INVALID_INDEX cell; the missing side determines the normal. */
+/** Caller-owned arrays. XYZ bounds are (cell_count,3). Boundary rectangles
+ * are (boundary_count,4), with YZ/XZ/XY tangential axes for X/Y/Z normals.
+ * boundary_owner is a CellId; boundary_side is the outward sign (-1 or +1).
+ * Only external boundary pieces are exported; internal topology is not materialized. */
 typedef struct {
-    size_t cell_count, facet_count, projection_count;
+    size_t cell_count, boundary_count, projection_count;
     double* cell_min;
     double* cell_max;
     mhs_index_t* material_id;
-    mhs_index_t* facet_minus;
-    mhs_index_t* facet_plus;
-    mhs_axis_t* facet_axis;
-    double* facet_coordinate;
-    double* facet_bounds;
+    mhs_index_t* boundary_owner;
+    int32_t* boundary_side;
+    mhs_axis_t* boundary_axis;
+    double* boundary_coordinate;
+    double* boundary_bounds;
     mhs_index_t* projection_cell;
     mhs_index_t* projection_source;
     double* projection_volume;
     double* projection_center;
 } mhs_compiled_fields_t;
+
+/** On-demand connection export, including implicit conformal contacts.
+ * Pass NULL pairs and pair_count=0 to query required_count. Otherwise supply
+ * exactly required_count pairs (flattened E,2). No geometry is exported/cached. */
+MHS_API mhs_status_t mhs_compiled_copy_connections(
+    const mhs_compiled_t* c, mhs_index_t* pairs, size_t pair_count, size_t* required_count);
 
 /** Evaluate power in each geometric volume-projection term at supplied state/time. */
 MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, const double* state, size_t state_count,
@@ -240,8 +244,14 @@ MHS_API mhs_status_t mhs_model_set_reference_temperature(mhs_model_t* m, double 
 
 /** Cartesian vertex arrays in SI metres; each axis must be finite, strictly
  * increasing and contain at least two entries. All axes are replaced atomically. */
-MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
+MHS_API mhs_status_t mhs_model_set_conformal_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
+
+/** Programmatic Cartesian hexahedra: min/max are flattened (cell_count,3),
+ * connections are flattened (connection_count,2) CellId pairs. All face contacts
+ * must be supplied exactly once. No nonconformal XML reader is provided. */
+MHS_API mhs_status_t mhs_model_set_nonconformal_mesh(mhs_model_t* m, size_t cell_count, const double* cell_min,
+    const double* cell_max, size_t connection_count, const mhs_index_t* connections);
 
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  materials, sources, volumes           */

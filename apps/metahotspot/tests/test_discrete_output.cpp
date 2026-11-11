@@ -8,7 +8,7 @@
 using namespace mhs::core;
 using namespace mhs::model;
 struct CubeDefinition : mhs::model::ModelDefinition {
-    mhs::model::MeshSpec mesh;
+    mhs::model::ConformalMeshSpec mesh;
 };
 
 static CubeDefinition cube_definition()
@@ -24,30 +24,20 @@ static CubeDefinition cube_definition()
     return d;
 }
 
-TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
+TEST(Mesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
 {
     auto definition = cube_definition();
     auto model = test_pta::build_model(definition, definition.mesh);
     const mhs::core::Vector<std::size_t> order {7, 5, 3, 1, 6, 4, 2, 0};
-    auto mesh = model.discrete;
-    mhs::core::Vector<std::size_t> inverse(order.size());
+    NonConformalMesh mesh;
+    mhs::core::Vector<CellId> inverse(order.size());
     for (std::size_t i = 0; i < order.size(); ++i) {
-        mesh.cells[i] = model.discrete.cells[order[i]];
-        inverse[order[i]] = i;
+        mesh.cells.push_back(cell_geometry(model.mesh, static_cast<CellId>(order[i])));
+        inverse[order[i]] = static_cast<CellId>(i);
     }
-    for (auto& face : mesh.facets) {
-        if (face.minus != invalid_id)
-            face.minus = inverse[face.minus];
-        if (face.plus != invalid_id)
-            face.plus = inverse[face.plus];
-    }
+    for_each_connection(model.mesh, [&](Connection c) { mesh.connections.push_back({inverse[c.a], inverse[c.b]}); });
     auto imported = test_pta::build_model(definition, definition.mesh);
-    imported.discrete = std::move(mesh);
-    mhs::compiler::build_cell_facet_incidence(imported.discrete);
-    for (size_t c = 0; c < order.size(); ++c)
-        imported.cell_material[c] = model.cell_material[order[c]];
-    for (auto& term : imported.source_terms)
-        term.cell = inverse[term.cell];
+    static_cast<mhs::model::Model&>(imported) = mhs::compiler::build_model(definition, mesh);
     for (auto* m : {&model, &imported}) {
         m->material_table[0].kx = mhs::expression::parse("1+T/1000", {});
         m->heat_source_table[0] = mhs::expression::parse("x+2*y+3*z", {});
@@ -77,7 +67,7 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
         mhs::solver::sample_point(imported, reordered, 0, static_cast<CellId>(inverse[0]), point), 1e-12);
 }
 
-TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
+TEST(Mesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
 {
     auto d = cube_definition();
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
@@ -89,10 +79,10 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         const auto model = test_pta::build_model(d, d.mesh);
         // All other faces share the compiled zero-flux default condition.
         ASSERT_EQ(model.boundary_conditions.size(), 2u);
-        ASSERT_EQ(model.discrete.facets.size(), 6u);
-        for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
-            const auto& facet = model.discrete.facets[id];
-            const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
+        ASSERT_EQ(model.boundary_facets.size(), 6u);
+        for (std::size_t id = 0; id < model.boundary_facets.size(); ++id) {
+            const auto& facet = model.boundary_facets[id];
+            const auto& condition = model.boundary_conditions[model.boundary_thermal_condition[id]];
             if (facet.axis != Axis::X || facet.outward_sign() != 1) {
                 EXPECT_TRUE(std::holds_alternative<Neumann>(condition));
                 continue;
@@ -103,7 +93,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                 const auto ops = mhs::solver::assemble_thermal(model, state, time);
                 const auto center = facet.center();
                 const mhs::expression::FieldContext context {center[0], center[1], center[2], T, time};
-                const double d = model.discrete.cells[facet.owner()].size()[0] / 2;
+                const double d = cell_geometry(model.mesh, facet.owner()).size()[0] / 2;
                 const double g_cell = facet.area() / d;
                 const auto condensed = mhs::solver::evaluate_boundary(condition, context, facet.area(), g_cell);
                 double g, load;

@@ -11,13 +11,13 @@ namespace test_pta {
     { return {axis, coordinate, rectangle}; }
 
     struct Model : mhs::model::Model {
-        mhs::model::MeshSpec sampling_grid;
+        mhs::model::ConformalMeshSpec sampling_grid;
         struct {
             mhs::core::Vector<mhs::model::Vec3> points;
             std::array<std::size_t, 3> cartesian_shape {};
         } output;
     };
-    inline Model build_model(const mhs::model::ModelDefinition& d, const mhs::model::MeshSpec& mesh)
+    inline Model build_model(const mhs::model::ModelDefinition& d, const mhs::model::ConformalMeshSpec& mesh)
     {
         Model m;
         static_cast<mhs::model::Model&>(m) = mhs::compiler::build_model(d, mesh);
