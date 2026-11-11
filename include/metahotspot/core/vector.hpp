@@ -31,7 +31,9 @@ namespace mhs::core {
         };
 
         template <class T, class U> bool operator==(const PoolAllocator<T>&, const PoolAllocator<U>&) noexcept
-        { return true; }
+        {
+            return true;
+        }
 
     }
     template <class T> using Vector = std::vector<T, detail::PoolAllocator<T>>;

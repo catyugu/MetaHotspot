@@ -123,7 +123,9 @@ static mhs::model::MaterialKind _to_material_kind(mhs_material_kind_t kind)
 }
 
 static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
-{ return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}}; }
+{
+    return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}};
+}
 
 static mhs::core::Vector<mhs::model::SurfaceRegion> _copy_surface_regions(
     const mhs_surface_region_t* regions, size_t count)

@@ -8,7 +8,9 @@
 namespace test_pta {
     inline mhs::model::SurfaceRegion face_region(
         mhs::model::Axis axis, double coordinate, mhs::model::RegionRect rectangle)
-    { return {axis, coordinate, rectangle}; }
+    {
+        return {axis, coordinate, rectangle};
+    }
 
     struct Model : mhs::model::Model {
         mhs::model::MeshSpec sampling_grid;
@@ -36,5 +38,7 @@ namespace test_pta {
     }
     inline Model build_model(const mhs::app::pta::Input& input) { return build_model(input.model, input.mesh); }
     inline auto interpolate_cell_to_node(const Model& m, std::span<const double> t, double time)
-    { return mhs::app::postprocess::interpolate_cell_to_node(m, m.sampling_grid, t, time); }
+    {
+        return mhs::app::postprocess::interpolate_cell_to_node(m, m.sampling_grid, t, time);
+    }
 }

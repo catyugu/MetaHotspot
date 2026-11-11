@@ -18,7 +18,9 @@ namespace mhs::core {
         const T& operator()(std::size_t i, std::size_t j) const noexcept { return data_[i * cols_ + j]; }
         std::span<T> row(std::size_t i) noexcept { return std::span<T>(data_).subspan(i * cols_, cols_); }
         std::span<const T> row(std::size_t i) const noexcept
-        { return std::span<const T>(data_).subspan(i * cols_, cols_); }
+        {
+            return std::span<const T>(data_).subspan(i * cols_, cols_);
+        }
 
     private:
         static std::size_t count(std::size_t rows, std::size_t cols)

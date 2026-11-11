@@ -13,8 +13,12 @@ namespace mhs::core::detail {
     }
 
     void* vector_allocate(std::size_t bytes, std::size_t alignment)
-    { return vector_pool()->allocate(bytes, alignment); }
+    {
+        return vector_pool()->allocate(bytes, alignment);
+    }
 
     void vector_deallocate(void* ptr, std::size_t bytes, std::size_t alignment) noexcept
-    { vector_pool()->deallocate(ptr, bytes, alignment); }
+    {
+        vector_pool()->deallocate(ptr, bytes, alignment);
+    }
 } // namespace mhs::core::detail
