@@ -345,13 +345,14 @@ TEST(IoTest, ReadXmlParsesPressureInletPumpResistance)
 {
     std::string xml = make_xml_with_observe_points("");
     const std::string pump_field = "<a:PumpResistance>42</a:PumpResistance>";
-    const std::string boundaries = std::string(R"(<Boundaries>
+    const std::string boundaries = R"(<Boundaries>
         <Boundary>
             <FaceKeys><a:string>X|+|0|0|1|0|1</a:string></FaceKeys>
             <ThermalBoundary i:type="a:PressureInletBoundary">
                 <a:InletTemperature>280</a:InletTemperature>
                 <a:Pressure>200</a:Pressure>
-                )") + pump_field + R"(</ThermalBoundary>
+                <a:PumpResistance>42</a:PumpResistance>
+            </ThermalBoundary>
         </Boundary>
     </Boundaries>
 )";
