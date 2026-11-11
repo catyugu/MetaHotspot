@@ -64,7 +64,7 @@ namespace mhs::model {
         const core::Vector<double>& axis(int a) const { return a == 0 ? x_vertices : a == 1 ? y_vertices : z_vertices; }
         // Both mappings are empty for a fully active grid. Z varies fastest.
         core::Vector<CellId> logical_to_cell;
-        core::Vector<std::size_t> cell_to_logical;
+        core::Vector<CellId> cell_to_logical;
         std::array<std::size_t, 3> shape() const
         {
             return {x_vertices.empty() ? 0 : x_vertices.size() - 1, y_vertices.empty() ? 0 : y_vertices.size() - 1,

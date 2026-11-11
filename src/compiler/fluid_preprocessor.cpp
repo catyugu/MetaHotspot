@@ -24,7 +24,7 @@ namespace mhs::compiler::fluid {
         mhs::core::Vector<double> viscosity;
         for (std::size_t c = 0; c < model.cells.size(); ++c) {
             const auto mat = model.cells[c].material;
-            if (mat >= initial_viscosity.size() || !model.cells[c].is_fluid)
+            if (mat >= initial_viscosity.size() || model.material_table[mat].kind != MaterialKind::Fluid)
                 continue;
             fluid.global_to_fluid[c] = static_cast<FluidCellId>(fluid.fluid_to_global.size());
             fluid.fluid_to_global.push_back(static_cast<CellId>(c));

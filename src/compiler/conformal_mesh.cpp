@@ -24,13 +24,13 @@ namespace mhs::compiler {
             count *= axis.size() - 1;
         }
         Vector<CellId> active(count, invalid_id);
-        Vector<std::size_t> logical;
+        Vector<CellId> logical;
         for (std::size_t i = 0; i < count; ++i) {
             const auto cell = cell_geometry(mesh, static_cast<CellId>(i));
             const auto id = static_cast<CellId>(model.cells.size());
             if (compile_cell(model, cell, volumes)) {
                 active[i] = id;
-                logical.push_back(i);
+                logical.push_back(static_cast<CellId>(i));
             }
         }
         if (model.cells.size() != count) {

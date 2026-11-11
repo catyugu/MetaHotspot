@@ -52,7 +52,6 @@ namespace mhs::model {
 
     struct Cell {
         MaterialId material = core::invalid_id;
-        bool is_fluid = false;
     };
 
     struct Model {
