@@ -119,9 +119,11 @@ solution = compiled.solve(opts=SolveOptions(
 
 构建目标、目录归属和命名空间规则见[项目结构](docs/design/project-structure.md)；本节只说明运行期数据契约。
 
-运行期以 `DiscreteMesh`（控制体、唯一有向面片和 CSR 关联）及独立的材料、体积与边界积分数据为契约；主温度状态按 CellId 编号，每个外边界积分片具有局部温度迹。迹在局部边界方程中求解并凝聚，因此全局算子仍是单元规模。装配、流体、采样、VTU 和 Python 宏模型使用显式面片关联。`compiler/cartesian_mesh.cpp` 将用户提供的笛卡尔顶点坐标轴转换为此契约；C++ / C / Python 公开建模入口不接收外部离散网格。编译器校验坐标轴与边界区域，材料对齐及 TPFA 适用条件仍由调用者保证。
+运行期以 `Mesh = variant<ConformalMesh, NonConformalMesh>` 及独立的材料、热源积分和外边界数据为契约。`ConformalMesh` 保存三组顶点坐标轴，仅在存在空洞时保存活动单元映射；`NonConformalMesh` 保存轴对齐单元包围盒和 CellId 对形式的 Connection。内部连接通过统一遍历进入 TPFA 装配，接触几何按需计算。`Model::cells` 保存编译后的材料索引和流体身份，运行期直接使用。
 
-当前通量方法适用于正交、轴对齐控制体与对角导热张量；不生成或加密网格。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
+主温度状态按 CellId 编号，每个 `BoundaryFacet` 具有局部温度迹；迹在局部边界方程中求解并凝聚，因此全局算子仍是单元规模。热学与流体边界共用外表面划分。C++ / C / Python 支持共形坐标轴输入及非共形网格的程序构造；PTA XML 仅支持共形输入，现有 CLI VTU 输出使用统一单元几何查询。
+
+当前采用对角导热张量和域内 TPFA；非共形接触暂不进行通量修正。编译器拒绝穿过有效材料界面或活动域边界的单元，并校验显式网格的重叠、重复及缺失连接。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
 
 ## 运行
 
@@ -164,7 +166,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 
 ## 编号与数据顺序
 
-`CellId` 标识控制体及主温度未知量，`FacetId` 标识唯一的有向积分面片。局部边界条件在几何编译阶段切分外表面，热学与流体条件分别绑定到共用的 FacetId。
+`CellId` 标识控制体及主温度未知量，`BoundaryFacetId` 标识外边界积分片。局部边界条件在几何编译阶段切分外表面，热学与流体条件分别绑定到共用的 BoundaryFacetId。
 
 几何、材料、`K`、`C`、`f`、`state` 和 `state_history` 按 CellId 排列。Python 暴露 `Solution.state` 与 `Solution.state_history` 两组结果。
 

@@ -41,9 +41,14 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Loaded {} volumes, {} materials, {} boundaries", definition.model.volumes.size(),
             definition.model.materials.size(), definition.model.thermal_boundaries.size());
 
+        if (definition.mesh.x_vertices.empty() || definition.mesh.y_vertices.empty()
+            || definition.mesh.z_vertices.empty())
+            throw std::invalid_argument("PTA XML requires conformal X/Y/Z vertex arrays; NonConformalMesh XML input is "
+                                        "unsupported. Use the C++/C/Python mesh construction API.");
+
         auto model = mhs::compiler::build_model(definition.model, definition.mesh);
 
-        MHS_LOG_INFO("Compiled {} cells and {} facets", model.discrete.cells.size(), model.discrete.facets.size());
+        MHS_LOG_INFO("Compiled {} cells and {} boundary facets", model.cells.size(), model.boundary_facets.size());
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
@@ -56,7 +61,7 @@ int main(int argc, char* argv[])
         const std::array<std::size_t, 3> shape {grid.x_vertices.size(), grid.y_vertices.size(), grid.z_vertices.size()};
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)
-        mhs::app::output::write_vtu(output_vtu, model.discrete, solution);
+        mhs::app::output::write_vtu(output_vtu, model.mesh, solution);
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
         // XML output uses node-centered data (interpolated from cell centers)

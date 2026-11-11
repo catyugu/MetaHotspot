@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model/discrete_mesh.hpp"
+#include "model/mesh.hpp"
 
 #include "core/vector.hpp"
 #include <variant>
@@ -21,8 +21,13 @@ namespace mhs::model {
     using FluidTransportCondition = std::variant<FluidInflow, FluidOutflow>;
 
     struct FluidBoundaryTerm {
-        FacetId facet = mhs::core::invalid_id;
+        BoundaryFacetId facet = mhs::core::invalid_id;
         FluidTransportCondition condition;
+    };
+
+    struct FluidConnection {
+        Connection cells;
+        double volume_flux = 0.0; // positive from a to b
     };
 
     struct FluidModel {
@@ -31,9 +36,8 @@ namespace mhs::model {
         mhs::core::Vector<CellId> fluid_to_global;
         mhs::core::Vector<FluidCellId> global_to_fluid;
 
-        // Frozen hydraulic volume flux by FacetId, positive from minus to plus.
-        // Non-fluid and exterior facets carry zero.
-        mhs::core::Vector<double> facet_volume_flux;
+        // Only contacts between fluid cells; no derived geometry is retained.
+        mhs::core::Vector<FluidConnection> connections;
 
         // Nu / hydraulic_diameter for each fluid cell. The thermal assembly
         // evaluates h = factor * k_fluid at the current temperature.

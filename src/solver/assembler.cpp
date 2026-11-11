@@ -7,25 +7,29 @@
 
 namespace mhs::solver {
     namespace {
-        std::shared_ptr<const core::CSRPattern> build_thermal_pattern(const model::DiscreteMesh& mesh)
+        std::shared_ptr<const core::CSRPattern> build_thermal_pattern(const model::Mesh& mesh)
         {
-            const auto n = mesh.cells.size();
+            const auto n = model::cell_count(mesh);
             core::detail::checked_sparse_size(n);
-            core::Vector<core::SparseIndex> ptr(n + 1, 0), columns, row;
-            for (std::size_t i = 0; i < n; ++i) {
-                row.clear();
-                row.push_back(static_cast<core::SparseIndex>(i));
-                for (const auto id : mesh.incident_facets(static_cast<model::CellId>(i))) {
-                    const auto other = (mesh.facets[id].minus == i ? mesh.facets[id].plus : mesh.facets[id].minus);
-                    if (other != core::invalid_id)
-                        row.push_back(static_cast<core::SparseIndex>(other));
-                }
-                std::sort(row.begin(), row.end());
-                row.erase(std::unique(row.begin(), row.end()), row.end());
-                core::detail::checked_sparse_size(columns.size() + row.size());
-                columns.insert(columns.end(), row.begin(), row.end());
-                ptr[i + 1] = static_cast<core::SparseIndex>(columns.size());
-            }
+            core::Vector<std::size_t> counts(n + 1, 1);
+            counts[0] = 0;
+            model::for_each_connection(mesh, [&](model::Connection c) {
+                ++counts[c.a + 1];
+                ++counts[c.b + 1];
+            });
+            std::partial_sum(counts.begin(), counts.end(), counts.begin());
+            core::detail::checked_sparse_size(counts.back());
+            core::Vector<core::SparseIndex> ptr(counts.begin(), counts.end());
+            core::Vector<core::SparseIndex> columns(static_cast<std::size_t>(ptr.back()));
+            auto next = ptr;
+            for (std::size_t i = 0; i < n; ++i)
+                columns[next[i]++] = static_cast<core::SparseIndex>(i);
+            model::for_each_connection(mesh, [&](model::Connection c) {
+                columns[next[c.a]++] = static_cast<core::SparseIndex>(c.b);
+                columns[next[c.b]++] = static_cast<core::SparseIndex>(c.a);
+            });
+            for (std::size_t i = 0; i < n; ++i)
+                std::sort(columns.begin() + ptr[i], columns.begin() + ptr[i + 1]);
             return std::make_shared<const core::CSRPattern>(n, n, std::move(ptr), std::move(columns));
         }
         core::CSRMatrix<double> build_capacity(std::size_t n)
@@ -39,8 +43,8 @@ namespace mhs::solver {
 
     ThermalAssembler::ThermalAssembler(const model::Model& model)
         : model_(model)
-        , operators_ {core::CSRMatrix<double>(build_thermal_pattern(model.discrete)),
-              build_capacity(model.discrete.cells.size()), core::Vector<double>(model.discrete.cells.size())}
+        , operators_ {core::CSRMatrix<double>(build_thermal_pattern(model.mesh)), build_capacity(model.cells.size()),
+              core::Vector<double>(model.cells.size())}
         , diagonal_positions_(operators_.K.rows())
         , conductivity_(operators_.K.rows())
         , density_(model.fluid.fluid_to_global.size())
@@ -60,7 +64,7 @@ namespace mhs::solver {
         using namespace mhs::model;
         using namespace mhs::expression;
         const auto& model = model_;
-        if (temperature.size() != model.discrete.cells.size())
+        if (temperature.size() != model.cells.size())
             throw std::invalid_argument("assemble_thermal: state size differs from DOF count");
         auto& A = operators_.K;
         auto& rhs = operators_.f;
@@ -72,78 +76,80 @@ namespace mhs::solver {
             return std::lower_bound(columns.begin() + A.row_ptr()[row], columns.begin() + A.row_ptr()[row + 1], col)
                 - columns.begin();
         };
-        for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
-            const auto row = static_cast<SparseIndex>(c);
-            const auto center = model.discrete.cells[c].center();
-            const FieldContext ctx {center[0], center[1], center[2], temperature[row], time};
-            const auto& mat = model.material_table[model.cell_material[c]];
-            conductivity_[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
-            const auto volume = model.discrete.cells[c].volume();
-            const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
-            operators_.C.values()[c] = rho * cp * volume;
-            if (!density_.empty()) {
-                const auto fi = model.fluid.global_to_fluid[c];
-                if (fi != mhs::core::invalid_id) {
-                    density_[fi] = rho;
-                    specific_heat_[fi] = cp;
+        std::visit(
+            [&](const auto& mesh) {
+                for (std::size_t c = 0; c < model.cells.size(); ++c) {
+                    const auto row = static_cast<SparseIndex>(c);
+                    const auto geometry = cell_geometry(mesh, static_cast<CellId>(c));
+                    const auto center = geometry.center();
+                    const FieldContext ctx {center[0], center[1], center[2], temperature[row], time};
+                    const auto& mat = model.material_table[model.cells[c].material];
+                    conductivity_[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
+                    const auto volume = geometry.volume();
+                    const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
+                    operators_.C.values()[c] = rho * cp * volume;
+                    if (!density_.empty()) {
+                        const auto fi = model.fluid.global_to_fluid[c];
+                        if (fi != mhs::core::invalid_id) {
+                            density_[fi] = rho;
+                            specific_heat_[fi] = cp;
+                        }
+                    }
                 }
-            }
-        }
+            },
+            model.mesh);
         for (const auto& term : model.source_terms) {
             const auto row = term.cell;
             const auto& p = term.point;
             rhs[row]
                 += term.weight * model.heat_source_table[term.source].eval({p[0], p[1], p[2], temperature[row], time});
         }
-        auto fluid_index = [&](CellId c) {
-            return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
-        };
-        for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
-            const auto& f = model.discrete.facets[id];
-            if (f.exterior())
+        std::visit(
+            [&](const auto& mesh) {
+                for_each_connection(mesh, [&](Connection c) {
+                    const auto a = cell_geometry(mesh, c.a), b = cell_geometry(mesh, c.b);
+                    const auto geometry = connection_geometry(a, b);
+                    const auto axis = static_cast<std::size_t>(geometry.axis);
+                    const auto [ra, rb] = connection_resistances(
+                        model, c, a, b, geometry.axis, conductivity_[c.a][axis], conductivity_[c.b][axis]);
+                    const double g = geometry.area() / (ra + rb);
+                    values[diagonal_positions_[c.a]] += g;
+                    values[slot(static_cast<SparseIndex>(c.a), static_cast<SparseIndex>(c.b))] -= g;
+                    values[diagonal_positions_[c.b]] += g;
+                    values[slot(static_cast<SparseIndex>(c.b), static_cast<SparseIndex>(c.a))] -= g;
+                });
+            },
+            model.mesh);
+        for (const auto& flow : model.fluid.connections) {
+            const auto [i, j] = flow.cells;
+            const auto fi = model.fluid.global_to_fluid[i], fj = model.fluid.global_to_fluid[j];
+            const double mass = flow.volume_flux * 0.5 * (density_[fi] + density_[fj]);
+            if (mass == 0.0)
                 continue;
-            const auto i = f.minus;
-            const auto row = static_cast<SparseIndex>(f.minus);
-            const auto axis = static_cast<std::size_t>(f.axis);
-            const auto ki = conductivity_[i][axis];
-            const auto j = f.plus;
-            const auto col = static_cast<SparseIndex>(f.plus);
-            const auto kj = conductivity_[j][axis];
-            const auto fi = fluid_index(i), fj = fluid_index(j);
-            const auto [r_minus, r_plus] = interior_facet_resistances(model, f, ki, kj);
-            const double g = f.area() / (r_minus + r_plus);
-            const auto ij = slot(row, col), ji = slot(col, row);
-            values[diagonal_positions_[i]] += g;
-            values[ij] -= g;
-            values[diagonal_positions_[j]] += g;
-            values[ji] -= g;
-            if ((fi != mhs::core::invalid_id) && (fj != mhs::core::invalid_id)) {
-                const double mass = model.fluid.facet_volume_flux[id] * 0.5 * (density_[fi] + density_[fj]);
-                if (mass != 0.0) {
-                    const double enthalpy = mass * specific_heat_[(mass > 0 ? fi : fj)];
-                    values[mass > 0 ? diagonal_positions_[i] : ij] += enthalpy;
-                    values[mass > 0 ? ji : diagonal_positions_[j]] -= enthalpy;
-                }
-            }
+            const double enthalpy = mass * specific_heat_[mass > 0 ? fi : fj];
+            const auto ij = slot(static_cast<SparseIndex>(i), static_cast<SparseIndex>(j));
+            const auto ji = slot(static_cast<SparseIndex>(j), static_cast<SparseIndex>(i));
+            values[mass > 0 ? diagonal_positions_[i] : ij] += enthalpy;
+            values[mass > 0 ? ji : diagonal_positions_[j]] -= enthalpy;
         }
-        for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
-            const auto& facet = model.discrete.facets[id];
-            if (!facet.exterior() || model.facet_thermal_condition[id] == invalid_id)
+        for (std::size_t id = 0; id < model.boundary_facets.size(); ++id) {
+            const auto& facet = model.boundary_facets[id];
+            if (model.boundary_thermal_condition[id] == invalid_id)
                 continue;
-            const auto cell = facet.owner();
+            const auto cell = facet.cell;
             const auto axis = static_cast<std::size_t>(facet.axis);
             const auto row = static_cast<SparseIndex>(cell);
             const auto center = facet.center();
             const mhs::expression::FieldContext context {center[0], center[1], center[2], temperature[row], time};
-            const double d = model.discrete.cells[cell].size()[axis] / 2;
+            const double d = cell_geometry(model.mesh, cell).size()[axis] / 2;
             const double g = facet.area() / side_thermal_resistance(d, conductivity_[cell][axis]);
-            const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
+            const auto& condition = model.boundary_conditions[model.boundary_thermal_condition[id]];
             const auto trace = evaluate_boundary(condition, context, facet.area(), g);
             rhs[row] += trace.load;
             values[diagonal_positions_[row]] += trace.conductance;
         }
         for (const auto& term : model.fluid.boundary_terms) {
-            const auto cell = model.discrete.facets[term.facet].owner();
+            const auto cell = model.boundary_facets[term.facet].cell;
             const auto row = static_cast<SparseIndex>(cell);
             const auto cp = specific_heat_[model.fluid.global_to_fluid[cell]];
             std::visit(

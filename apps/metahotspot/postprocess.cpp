@@ -27,10 +27,10 @@ namespace mhs::app::postprocess {
 
     } // namespace
 
-    mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::Model& model, const mhs::model::MeshSpec& grid,
-        std::span<const double> cell_temperature, double time)
+    mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::Model& model,
+        const mhs::model::ConformalMeshSpec& grid, std::span<const double> cell_temperature, double time)
     {
-        if (cell_temperature.size() != model.discrete.cells.size())
+        if (cell_temperature.size() != model.cells.size())
             throw std::invalid_argument("node sampling state size mismatch");
         std::map<mhs::model::Vec3, std::size_t> nodes;
         for (double x : grid.x_vertices)
@@ -38,12 +38,12 @@ namespace mhs::app::postprocess {
                 for (double z : grid.z_vertices)
                     nodes.emplace(mhs::model::Vec3 {x, y, z}, nodes.size());
         mhs::core::Vector<double> node_T(nodes.size(), 0.0), weight(nodes.size(), 0.0);
-        for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
-            const auto& cell = model.discrete.cells[c];
+        for (std::size_t c = 0; c < model.cells.size(); ++c) {
+            const auto& cell = cell_geometry(model.mesh, c);
             const auto center = cell.center();
             const auto temperature = cell_temperature[c];
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], temperature, time};
-            const auto& mat = model.material_table[model.cell_material[c]];
+            const auto& mat = model.material_table[model.cells[c].material];
             const mhs::model::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             for (double x : {cell.min[0], cell.max[0]})
                 for (double y : {cell.min[1], cell.max[1]})

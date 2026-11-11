@@ -1,5 +1,5 @@
 add_library(mhs_compiler STATIC
-    discrete_mesh.cpp
+    nonconformal_mesh.cpp
     conformal_mesh.cpp
     fluid_preprocessor.cpp
     geometry_compiler.cpp

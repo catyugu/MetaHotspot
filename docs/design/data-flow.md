@@ -4,67 +4,63 @@
 
 | 对象 | 职责 | 生命周期 |
 | --- | --- | --- |
-| `ModelDefinition` | 几何、材料、热源、边界、探针和参考温度 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
-| `mhs::model::Model` | 显式网格、材料与积分数据、编译表达式和冻结流场 | `build_model` 的独立结果；供重复装配和求解使用 |
-| `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；重复装配只刷新数值，单次导出独立拥有 |
-| `Solution` | 最终单元状态、状态历史和探针记录 | 独立拥有求解结果 |
+| `ModelDefinition` | 连续几何、材料、热源、边界、探针和参考温度 | 可变输入；与网格配置分开 |
+| `MeshSpec` | `ConformalMeshSpec` 或程序构造的 `NonConformalMesh` | 编译输入，坐标使用 SI 米 |
+| `Model` | 网格、Cell 属性、外边界、源投影、编译表达式和冻结流场 | 编译后独立拥有，重复装配和求解时只读 |
+| `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 装配工作区持有；导出的算子独立拥有 |
+| `Solution` | 单元状态、历史和探针记录 | 独立拥有求解结果 |
 
 `compile` 不修改输入；`assemble` 和 `solve` 不修改编译模型。C opaque handle 和 Python wrapper 负责所有权与转换。Python 返回的 NumPy/SciPy 数据在 native handle 销毁后仍有效。
+
+## 网格与单元
+
+`ConformalMesh` 保存 `x_vertices`、`y_vertices`、`z_vertices` 三个一维坐标数组。Z 索引变化最快。完整网格不保存单元几何、内部 Connection 或索引映射；Cell 的包围盒、中心、体积与相邻编号按索引计算。存在非活动位置时，才保存 `logical_to_cell` 和 `cell_to_logical`，使活动 CellId 保持连续。空洞暴露的表面也生成外边界。
+
+`NonConformalMesh` 保存轴对齐六面体的 `CellGeometry` 和一份无向 `Connection {a,b}` 列表。连接方向可任意，每对面接触单元必须且只能出现一次。编译器验证有限且递增的包围盒、体积重叠、非法/重复编号、零面积接触和遗漏的面接触。临时 BVH 用于空间查询，临时反向索引用于边界裁剪；编译结束后均释放。
+
+`Mesh` 是两类网格的 variant。`cell_count`、`cell_geometry` 和 `for_each_connection` 提供共同访问方式。热装配在网格级分派，采用相同的 TPFA 数值逻辑。Connection 不保存面积、法向、中心或半距离，装配时由两侧包围盒计算，工作区也不缓存这些几何。
+
+`Model::cells` 保存 `Cell {material, is_fluid}`；流体身份在编译时确定。外部 `BoundaryFacet` 独立保存 owner、axis、side（外法向符号）、coordinate 和切向矩形 bounds。边界片段按 owner 排序。内部没有 FacetId、Cell–Facet 关联或持久邻接 CSR。稀疏矩阵的 CSR 是求解算子的结构。
 
 ## 编译与装配
 
 | 阶段 | 输入 | 输出与规则 |
 | --- | --- | --- |
-| PTA 几何解析 | Layer / Block / Rect 和几何变量、算术表达式 | 应用层独立求值为 SI 米下的区域；同层后出现的 Block 覆盖前者，核心仅接收数值几何 |
-| 网格输入 | 独立的 Cartesian `MeshSpec` 与物理区域 | `DiscreteMesh`：单元边界、初始有向 Facet 几何 |
-| 网格契约 | 控制体与面片几何、连接 | 验证坐标轴有限且严格递增；生成控制体及有向面片，边界细分后统一构建 CSR 关联 |
-| 共形体区域编译 | Cartesian `MeshSpec` 与物理区域 | 检查内部盒面与网格平面对齐；生成单元时直接写入 `cell_material` 和 `source_terms` |
-| 边界细分与绑定 | 外露 Facet 与热、流体边界区域 | 在几何编译阶段共同切分外部 Facet，统一构建 Cell–Facet 关联；热学、流体边界分别按 FacetId 绑定，区域后者覆盖前者 |
-| 表达式编译 | 材料、源、边界运行时表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
-| 流体预处理 | 流体材料、规范化 Facet 与流体边界赋值 | 共享 FacetId 和面积，求解临时压力场后生成逐 Facet 的体积流量、边界质量流率与入口温度及流固换热因子 |
-| 容量与体热源装配 | 单元几何、材料、体积投影、状态和时间 | `rho c V` 及各投影片上的热源积分 |
-| 面片装配 | 面片、两侧物理类型、边界描述 | 内部面只装配一次；外边界迹由统一局部方程求解并凝聚到单元系统 |
-| 流体能量装配 | 冻结流量、状态和材料 | 上风对流和入口能量贡献，直接追加到主装配的矩阵条目与 RHS；复用容量装配求值的 rho/cp，无中间增量对象 |
+| PTA 适配 | Layer / Block / Rect、单位、几何变量 | 应用层转换为 SI 物理区域与 `ConformalMeshSpec` |
+| 网格编译 | 网格配置、有序物理区域 | 检查真实生效的材料/活动域界面；创建 Cell 属性和外边界 |
+| 源投影 | 各物理子体积与源表 | `SourceTerm {cell, source, weight, point}`；中点积分 |
+| 边界细分 | 外边界与热/流体区域 | 对矩形交叠细分，条件后者覆盖前者，独立绑定到 BoundaryFacetId |
+| 表达式编译 | 材料、源、边界表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
+| 流体预处理 | 流体 Cell、Connection、压力/质量流边界 | 临时压力系统；输出紧凑的流体连接流量、边界输运与膜阻力因子 |
+| 容量与源装配 | 单元几何、状态和时间 | `rho c V` 和源项积分 |
+| 热连接装配 | 两侧单元、按需接触几何 | 每条连接计算一次，对两侧写入守恒的 TPFA 贡献 |
+| 边界装配 | BoundaryFacet、物理条件、当前状态 | 求解表面迹并凝聚到单元方程 |
+| 流体输运装配 | 冻结流量、当前 rho/cp | 上风能量通量与边界焓流 |
 
-当前 TPFA 适用于轴对齐长方体、相邻中心沿面法向对齐及对角导热张量。编译器根据用户指定的笛卡尔轴生成控制体与面片，不执行自适应网格加密。
+每个 Cell 必须完整属于活动物理域且具有唯一材料；跨越真实材料界面或活动域边界时明确报错。编译器按几何盒切割形成临时子体积，检查最终覆盖关系，因此被后续区域覆盖的无效盒边界不要求与网格对齐。热源可以在同材料 Cell 内分区，各子体积独立投影；未对齐材料界面不会被中心采样静默忽略。非共形输入中的每个显式 Cell 都必须有效，不会静默删除输入编号。
 
-`SourceTerm` 仅保存 CellId、源表索引、体积权重和积分点。当前共形体编译路径要求所有落在网格内部的几何盒面与对应轴顶点平面对齐（容差 `geometry_eps`）；不满足时拒绝编译。每个有效单元按照有序体区域的覆盖关系确定唯一材料与热源，源项在单元中心计算，以单元体积为权重。体区域的非共形切分留待专用实现。热与流体边界在共同的几何切分上分别采用后出现条件覆盖前者的绑定，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取模型参考温度。
+域内均使用 TPFA，包括非共形粗细单元接触。对非共形网格，切向中心错位可能产生离散误差；本轮没有 NCC、多域或跨域连接。固–流体传热沿用流体侧膜阻力。热、流体边界使用共同的几何切分，投影面积只计一次；多个入口分别累积。
 
-`FluidBoundaryTerm` 保存 FacetId 和内联的 `FluidTransportCondition = variant<FluidInflow, FluidOutflow>`。两种记录均保存非负的质量流率（kg/s），仅 `FluidInflow` 保存流入温度；按压力解得到的实际流向选择类型，而非输入的入口/出口标签，因此压力边界反向流动时仍采用该边界的流入温度。零流量归入 `FluidOutflow`，能量贡献为零。这些记录只有数值和内联判别信息，无动态分配；每片的冻结流量独立，不需要额外条件表。
+没有流体时，所有流体数组为空。有流体时，`global_to_fluid` / `fluid_to_global` 提供紧凑压力编号映射；`FluidConnection {cells, volume_flux}` 仅记录流体之间的接触，流量正方向是 `a -> b`。`FluidBoundaryTerm` 保存 BoundaryFacetId 和 `variant<FluidInflow, FluidOutflow>`，质量流率均非负，只有流入记录含温度。类型由实际流向决定，支持压力边界反向流动。缺省流入温度取参考温度。
 
 ## 求解与输出
 
-公开 C++ 入口 `mhs::solver::solve(model, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 同时提供线性、非线性求解参数以及时间容差和最大步长配置。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
+公开 C++ 入口 `mhs::solver::solve(model, study, ...)` 位于 `solver/solver.hpp`。`ThermalAssembler` 一次建立 K/C 模式与材料工作区，后续刷新数值。非线性求解器消费只读 `LinearSystemView`。瞬态构造 K/C 的联合模式，再更新 `A=K+αC`；时间步由 AdaptiveTimeStepper 的 BDF1/2 控制，输出时刻独立于实际积分步。
 
-探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，历史快照只保存单元状态。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
+梯度重构遍历 Connection，向两个 Cell 累积 Green–Gauss 贡献，再加入外边界迹并除以体积，不建立单元邻接表。每个探针输出时刻重构一次全部梯度，供所有探针复用；边界采样按 owner 二分定位外边界片段。探针初始化选择编号顺序中最后一个包含该点的 Cell。
 
-## 输入与数组约定
+现有 CLI VTU 写出通过统一 Cell 几何访问支持两类网格；PTA XML 结果回写继续使用原始共形采样轴。本轮不增加 SDK/Python VTU Writer，也不增加非共形 XML reader。
 
-- C++ 的 `MeshSpec`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Model.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
-- C/Python 网格导出使用 `facet_minus`、`facet_plus`、`facet_axis`、`facet_coordinate` 和 `facet_bounds`。前四者为 `(facet_count,)`，bounds 为 `(facet_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量由 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
-- Facet 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 `facet_coordinate` 给出，外法向由缺失的一侧确定。一个 cell side 可有多个外边界 Facet。跨子域非匹配连接尚未实现。单元至 Facet 只保留一套 CSR 关联索引。
-- 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。
-- `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
-- `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FacetId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
+## C API 与 Python 数组
 
-函数在编译阶段统一构造求值器：分段线性要求至少两个点，按横坐标排序，并拒绝重复横坐标和非有限值；周期分段常数要求非空值和有限正周期。表达式解析失败立即抛出异常，不保存失败求值器。所有探针值共用 `Solution::snapshot_times`；XML 输出显式接收这份时间序列。
+- `mhs_model_set_conformal_mesh` / `Model.set_conformal_mesh(x,y,z)` 设置坐标轴。
+- `mhs_model_set_nonconformal_mesh` / `Model.set_nonconformal_mesh(cell_min,cell_max,connections)` 设置 `(N,3)` 包围盒与 `(E,2)` CellId 对，输入由库复制。
+- 旧 `set_cartesian_mesh`、全体 Facet 的 minus/plus 导出及 `DiscreteMesh` 已删除，不保留兼容层。
+- `Compiled.fields` 按 CellId 导出 `(N,3)` cell_min/max、材料索引与源项投影；只导出外边界的 boundary_owner/side/axis/coordinate/bounds。bounds 为 `(B,4)`，顺序为 `[a_min,a_max,b_min,b_max]`；切向轴是 X→YZ、Y→XZ、Z→XY。side 为 int32 的 -1/+1，owner 为 uint32 CellId。
+- `Compiled.connections()` 按需导出 `(E,2)` CellId 对；共形连接在调用时生成，不在 fields 或模型内缓存。宏模型子域切分据此找到人工切口并计算交叠矩形；外边界端口使用 BoundaryFacetId。
+- `Compiled.info` 只读取标量；`Compiled.fields` 首次访问才复制数组，两者独立缓存。
+- `mhs_operators_copy_k/c` 导出 CSR：`row_ptr[N+1]`、`col_idx[nnz]`、`values[nnz]`。Python `assemble()` 返回 SciPy CSR。
+- `Compiled.source_operator(state,time)` 保留各物理源列。`SourcePort` 指定 source_ids 或 cells 选择器之一。
+- `BoundaryGroup` 使用外边界片段及投影面积。Robin 参数仍是组平均有效仿射系数。
 
-Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访问时复制几何、材料索引与源投影数组。两者独立缓存；`cell_count` 和 `default_state()` 无需复制网格。
-
-## 索引约定
-
-- 数量、循环位置和数组偏移使用 `std::size_t`。
-- `core::EntityIndex = uint32_t` 保存实体引用，model 的各类 `Id` 是其语义别名；无效引用显式使用 `core::invalid_id = UINT32_MAX`。
-- `core::SparseIndex = int32_t` 用于 CSR 存储，`Triplet` 是聚合类型。第三方索引类型留在实现文件中。
-- C ABI 对应 `mhs_index_t`、`mhs_sparse_index_t` 和 `size_t`；Python 索引数组对应 `np.uint32` 和 `np.int32`。
-
-## C API 契约
-
-- 不接受外部 `DiscreteMesh`；C++ 编译器通过 `build_model(definition, mesh)` 分别接收物理定义和 Cartesian 网格规格。
-- PTA XML 网格读取留在 CLI 应用侧，通过独立的 `MeshSpec` 传给编译器；PTA 文件格式与导入逻辑不进入内核或公开 API。
-- `mhs_compiled_copy_fields` 导出单元、Facet 及热源投影数据；`mhs_operators_copy_k/c` 直接复制 CSR，布局为 `row_ptr[state_count+1]`、`col_idx[nnz]`、`values[nnz]`；Python `assemble()` 返回 SciPy CSR，需要 CSC 的算法自行转换。
-- `mhs_solution_info_t.converged` 和 Python `Solution.converged` 暴露求解收敛结果。API 成功表示调用完成，收敛状态由该字段判断。
-- 流体边界与热边界使用相同的区域数组；入口温度用可空指针表示，NULL 取参考温度。Python 保留原有单区域调用和 `None`。删除无操作的流体边界类型；空区域条件报错。
-- 输入数组和字符串由库复制；输出数组由调用者分配。四类句柄独立拥有对象，析构允许 NULL。创建句柄的调用在验证参数前将有效的输出地址清零。
-- 成功的 status 调用清空当前线程错误；失败调用替换错误，查询和析构保留错误。初始状态仅允许 NULL/0 或完整的逐单元数组。
-- 网格规格原子替换，任何坐标轴校验失败均保留先前规格；Python 同时接受数组与可转换为 float64 的一维序列。
+数量与偏移使用 size_t；实体引用使用 uint32（无效值 UINT32_MAX）；CSR 索引使用 int32。矩阵构建前检查稀疏索引容量。输入和输出所有权、失败状态与线程局部错误语义保持既有 C API 约定；成功的 status 调用清空错误。API 成功与数值求解收敛分别报告。

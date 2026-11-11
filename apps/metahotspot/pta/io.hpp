@@ -13,7 +13,7 @@ namespace mhs::app::pta {
     struct Input {
         mhs::model::Study study;
         mhs::model::ModelDefinition model;
-        mhs::model::MeshSpec mesh;
+        mhs::model::ConformalMeshSpec mesh;
     };
 
     Input read_xml(const std::string& xml_path);

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace mhs::compiler {
 
@@ -37,17 +38,69 @@ namespace mhs::compiler {
         return std::nullopt;
     }
 
-    void refine_exterior_facets(
-        mhs::model::DiscreteMesh& mesh, const mhs::core::Vector<mhs::model::SurfaceRegion>& regions)
+    bool compile_cell(mhs::model::Model& model, const mhs::model::CellGeometry& cell,
+        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
+    {
+        using namespace mhs::core;
+        using namespace mhs::model;
+        std::array<Vector<double>, 3> cuts;
+        for (int a = 0; a < 3; ++a)
+            cuts[a] = {cell.min[a], cell.max[a]};
+        for (const auto& volume : volumes)
+            for (const auto& box : volume.geometry) {
+                bool intersects = true;
+                for (int a = 0; a < 3; ++a)
+                    intersects = intersects && box.max[a] > cell.min[a] && box.min[a] < cell.max[a];
+                if (!intersects)
+                    continue;
+                for (int a = 0; a < 3; ++a)
+                    for (double p : {box.min[a], box.max[a]})
+                        if (p > cell.min[a] + geometry_eps && p < cell.max[a] - geometry_eps)
+                            cuts[a].push_back(p);
+            }
+        for (auto& axis : cuts) {
+            std::sort(axis.begin(), axis.end());
+            axis.erase(std::unique(axis.begin(), axis.end()), axis.end());
+        }
+        MaterialId material = invalid_id;
+        bool active = false, inactive = false;
+        Vector<SourceTerm> sources;
+        const auto id = static_cast<CellId>(model.cells.size());
+        for (std::size_t x = 1; x < cuts[0].size(); ++x)
+            for (std::size_t y = 1; y < cuts[1].size(); ++y)
+                for (std::size_t z = 1; z < cuts[2].size(); ++z) {
+                    const CellGeometry piece {
+                        {cuts[0][x - 1], cuts[1][y - 1], cuts[2][z - 1]}, {cuts[0][x], cuts[1][y], cuts[2][z]}};
+                    const auto point = piece.center();
+                    const auto owner = classify_point(volumes, point);
+                    if (!owner) {
+                        inactive = true;
+                        continue;
+                    }
+                    const auto& volume = volumes[*owner];
+                    if (active && material != volume.material)
+                        throw std::invalid_argument("mesh cell crosses an effective material interface");
+                    active = true;
+                    material = volume.material;
+                    if (volume.source != invalid_id)
+                        sources.push_back({id, volume.source, piece.volume(), point});
+                }
+        if (active && inactive)
+            throw std::invalid_argument("mesh cell crosses an effective active-domain boundary");
+        if (!active)
+            return false;
+        model.cells.push_back({material, model.material_table[material].kind == MaterialKind::Fluid});
+        model.source_terms.insert(model.source_terms.end(), sources.begin(), sources.end());
+        return true;
+    }
+
+    void refine_boundary_facets(mhs::core::Vector<mhs::model::BoundaryFacet>& facets,
+        const mhs::core::Vector<mhs::model::SurfaceRegion>& regions)
     {
         using namespace mhs::model;
-        mhs::core::Vector<Facet> refined;
-        refined.reserve(mesh.facets.size());
-        for (const auto& facet : mesh.facets) {
-            if (!facet.exterior()) {
-                refined.push_back(facet);
-                continue;
-            }
+        mhs::core::Vector<BoundaryFacet> refined;
+        refined.reserve(facets.size());
+        for (const auto& facet : facets) {
             mhs::core::Vector<double> a, b;
             for (const auto& region : regions) {
                 if (region.axis != facet.axis || std::abs(region.coordinate - facet.coordinate) >= EPS)
@@ -84,17 +137,15 @@ namespace mhs::compiler {
                     refined.push_back(piece);
                 }
         }
-        mesh.facets = std::move(refined);
+        facets = std::move(refined);
     }
 
-    mhs::core::Vector<SurfaceTag> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
+    mhs::core::Vector<SurfaceTag> assign_boundary_regions(const mhs::core::Vector<mhs::model::BoundaryFacet>& facets,
         const mhs::core::Vector<TaggedSurfaceRegion>& regions, SurfaceTag fallback)
     {
-        mhs::core::Vector<SurfaceTag> assigned(mesh.facets.size(), mhs::core::invalid_id);
-        for (std::size_t id = 0; id < mesh.facets.size(); ++id) {
-            const auto& facet = mesh.facets[id];
-            if (!facet.exterior())
-                continue;
+        mhs::core::Vector<SurfaceTag> assigned(facets.size(), mhs::core::invalid_id);
+        for (std::size_t id = 0; id < facets.size(); ++id) {
+            const auto& facet = facets[id];
             assigned[id] = fallback;
             const auto a = (facet.bounds[0] + facet.bounds[1]) / 2;
             const auto b = (facet.bounds[2] + facet.bounds[3]) / 2;

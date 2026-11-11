@@ -4,7 +4,8 @@
 #include <gtest/gtest.h>
 #include <string>
 
-static mhs::model::MeshSpec cube_mesh() { return {{0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}}; }
+static mhs::model::ConformalMeshSpec cube_mesh()
+{ return {{0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}}; }
 
 TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
@@ -30,7 +31,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     auto result = mhs::solver::solve(model);
 
-    EXPECT_EQ(result.state.size(), model.discrete.cells.size());
+    EXPECT_EQ(result.state.size(), model.cells.size());
     EXPECT_TRUE(std::equal(result.state.begin(), result.state.end(), result.state.begin()));
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K

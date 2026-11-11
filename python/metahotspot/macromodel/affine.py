@@ -51,7 +51,7 @@ from metahotspot.macromodel.utils import (
 class BoundaryGroup:
     """A physical surface controlled by one affine Robin parameter.
 
-    Selected FacetIds supply normals and owner distances; projected areas may
+    Selected BoundaryFacetIds supply normals and owner distances; projected areas may
     contain several contributions to the same physical CellId. ``h_range`` is
     the physical HTC range; material conductivity comes from ``cell_layout``.
     """
@@ -284,7 +284,7 @@ class AffineParametricModel:
         fields = self.geometry.fields
         faces = np.asarray(group.surface.facet_ids, dtype=np.intp)
         cells = np.asarray(group.surface.cell_ids, dtype=np.intp)
-        axes = fields.facet_axis[faces]
+        axes = fields.boundary_axis[faces]
         k = self.cell_layout.conductivity[cells, axes]
         half = self.geometry.half_sizes[cells, axes]
         h = float(h_phys)

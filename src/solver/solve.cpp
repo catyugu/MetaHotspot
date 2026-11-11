@@ -187,7 +187,7 @@ namespace mhs::solver {
     mhs::solver::Solution solve(const mhs::model::Model& model, const mhs::model::Study& study,
         std::span<const double> initial_state, const SolveOptions& options)
     {
-        const auto cell_count = model.discrete.cells.size();
+        const auto cell_count = model.cells.size();
         if (cell_count == 0) {
             throw std::invalid_argument("solve: model has zero cells");
         }
@@ -216,9 +216,13 @@ namespace mhs::solver {
         for (const auto& probe : model.point_probes)
             probe_traces.push_back({probe.name, {}});
         StateObserver observe = [&](double time, std::span<const double> accepted_state) {
+            if (model.point_probes.empty())
+                return;
+            const auto gradients = reconstruct_gradients(model, accepted_state, time);
             for (std::size_t i = 0; i < model.point_probes.size(); ++i) {
                 const auto& probe = model.point_probes[i];
-                probe_traces[i].values.push_back(sample_point(model, accepted_state, time, probe.cell, probe.point));
+                probe_traces[i].values.push_back(
+                    sample_point(model, accepted_state, time, probe.cell, probe.point, gradients));
             }
         };
 

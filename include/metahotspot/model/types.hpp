@@ -3,7 +3,7 @@
 
 namespace mhs::model {
     using CellId = core::EntityIndex;
-    using FacetId = core::EntityIndex;
+    using BoundaryFacetId = core::EntityIndex;
     using MaterialId = core::EntityIndex;
     using SourceId = core::EntityIndex;
     using BoundaryConditionId = core::EntityIndex;

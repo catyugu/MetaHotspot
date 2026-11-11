@@ -13,7 +13,7 @@ from metahotspot.enums import Axis, StudyType
 
 def _model(*, transient: bool = False) -> metahotspot.Model:
     model = metahotspot.Model()
-    model.set_cartesian_mesh(
+    model.set_conformal_mesh(
         np.array([0.0, 0.001]),
         np.array([0.0, 0.001]),
         np.array([0.0, 0.001]),
@@ -36,7 +36,7 @@ def test_model_native_calls_compile_and_assemble():
     operators = compiled.assemble()
 
     assert compiled.cell_count == 1
-    assert compiled.info.facet_count == 6
+    assert compiled.info.boundary_count == 6
     assert operators.K.format == operators.C.format == "csr"
     assert operators.K.shape == (1, 1)
     assert operators.C.shape == (1, 1)
@@ -44,20 +44,16 @@ def test_model_native_calls_compile_and_assemble():
     assert operators.f[0] == pytest.approx(1.0e-3)
     assert compiled.fields is compiled.fields
     fields = compiled.fields
-    assert fields.facet_coordinate.shape == (compiled.info.facet_count,)
+    assert fields.boundary_coordinate.shape == (compiled.info.boundary_count,)
     for axis in range(3):
-        ids = np.flatnonzero(fields.facet_axis == axis)
-        owners = np.where(
-            fields.facet_minus[ids] == np.iinfo(np.uint32).max,
-            fields.facet_plus[ids],
-            fields.facet_minus[ids],
-        )
+        ids = np.flatnonzero(fields.boundary_axis == axis)
+        owners = fields.boundary_owner[ids]
         expected = np.where(
-            fields.facet_minus[ids] == np.iinfo(np.uint32).max,
+            fields.boundary_side[ids] < 0,
             fields.cell_min[owners, axis],
             fields.cell_max[owners, axis],
         )
-        np.testing.assert_allclose(fields.facet_coordinate[ids], expected)
+        np.testing.assert_allclose(fields.boundary_coordinate[ids], expected)
 
 
 def test_model_native_boundary_and_function_calls():

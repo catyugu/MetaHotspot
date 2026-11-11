@@ -46,9 +46,19 @@ _CORE_FUNC_SIGS = [
     ("mhs_model_destroy", None, [P(MhsModel)]),
     ("mhs_model_set_reference_temperature", I32, [P(MhsModel), F64]),
     (
-        "mhs_model_set_cartesian_mesh",
+        "mhs_model_set_conformal_mesh",
         I32,
         [P(MhsModel), Size, P(F64), Size, P(F64), Size, P(F64)],
+    ),
+    (
+        "mhs_model_set_nonconformal_mesh",
+        I32,
+        [P(MhsModel), Size, P(F64), P(F64), Size, P(ctypes.c_uint32)],
+    ),
+    (
+        "mhs_compiled_copy_connections",
+        I32,
+        [P(MhsCompiled), P(ctypes.c_uint32), Size, P(Size)],
     ),
     (
         "mhs_model_add_material",

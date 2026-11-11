@@ -11,11 +11,10 @@
 
 namespace mhs::app::output {
 
-    void write_vtu(
-        const std::string& path, const mhs::model::DiscreteMesh& mesh, std::span<const double> cell_temperature)
+    void write_vtu(const std::string& path, const mhs::model::Mesh& mesh, std::span<const double> cell_temperature)
     {
         using namespace tinyxml2;
-        if (cell_temperature.size() != mesh.cells.size())
+        if (cell_temperature.size() != cell_count(mesh))
             throw std::invalid_argument("VTU state size mismatch");
         std::map<mhs::model::Vec3, std::size_t> points;
         char buf[256];
@@ -23,8 +22,8 @@ namespace mhs::app::output {
         constexpr int corners[8][3]
             = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}};
         uint64_t cell_num = 0;
-        for (size_t c = 0; c < mesh.cells.size(); ++c) {
-            const auto& cell = mesh.cells[c];
+        for (size_t c = 0; c < cell_count(mesh); ++c) {
+            const auto& cell = cell_geometry(mesh, static_cast<mhs::model::CellId>(c));
             for (const auto& corner : corners) {
                 mhs::model::Vec3 p;
                 for (int a = 0; a < 3; ++a)

@@ -13,18 +13,20 @@ thermal conditions must be evaluated at physical surface temperature.
 
 ## Decision
 
-`DiscreteMesh::facets` is the unique collection of rectangular flux integration
-regions. `Facet` stores adjacent cells (one invalid for an exterior surface), normal
-axis, plane coordinate and tangential bounds. It supplies area, center, owner,
-outward sign and membership. `FacetId` identifies one canonical integration region.
+`Model::boundary_facets` is the unique collection of external rectangular integration
+regions. `BoundaryFacet` stores its owner CellId, normal axis, outward side, plane
+coordinate and tangential bounds. `BoundaryFacetId` identifies one such piece.
 
-The geometry compiler partitions exterior facets against the union of thermal and
-fluid boundary region cuts **before** building cell-facet incidence. A partially
-covered rectangle creates several Facets, including uncovered pieces. The compiler
-then independently binds thermal conditions to `Model::facet_thermal_condition`
-and fluid boundaries to those same FacetIds. Later regions take precedence within
-each physics. The default thermal condition applies to uncovered exterior facets.
-Internal facet geometry does not depend on exterior boundary assignments.
+The geometry compiler partitions these pieces against the union of thermal and
+fluid boundary region cuts. A partially covered rectangle creates several pieces,
+including uncovered regions. The compiler independently binds thermal conditions
+through `Model::boundary_thermal_condition` and fluid conditions to those same
+BoundaryFacetIds. Later regions take precedence within each physics. The default
+thermal condition applies to uncovered pieces.
+
+Internal contacts use CellId connections, implicit for ConformalMesh and explicit
+for NonConformalMesh. Their integration geometry is calculated during assembly;
+there is no internal Facet layer or cell-facet incidence index.
 
 For cell temperature `T`, trace `lambda`, normal conductivity `k`, center-to-wall
 distance `d`, and facet area `A`, conductive flux is `F = k A (T - lambda) / d`.
@@ -44,6 +46,6 @@ remain cell-sized, without materialized ghost nodes.
 ## Rationale
 
 - Canonical geometry and facet subdivision have one owner.
-- Multiple physics independently bind conditions to the same FacetIds.
+- Multiple physics independently bind conditions to the same BoundaryFacetIds.
 - No second boundary geometry, duplicated area, or mesh-dependent physical law.
 - Local trace condensation leaves the global degree-of-freedom count unchanged.

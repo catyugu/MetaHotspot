@@ -8,7 +8,8 @@
 using namespace mhs::solver;
 using namespace mhs::compiler;
 
-static mhs::model::MeshSpec cube_mesh() { return {{0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}}; }
+static mhs::model::ConformalMeshSpec cube_mesh()
+{ return {{0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}}; }
 
 // Helper: build a minimal SI ModelDefinition for a simple uniform cube
 static mhs::model::ModelDefinition make_simple_cube_io()
@@ -34,7 +35,7 @@ TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
     auto io = make_simple_cube_io();
     auto model = mhs::compiler::build_model(io, cube_mesh());
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.cells.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);
@@ -67,7 +68,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 
     auto model = mhs::compiler::build_model(io, cube_mesh());
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.cells.size());
 
     mhs::core::Vector<double> T300(static_cast<std::size_t>(N), 300.0);
     mhs::core::Vector<double> T500(static_cast<std::size_t>(N), 500.0);
@@ -84,7 +85,7 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
     auto io = make_simple_cube_io();
     auto model = mhs::compiler::build_model(io, cube_mesh());
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.cells.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);

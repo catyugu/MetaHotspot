@@ -1,6 +1,6 @@
 # MetaHotspot Context
 
-MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿真引擎。消费显式控制体与面片网格，采用单元中心主状态和外边界温度迹，支持稳态、瞬态，以及可选的单向流热耦合。
+MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿真引擎。接受共形坐标轴或显式非共形笛卡尔网格，采用单元中心主状态和外边界温度迹，支持稳态、瞬态，以及可选的单向流热耦合。
 
 本文只保存跨模块工作所需的稳定上下文。数据结构、调用链和接口签名分别以对应设计文档为准，不在此重复。
 
@@ -37,9 +37,9 @@ IO → (ModelDefinition, MeshSpec) → Compiler → Model → Solver → Solutio
 ## 数据约定
 
 - 内部几何一律使用 SI 米。
-- 控制体、唯一有向面片与 CSR 关联构成离散网格；CellId 同时标识控制体与温度状态下标。
-- `DiscreteMesh::facets` 是唯一的积分面片集合，热学与流体边界矩形在几何编译阶段共同切分外表面；`facet_thermal_condition` 按 FacetId 绑定类型化 `BoundaryCondition`。边界表达式中的 `T` 指物理表面温度迹。
-- 当前 TPFA 要求轴对齐控制体的相邻中心沿面法向对齐，并采用对角导热张量；网格由调用方提供。共形体编译路径要求内部 Box 边界落在输入网格平面上。
+- `Mesh` 区分隐式 `ConformalMesh` 和显式 `NonConformalMesh`；CellId 同时标识控制体与温度状态下标。共形网格只保存坐标轴和必要的空洞映射，非共形网格保存单元包围盒与 CellId 对。内部连接不保存派生几何。
+- `Model::boundary_facets` 保存外边界积分片，热学与流体边界矩形在几何编译阶段共同切分外表面；`boundary_thermal_condition` 按 BoundaryFacetId 绑定类型化 `BoundaryCondition`。边界表达式中的 `T` 指物理表面温度迹。
+- 域内采用轴对齐控制体、对角导热张量和 TPFA，非共形接触暂不进行通量修正；网格由调用方提供。编译器拒绝穿过有效材料界面或活动域边界的单元；同材料热源可通过子体积积分划分。
 - 材料、边界和热源表达式在 setup 阶段编译，热循环中不解析字符串。
 - Layer / Block / Rect / Boundary 的输入顺序属于模型语义，后出现的覆盖先出现的。
 - 当前只支持三维网格。

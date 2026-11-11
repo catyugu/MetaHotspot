@@ -377,3 +377,12 @@ TEST(IoTest, ReadXmlParsesPressureInletPumpResistance)
     ASSERT_NE(default_inlet, nullptr);
     EXPECT_DOUBLE_EQ(default_inlet->pump_resistance, 0);
 }
+
+TEST(IoTest, RejectsExplicitMeshXmlInsteadOfIgnoringItsTopology)
+{
+    auto xml = make_xml_with_observe_points("");
+    const auto position = xml.find("<Mesh>");
+    xml.insert(position + 6, "<Cells/><Connections/>");
+    const auto path = write_tmp_xml("unsupported_explicit_mesh.xml", xml);
+    EXPECT_THROW(mhs::app::pta::read_xml(path.string()), std::invalid_argument);
+}

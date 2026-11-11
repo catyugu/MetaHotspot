@@ -95,7 +95,7 @@ class MaterialValues:
 @dataclass(frozen=True)
 class CompiledInfo:
     cell_count: int
-    facet_count: int
+    boundary_count: int
     projection_count: int
     source_count: int
     reference_temperature: float
@@ -114,11 +114,11 @@ _COMPILED_FIELD_SPECS = (
     ("cell_min", ctypes.c_double, np.float64, "cell_count", 3),
     ("cell_max", ctypes.c_double, np.float64, "cell_count", 3),
     ("material_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
-    ("facet_minus", ctypes.c_uint32, np.uint32, "facet_count", 1),
-    ("facet_plus", ctypes.c_uint32, np.uint32, "facet_count", 1),
-    ("facet_axis", ctypes.c_int32, np.int32, "facet_count", 1),
-    ("facet_coordinate", ctypes.c_double, np.float64, "facet_count", 1),
-    ("facet_bounds", ctypes.c_double, np.float64, "facet_count", 4),
+    ("boundary_owner", ctypes.c_uint32, np.uint32, "boundary_count", 1),
+    ("boundary_side", ctypes.c_int32, np.int32, "boundary_count", 1),
+    ("boundary_axis", ctypes.c_int32, np.int32, "boundary_count", 1),
+    ("boundary_coordinate", ctypes.c_double, np.float64, "boundary_count", 1),
+    ("boundary_bounds", ctypes.c_double, np.float64, "boundary_count", 4),
     ("projection_cell", ctypes.c_uint32, np.uint32, "projection_count", 1),
     ("projection_source", ctypes.c_uint32, np.uint32, "projection_count", 1),
     ("projection_volume", ctypes.c_double, np.float64, "projection_count", 1),
@@ -138,7 +138,7 @@ def _compiled_info(dll, handle) -> CompiledInfo:
 
     return CompiledInfo(
         cell_count=int(info.cell_count),
-        facet_count=int(info.facet_count),
+        boundary_count=int(info.boundary_count),
         projection_count=int(info.projection_count),
         source_count=int(info.source_count),
         reference_temperature=float(info.reference_temperature),
@@ -155,7 +155,7 @@ def _compiled_fields(dll, handle, info: CompiledInfo) -> CompiledFields:
     }
     native = MhsCompiledFields(
         cell_count=info.cell_count,
-        facet_count=info.facet_count,
+        boundary_count=info.boundary_count,
         projection_count=info.projection_count,
         **{
             name: arrays[name].ctypes.data_as(ctypes.POINTER(ctype))
@@ -246,6 +246,19 @@ def _assembled_operators(dll, handle, state: np.ndarray, time: float):
 
 class Compiled(OwnedHandle):
     """Read-only compiled runtime model. Use ``Model.compile()``."""
+
+    def connections(self) -> np.ndarray:
+        """Return CellId pairs on demand; implicit topology stays out of fields."""
+        count = ctypes.c_size_t()
+        self._call("mhs_compiled_copy_connections", None, 0, ctypes.byref(count))
+        pairs = np.empty((count.value, 2), dtype=np.uint32)
+        self._call(
+            "mhs_compiled_copy_connections",
+            pairs.ctypes.data_as(ctypes.POINTER(ctypes.c_uint32)),
+            count.value,
+            ctypes.byref(count),
+        )
+        return pairs
 
     def __init__(self, dll, handle) -> None:
         super().__init__(dll, handle, dll.mhs_compiled_destroy)
