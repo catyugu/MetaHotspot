@@ -64,9 +64,7 @@ def test_cartesian_fluid_model_recompiles_consistently(case):
             inlet_temperature=300,
             pump_resistance=0 if case == 1 else 1e7,
         )
-        model.add_pressure_outlet(
-            [SurfaceRegion(0, 0.001, 0, 0.001, 0, 0.001)], 0
-        )
+        model.add_pressure_outlet([SurfaceRegion(0, 0.001, 0, 0.001, 0, 0.001)], 0)
         return model
 
     original = fluid_model().compile()
