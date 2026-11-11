@@ -25,9 +25,12 @@ namespace mhs::app::pta {
         const XMLElement* inlet = child_by_local_name(source, "InletTemperature");
         const XMLElement* pressure = child_by_local_name(source, "Pressure");
         const XMLElement* mass_flow = child_by_local_name(source, "MassFlowRate");
+        const XMLElement* pump_resistance = child_by_local_name(source, "PumpResistance");
+        if (pump_resistance && (!inlet || !pressure || mass_flow))
+            throw std::runtime_error("PumpResistance is only valid for a pressure inlet");
         if (inlet && pressure && !mass_flow) {
-            boundary.condition
-                = mhs::model::PressureInlet {parse_double(get_text(pressure)), parse_double(get_text(inlet))};
+            boundary.condition = mhs::model::PressureInlet {parse_double(get_text(pressure)),
+                parse_double(get_text(inlet)), pump_resistance ? parse_double(get_text(pump_resistance)) : 0.0};
         }
         else if (inlet && mass_flow && !pressure) {
             boundary.condition

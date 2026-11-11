@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
+#include <limits>
 #include <gtest/gtest.h>
 #include <type_traits>
 
@@ -168,6 +169,62 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     EXPECT_NEAR(side_area, 1.0, 1e-14);
     EXPECT_TRUE(has_cross_cut);
     EXPECT_EQ(refined.fluid.boundary_terms.size(), 5u);
+}
+
+TEST(FluidModuleTest, PressureInletPumpResistanceIsLumpedAcrossFacetSplits)
+{
+    using namespace mhs::model;
+    auto d = single_fluid_cell();
+    d.model.fluid_boundaries
+        = {{{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {200, 280, 0}},
+            {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}}};
+
+    auto total_inflow = [](const mhs::model::Model& model) {
+        double inflow = 0, outflow = 0;
+        for (const auto& term : model.fluid.boundary_terms) {
+            if (const auto* flow = std::get_if<FluidInflow>(&term.condition)) {
+                EXPECT_DOUBLE_EQ(flow->temperature, 280);
+                inflow += flow->mass_flow_rate;
+            }
+            else
+                outflow += std::get<FluidOutflow>(term.condition).mass_flow_rate;
+        }
+        EXPECT_NEAR(inflow, outflow, 1e-7);
+        return inflow;
+    };
+
+    const auto unrestricted = test_pta::build_model(d);
+    const double q0 = total_inflow(unrestricted);
+    ASSERT_GT(q0, 0);
+    constexpr double resistance = 40.0;
+    std::get<PressureInlet>(d.model.fluid_boundaries.front().condition).pump_resistance = resistance;
+    const double expected = 200.0 / (200.0 / q0 + resistance);
+    const auto restricted = test_pta::build_model(d);
+    EXPECT_NEAR(total_inflow(restricted), expected, expected * 1e-7);
+
+    // A thermal cut subdivides the same hydraulic inlet into multiple facets.
+    // The external pump resistance must still act on their combined flow.
+    ThermalBoundarySpec thermal;
+    thermal.condition = NeumannBoundary {"0"};
+    thermal.regions.push_back({Axis::X, 0, {0, 0.25, 0, 1}});
+    d.model.thermal_boundaries.push_back(thermal);
+    const auto split = test_pta::build_model(d);
+    EXPECT_GT(split.fluid.boundary_terms.size(), restricted.fluid.boundary_terms.size());
+    EXPECT_NEAR(total_inflow(split), expected, expected * 1e-7);
+}
+
+TEST(FluidModuleTest, RejectsInvalidPumpResistance)
+{
+    using namespace mhs::model;
+    auto d = single_fluid_cell();
+    d.model.fluid_boundaries
+        = {{{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {200, 280, 0}},
+            {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}}};
+    for (const double invalid : {-1.0, std::numeric_limits<double>::infinity(),
+             std::numeric_limits<double>::quiet_NaN()}) {
+        std::get<PressureInlet>(d.model.fluid_boundaries.front().condition).pump_resistance = invalid;
+        EXPECT_THROW(test_pta::build_model(d), std::invalid_argument);
+    }
 }
 
 TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)

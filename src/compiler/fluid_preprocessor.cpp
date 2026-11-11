@@ -5,8 +5,10 @@
 #include "core/vector.hpp"
 #include "linear/solver.hpp"
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <numeric>
+#include <stdexcept>
 #include <type_traits>
 
 namespace mhs::compiler::fluid {
@@ -92,7 +94,25 @@ namespace mhs::compiler::fluid {
             projected.push_back(static_cast<FacetId>(id));
             total_area[facet_boundary_tags[id]] += mesh.facets[id].area();
         }
-        mhs::core::Vector<double> conductance(mesh.facets.size(), 0), diagonal(n, 0);
+        // Pump resistance is in series with the entire inlet patch. Each
+        // resistive inlet uses one auxiliary pressure, shared by its facets.
+        constexpr std::size_t no_pump = std::numeric_limits<std::size_t>::max();
+        mhs::core::Vector<std::size_t> pump_dof(boundaries.size(), no_pump);
+        std::size_t system_size = n;
+        for (const auto& boundary : boundaries) {
+            const auto* inlet = std::get_if<PressureInlet>(&boundary.condition);
+            if (inlet && (!std::isfinite(inlet->pump_resistance) || inlet->pump_resistance < 0))
+                throw std::invalid_argument("pressure inlet PumpResistance must be finite and nonnegative");
+        }
+        for (const auto facet_id : projected) {
+            const auto tag = facet_boundary_tags[facet_id];
+            const auto* inlet = std::get_if<PressureInlet>(&boundaries[tag].condition);
+            if (inlet && inlet->pump_resistance > 0 && pump_dof[tag] == no_pump)
+                pump_dof[tag] = system_size++;
+        }
+        mhs::core::detail::checked_sparse_size(system_size);
+
+        mhs::core::Vector<double> conductance(mesh.facets.size(), 0), diagonal(system_size, 0);
         for (std::size_t id = 0; id < mesh.facets.size(); ++id) {
             const auto& f = mesh.facets[id];
             if (f.exterior())
@@ -111,7 +131,7 @@ namespace mhs::compiler::fluid {
         bool reference = false;
         mhs::core::Vector<double> boundary_conductance(projected.size(), 0);
         mhs::core::Vector<mhs::core::Triplet<double>> entries;
-        mhs::core::Vector<double> rhs(n, 0.0);
+        mhs::core::Vector<double> rhs(system_size, 0.0);
         for (std::size_t t = 0; t < projected.size(); ++t) {
             const auto facet_id = projected[t];
             const auto& facet = mesh.facets[facet_id];
@@ -129,15 +149,36 @@ namespace mhs::compiler::fluid {
                         const double g = facet.area() * mobility[i] / distance;
                         boundary_conductance[t] = g;
                         diagonal[i] += g;
-                        rhs[i] += g * bc.pressure;
+                        if constexpr (std::is_same_v<T, mhs::model::PressureInlet>) {
+                            if (pump_dof[tag] != no_pump) {
+                                const auto port = pump_dof[tag];
+                                diagonal[port] += g;
+                                entries.emplace_back(
+                                    static_cast<SparseIndex>(i), static_cast<SparseIndex>(port), -g);
+                                entries.emplace_back(
+                                    static_cast<SparseIndex>(port), static_cast<SparseIndex>(i), -g);
+                            }
+                            else
+                                rhs[i] += g * bc.pressure;
+                        }
+                        else
+                            rhs[i] += g * bc.pressure;
                     }
                 },
                 boundaries[tag].condition);
         }
+        for (std::size_t tag = 0; tag < boundaries.size(); ++tag) {
+            if (pump_dof[tag] == no_pump)
+                continue;
+            const auto& inlet = std::get<PressureInlet>(boundaries[tag].condition);
+            const double g = 1.0 / inlet.pump_resistance;
+            diagonal[pump_dof[tag]] += g;
+            rhs[pump_dof[tag]] += g * inlet.pressure;
+        }
         if (!reference)
             throw std::runtime_error(
                 "fluid domain has no pressure reference; a pressure inlet or an outlet is required");
-        for (std::size_t i = 0; i < n; ++i)
+        for (std::size_t i = 0; i < system_size; ++i)
             entries.emplace_back(static_cast<SparseIndex>(i), static_cast<SparseIndex>(i), diagonal[i]);
         for (std::size_t id = 0; id < mesh.facets.size(); ++id)
             if (conductance[id] != 0) {
@@ -146,10 +187,10 @@ namespace mhs::compiler::fluid {
                 entries.emplace_back(static_cast<SparseIndex>(i), static_cast<SparseIndex>(j), -conductance[id]);
                 entries.emplace_back(static_cast<SparseIndex>(j), static_cast<SparseIndex>(i), -conductance[id]);
             }
-        auto matrix = mhs::core::build_csr(n, n, std::move(entries));
+        auto matrix = mhs::core::build_csr(system_size, system_size, std::move(entries));
         auto solver = mhs::linear::create_solver();
         solver->compute(matrix.view());
-        mhs::core::Vector<double> pressure(n, 0.0);
+        mhs::core::Vector<double> pressure(system_size, 0.0);
         const auto result = solver->solve(rhs, pressure);
         if (!result.success)
             throw std::runtime_error("fluid pressure solve failed");
@@ -164,8 +205,13 @@ namespace mhs::compiler::fluid {
                     using T = std::decay_t<decltype(bc)>;
                     if constexpr (std::is_same_v<T, mhs::model::MassFlowInlet>)
                         return -bc.mass_flow_rate * facet.area() / total_area[tag];
-                    else
-                        return rho[i] * boundary_conductance[t] * (pressure[i] - bc.pressure);
+                    else {
+                        double boundary_pressure = bc.pressure;
+                        if constexpr (std::is_same_v<T, mhs::model::PressureInlet>)
+                            if (pump_dof[tag] != no_pump)
+                                boundary_pressure = pressure[pump_dof[tag]];
+                        return rho[i] * boundary_conductance[t] * (pressure[i] - boundary_pressure);
+                    }
                 },
                 condition);
             if (mass < 0) {
