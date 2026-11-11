@@ -7,8 +7,8 @@
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
-#include <limits>
 #include <gtest/gtest.h>
+#include <limits>
 #include <type_traits>
 
 namespace {
@@ -175,9 +175,8 @@ TEST(FluidModuleTest, PressureInletPumpResistanceIsLumpedAcrossFacetSplits)
 {
     using namespace mhs::model;
     auto d = single_fluid_cell();
-    d.model.fluid_boundaries
-        = {{{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {200, 280, 0}},
-            {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}}};
+    d.model.fluid_boundaries.push_back({{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {200, 280, 0}});
+    d.model.fluid_boundaries.push_back({{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}});
 
     auto total_inflow = [](const mhs::model::Model& model) {
         double inflow = 0, outflow = 0;
@@ -218,11 +217,11 @@ TEST(FluidModuleTest, RejectsInvalidPumpResistance)
 {
     using namespace mhs::model;
     auto d = single_fluid_cell();
-    d.model.fluid_boundaries
-        = {{{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {200, 280, 0}},
-            {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}}};
-    for (const double invalid : {-1.0, std::numeric_limits<double>::infinity(),
-             std::numeric_limits<double>::quiet_NaN()}) {
+    d.model.fluid_boundaries.push_back({{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {200, 280, 0}});
+    d.model.fluid_boundaries.push_back({{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}});
+    const double infinity = std::numeric_limits<double>::infinity();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    for (const double invalid : {-1.0, infinity, nan}) {
         std::get<PressureInlet>(d.model.fluid_boundaries.front().condition).pump_resistance = invalid;
         EXPECT_THROW(test_pta::build_model(d), std::invalid_argument);
     }

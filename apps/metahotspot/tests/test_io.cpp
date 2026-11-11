@@ -351,9 +351,7 @@ TEST(IoTest, ReadXmlParsesPressureInletPumpResistance)
             <ThermalBoundary i:type="a:PressureInletBoundary">
                 <a:InletTemperature>280</a:InletTemperature>
                 <a:Pressure>200</a:Pressure>
-                )")
-        + pump_field
-        + R"(</ThermalBoundary>
+                )") + pump_field + R"(</ThermalBoundary>
         </Boundary>
     </Boundaries>
 )";

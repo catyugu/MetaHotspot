@@ -153,10 +153,8 @@ namespace mhs::compiler::fluid {
                             if (pump_dof[tag] != no_pump) {
                                 const auto port = pump_dof[tag];
                                 diagonal[port] += g;
-                                entries.emplace_back(
-                                    static_cast<SparseIndex>(i), static_cast<SparseIndex>(port), -g);
-                                entries.emplace_back(
-                                    static_cast<SparseIndex>(port), static_cast<SparseIndex>(i), -g);
+                                entries.emplace_back(static_cast<SparseIndex>(i), static_cast<SparseIndex>(port), -g);
+                                entries.emplace_back(static_cast<SparseIndex>(port), static_cast<SparseIndex>(i), -g);
                             }
                             else
                                 rhs[i] += g * bc.pressure;
