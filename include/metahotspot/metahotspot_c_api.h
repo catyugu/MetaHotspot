@@ -82,11 +82,11 @@ enum { MHS_AXIS_X = 0, MHS_AXIS_Y = 1, MHS_AXIS_Z = 2 };
 typedef int32_t mhs_geometry_op_t;
 enum { MHS_GEOM_ADD = 0, MHS_GEOM_SUB = 1 };
 
+typedef int32_t mhs_material_kind_t;
+enum { MHS_MATERIAL_SOLID = 0, MHS_MATERIAL_FLUID = 1 };
+
 typedef int32_t mhs_solver_type_t;
 enum { MHS_SOLVER_PARDISO = 0, MHS_SOLVER_AMG = 1 };
-
-typedef int32_t mhs_fluid_bc_t;
-enum { MHS_FLUID_PRESSURE_INLET = 1, MHS_FLUID_MASS_FLOW_INLET = 2, MHS_FLUID_OUTLET = 3 };
 
 typedef int32_t mhs_status_t;
 enum {
@@ -148,29 +148,31 @@ typedef struct {
 
 /** Explicit compiled geometry sizes. State order is CellId order. */
 typedef struct {
-    size_t cell_count, face_count, projection_count, source_count;
+    size_t cell_count, facet_count, projection_count, source_count;
     double reference_temperature;
 } mhs_compiled_info_t;
 
 /** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
- * Face bounds are (face_count,4) in ascending
+ * Facet bounds are (facet_count,4) in ascending
  * tangential axes: YZ for X, XZ for Y, XY for Z, each [a_min,a_max,b_min,b_max].
- * Positive flux runs face_minus -> face_plus along face_axis. Exterior patches
+ * Facet coordinates are (facet_count,) in the normal axis. Positive flux
+ * runs facet_minus -> facet_plus along facet_axis. Exterior facets
  * have exactly one MHS_INVALID_INDEX cell; the missing side determines the normal. */
 typedef struct {
-    size_t cell_count, face_count, projection_count;
+    size_t cell_count, facet_count, projection_count;
     double* cell_min;
     double* cell_max;
     mhs_index_t* material_id;
-    mhs_index_t* face_minus;
-    mhs_index_t* face_plus;
-    mhs_axis_t* face_axis;
-    double* face_bounds;
+    mhs_index_t* facet_minus;
+    mhs_index_t* facet_plus;
+    mhs_axis_t* facet_axis;
+    double* facet_coordinate;
+    double* facet_bounds;
     mhs_index_t* projection_cell;
     mhs_index_t* projection_source;
     double* projection_volume;
     double* projection_center;
-} mhs_cell_fields_t;
+} mhs_compiled_fields_t;
 
 /** Evaluate power in each geometric volume-projection term at supplied state/time. */
 MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, const double* state, size_t state_count,
@@ -229,7 +231,7 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out);
 MHS_API void mhs_model_destroy(mhs_model_t* m);
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  reference state, mesh, variables         */
+/*  Model construction  —  reference state, mesh         */
 /* ------------------------------------------------------------------ */
 
 /** Reference temperature used only by compile-time frozen-flow preprocessing
@@ -241,15 +243,14 @@ MHS_API mhs_status_t mhs_model_set_reference_temperature(mhs_model_t* m, double 
 MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
     mhs_model_t* m, size_t nx, const double* x, size_t ny, const double* y, size_t nz, const double* z);
 
-MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression);
-
 /* ------------------------------------------------------------------ */
 /*  Model construction  —  materials, sources, volumes           */
 /* ------------------------------------------------------------------ */
 
-/** NULL dynamic_viscosity selects a solid; a non-NULL expression selects a fluid. */
+/** Material kind is explicit. Fluids require a non-NULL dynamic_viscosity; solids require NULL. */
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
-    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id);
+    const char* kz, const char* rho, const char* c, mhs_material_kind_t kind, const char* dynamic_viscosity,
+    mhs_index_t* out_id);
 
 /** Geometry, mesh coordinates and probes use SI metres. Expressions use canonical x/y/z/T/t.
  * Later volumes override earlier volumes. MHS_INVALID_INDEX omits the heat source. */
@@ -301,10 +302,15 @@ MHS_API mhs_status_t mhs_model_add_function_periodic_piecewise_constant(
 
 /** Named point probe, with three finite SI coordinates copied into the model. */
 MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name, const double xyz[3]);
-/* Same region layout as thermal boundaries. NULL inlet_temperature selects the
- * model reference temperature; outlets ignore it. value is pressure (Pa), or mass flow (kg/s). */
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    mhs_fluid_bc_t kind, double value, const double* inlet_temperature);
+/** All fluid boundaries use nonempty SI surface regions, as for thermal boundaries.
+ * A NULL inlet_temperature selects the model reference temperature. Pump resistance
+ * is a nonnegative lumped pressure-drop coefficient (Pa s/m^3) for the total inlet flow. */
+MHS_API mhs_status_t mhs_model_add_pressure_inlet(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
+    double pressure, const double* inlet_temperature, double pump_resistance);
+MHS_API mhs_status_t mhs_model_add_mass_flow_inlet(mhs_model_t* m, const mhs_surface_region_t* regions,
+    size_t n_regions, double mass_flow_rate, const double* inlet_temperature);
+MHS_API mhs_status_t mhs_model_add_pressure_outlet(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, double pressure);
 
 /* ------------------------------------------------------------------ */
 /*  Compilation                                                        */
@@ -318,7 +324,7 @@ MHS_API void mhs_compiled_destroy(mhs_compiled_t* c);
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled_info_t* out);
-MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields);
+MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compiled_fields_t* fields);
 MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const double* temperature,
     size_t temperature_count, double time, mhs_material_values_t* values);
 

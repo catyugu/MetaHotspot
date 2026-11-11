@@ -20,12 +20,7 @@ namespace mhs::model {
         mhs::core::Vector<double> z_vertices;
     };
 
-    struct VariableSpec {
-        std::string name;
-        Expression value;
-    };
-
-    // SI geometry. Later volumes override earlier volumes; operations are ordered.
+    // SI geometry. Later volumes override earlier ones; internal box faces must align with mesh planes.
     struct BoxOperation {
         GeometryOperation operation = GeometryOperation::Add;
         std::array<double, 3> min {};
@@ -73,6 +68,7 @@ namespace mhs::model {
     using ThermalBoundarySpec = SurfaceConditionSpec<ThermalBoundary>;
 
     struct MaterialSpec {
+        MaterialKind kind = MaterialKind::Solid;
         Expression conductivity_x = "0.0";
         Expression conductivity_y = "0.0";
         Expression conductivity_z = "0.0";
@@ -140,6 +136,8 @@ namespace mhs::model {
     struct PressureInlet {
         double pressure = 0.0;
         std::optional<double> temperature;
+        // Lumped hydraulic resistance (Pa s/m^3) for the total inlet volume flow.
+        double pump_resistance = 0.0;
     };
     struct MassFlowInlet {
         double mass_flow_rate = 0.0;
@@ -153,8 +151,6 @@ namespace mhs::model {
 
     struct ModelDefinition {
         double reference_temperature = 300.0;
-        MeshSpec mesh;
-        mhs::core::Vector<VariableSpec> variables;
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;
         mhs::core::Vector<Expression> sources;

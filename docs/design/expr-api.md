@@ -1,6 +1,6 @@
 # expr 模块接口
 
-封装 muparser。`include/metahotspot/expression/expression.hpp`。**所有场/BC 表达式**走此模块；几何表达式走 `eval_geometry()`，与 `parse()` 接收同一类 `SymbolTable`，但只绑定 `variables`，不绑定场上下文或 native 函数。
+封装 muparser。`include/metahotspot/expression/expression.hpp`。材料、热源和边界的运行时表达式走此模块；PTA 几何算术表达式由应用层独立求值，不进入 SDK。
 
 ---
 
@@ -37,7 +37,7 @@ namespace mhs::expression {
 
 ## SymbolTable
 
-`SymbolTable` 是 `parse()` / `eval_geometry()` 的显式输入，以 const 引用传入。非恒定 `CompiledExpression` 的实现保存符号表的值副本，其生命周期与原符号表解耦。
+`SymbolTable` 仅包含运行时 native 函数，并作为 `parse()` 的显式输入，以 const 引用传入。非恒定 `CompiledExpression` 的实现保存符号表的值副本，其生命周期与原符号表解耦。
 
 ```cpp
 namespace mhs::expression {
@@ -46,13 +46,11 @@ namespace mhs::expression {
         bool reads_temperature = true; // 未标注的 native 保守视为读取温度
     };
     struct SymbolTable {
-        std::unordered_map<std::string, double> variables;       // 几何变量，长度按输入单位
         std::unordered_map<std::string, NativeFunction> natives; // 注册 C++ 函数及其温度依赖
     };
 }
 ```
 
-- `variables` — 在 `eval_geometry()` 中被 substring 扫描 + `DefineVar` 绑定；在 `parse()` 中**不参与**绑定（场/BC 公式只引用 `x/y/z/T/t`）。
 - `natives` — 在各线程解析器构造时通过 `DefineFunUserData()` 绑定；每个 `MuCompiled` 的预留 vector 持有 `NativeFnCtx` 和闭包副本，`MuCompiledTLS` 另持有符号表快照。`reads_temperature` 只服务边界解析路径的选择，不改变求值。
 
 Native 内部桥接：模块以 `mu::multfun_userdata_type` (`value_type(*)(void*, const value_type*, int)`) 注册到 muparser 的 `DefineFunUserData()` 槽，muparser 调用时先把所有实参独立求值，再以 `double* + int` 形式回调 `native_fn_bridge` 静态函数，连同当前 TLS `FieldContext*` 一起转发给用户 `FieldEvaluator`。
@@ -73,22 +71,15 @@ Native 内部桥接：模块以 `mu::multfun_userdata_type` (`value_type(*)(void
 namespace mhs::expression {
     // 空串或纯数字字面量 → make_constant；否则初始化当前线程解析器并返回句柄
     CompiledExpression parse(const std::string& formula, const SymbolTable& symbols);
-
-    // 仅依赖 symbols.variables 中的几何变量；无 FieldContext
-    double eval_geometry(const std::string& formula, const SymbolTable& symbols);
 }
 ```
 
 ### 典型用法
 
 ```cpp
-// build_model：构造本地 SymbolTable 贯穿 setup 路径
+// build_model：构造仅含运行时 native 函数的本地 SymbolTable
 mhs::expression::SymbolTable symbols;
 // 编译器内部将 typed Function 注册为 FieldEvaluator。
-
-// 几何：此例的变量值以米表示
-symbols.variables["w_top"] = 0.02;
-double half_w = mhs::expression::eval_geometry("w_top/2", symbols);
 
 // 场
 auto k = mhs::expression::parse("400 + 0.01*T", symbols);
@@ -97,10 +88,10 @@ double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 
 ## 线程安全
 
-| 操作                                                     | 同步                                   |
-| -------------------------------------------------------- | -------------------------------------- |
-| `parse()` / `eval_geometry()` / `register_all_functions` | setup 阶段使用各自的本地 `SymbolTable` |
-| `CompiledExpression::eval()`                             | 每线程独立 AST，无应用层互斥锁         |
+| 操作 | 同步 |
+| --- | --- |
+| `parse()` / `register_all_functions()` | setup 阶段使用本地 `SymbolTable` |
+| `CompiledExpression::eval()` | 每线程独立 AST，无应用层互斥锁 |
 
 `SymbolTable` 是 setup 期间单线程构造的本地值；运行时（`CompiledExpression::eval`）无任何全局状态访问，因此多个 `build_model()` 调用互不干扰。
 

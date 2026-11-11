@@ -30,15 +30,14 @@ class GeometryOp(enum.IntEnum):
     SUB = 1
 
 
+class MaterialKind(enum.IntEnum):
+    SOLID = 0
+    FLUID = 1
+
+
 class SolverType(enum.IntEnum):
     PARDISO = 0
     AMG = 1
-
-
-class FluidBC(enum.IntEnum):
-    PRESSURE_INLET = 1
-    MASS_FLOW_INLET = 2
-    OUTLET = 3
 
 
 class LogLevel(enum.IntEnum):

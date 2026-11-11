@@ -1,6 +1,6 @@
 #include "solver/assembler.hpp"
 #include "core/vector.hpp"
-#include "thermal_reconstruction.hpp"
+#include "thermal_physics.hpp"
 #include <numeric>
 #include <stdexcept>
 #include <type_traits>
@@ -15,8 +15,8 @@ namespace mhs::solver {
             for (std::size_t i = 0; i < n; ++i) {
                 row.clear();
                 row.push_back(static_cast<core::SparseIndex>(i));
-                for (const auto id : mesh.incident_faces(static_cast<model::CellId>(i))) {
-                    const auto other = (mesh.faces[id].minus == i ? mesh.faces[id].plus : mesh.faces[id].minus);
+                for (const auto id : mesh.incident_facets(static_cast<model::CellId>(i))) {
+                    const auto other = (mesh.facets[id].minus == i ? mesh.facets[id].plus : mesh.facets[id].minus);
                     if (other != core::invalid_id)
                         row.push_back(static_cast<core::SparseIndex>(other));
                 }
@@ -98,37 +98,27 @@ namespace mhs::solver {
         auto fluid_index = [&](CellId c) {
             return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
         };
-        for (std::size_t id = 0; id < model.discrete.faces.size(); ++id) {
-            const auto& f = model.discrete.faces[id];
+        for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
+            const auto& f = model.discrete.facets[id];
             if (f.exterior())
                 continue;
             const auto i = f.minus;
             const auto row = static_cast<SparseIndex>(f.minus);
-            const auto ki = conductivity_[i][static_cast<std::size_t>(f.axis)];
+            const auto axis = static_cast<std::size_t>(f.axis);
+            const auto ki = conductivity_[i][axis];
             const auto j = f.plus;
             const auto col = static_cast<SparseIndex>(f.plus);
-            const auto kj = conductivity_[j][static_cast<std::size_t>(f.axis)];
-            const auto axis = static_cast<std::size_t>(f.axis);
-            const double d_minus = model.discrete.cells[f.minus].size()[axis] / 2;
-            const double d_plus = model.discrete.cells[f.plus].size()[axis] / 2;
-            auto resistance = d_minus / ki + d_plus / kj;
-            const auto fi = fluid_index(f.minus), fj = fluid_index(f.plus);
-            if ((fi == mhs::core::invalid_id) != (fj == mhs::core::invalid_id)) {
-                const auto fluid = (fi != mhs::core::invalid_id) ? fi : fj;
-                const double kfluid = (fi != mhs::core::invalid_id) ? ki : kj;
-                const double ksolid = (fi != mhs::core::invalid_id) ? kj : ki;
-                const double distance = (fi != mhs::core::invalid_id) ? d_plus : d_minus;
-                const double h = model.fluid.interface_heat_transfer_factor[fluid] * kfluid;
-                resistance = distance / ksolid + 1.0 / h;
-            }
-            const double g = f.area() / resistance;
+            const auto kj = conductivity_[j][axis];
+            const auto fi = fluid_index(i), fj = fluid_index(j);
+            const auto [r_minus, r_plus] = interior_facet_resistances(model, f, ki, kj);
+            const double g = f.area() / (r_minus + r_plus);
             const auto ij = slot(row, col), ji = slot(col, row);
             values[diagonal_positions_[i]] += g;
             values[ij] -= g;
             values[diagonal_positions_[j]] += g;
             values[ji] -= g;
             if ((fi != mhs::core::invalid_id) && (fj != mhs::core::invalid_id)) {
-                const double mass = model.fluid.face_volume_flux[id] * 0.5 * (density_[fi] + density_[fj]);
+                const double mass = model.fluid.facet_volume_flux[id] * 0.5 * (density_[fi] + density_[fj]);
                 if (mass != 0.0) {
                     const double enthalpy = mass * specific_heat_[(mass > 0 ? fi : fj)];
                     values[mass > 0 ? diagonal_positions_[i] : ij] += enthalpy;
@@ -136,19 +126,24 @@ namespace mhs::solver {
                 }
             }
         }
-        for (const auto& term : model.boundary_faces) {
-            const auto axis = static_cast<std::size_t>(term.axis);
-            const double area = (term.bounds[1] - term.bounds[0]) * (term.bounds[3] - term.bounds[2]);
-            const auto row = static_cast<SparseIndex>(term.cell);
-            const auto trace = evaluate_boundary(model.boundary_conditions[term.condition],
-                boundary_center(model.discrete.cells[term.cell], term), area,
-                (model.discrete.cells[term.cell].size()[axis] / 2), temperature[row], conductivity_[term.cell][axis],
-                time);
+        for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
+            const auto& facet = model.discrete.facets[id];
+            if (!facet.exterior() || model.facet_thermal_condition[id] == invalid_id)
+                continue;
+            const auto cell = facet.owner();
+            const auto axis = static_cast<std::size_t>(facet.axis);
+            const auto row = static_cast<SparseIndex>(cell);
+            const auto center = facet.center();
+            const mhs::expression::FieldContext context {center[0], center[1], center[2], temperature[row], time};
+            const double d = model.discrete.cells[cell].size()[axis] / 2;
+            const double g = facet.area() / side_thermal_resistance(d, conductivity_[cell][axis]);
+            const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
+            const auto trace = evaluate_boundary(condition, context, facet.area(), g);
             rhs[row] += trace.load;
             values[diagonal_positions_[row]] += trace.conductance;
         }
         for (const auto& term : model.fluid.boundary_terms) {
-            const auto cell = term.cell;
+            const auto cell = model.discrete.facets[term.facet].owner();
             const auto row = static_cast<SparseIndex>(cell);
             const auto cp = specific_heat_[model.fluid.global_to_fluid[cell]];
             std::visit(

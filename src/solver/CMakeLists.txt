@@ -1,9 +1,9 @@
 add_library(mhs_solver STATIC
     assembler.cpp
     nonlinear_solver.cpp
-    probe_recorder.cpp
     solve.cpp
     thermal_reconstruction.cpp
+    thermal_physics.cpp
 )
 target_link_libraries(mhs_solver
     PUBLIC mhs_model

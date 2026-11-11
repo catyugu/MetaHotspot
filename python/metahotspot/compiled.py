@@ -17,8 +17,8 @@ from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
 from metahotspot.enums import SolverType
 from metahotspot.types import (
-    MhsCellFields,
     MhsCompiled,
+    MhsCompiledFields,
     MhsCompiledInfo,
     MhsMaterialValues,
     MhsOperators,
@@ -95,7 +95,7 @@ class MaterialValues:
 @dataclass(frozen=True)
 class CompiledInfo:
     cell_count: int
-    face_count: int
+    facet_count: int
     projection_count: int
     source_count: int
     reference_temperature: float
@@ -110,14 +110,15 @@ def _int32_ptr(array: np.ndarray):
 
 
 # (field name, ctypes element type, numpy dtype, count source on MhsCompiledInfo)
-_CELL_FIELD_SPECS = (
+_COMPILED_FIELD_SPECS = (
     ("cell_min", ctypes.c_double, np.float64, "cell_count", 3),
     ("cell_max", ctypes.c_double, np.float64, "cell_count", 3),
     ("material_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
-    ("face_minus", ctypes.c_uint32, np.uint32, "face_count", 1),
-    ("face_plus", ctypes.c_uint32, np.uint32, "face_count", 1),
-    ("face_axis", ctypes.c_int32, np.int32, "face_count", 1),
-    ("face_bounds", ctypes.c_double, np.float64, "face_count", 4),
+    ("facet_minus", ctypes.c_uint32, np.uint32, "facet_count", 1),
+    ("facet_plus", ctypes.c_uint32, np.uint32, "facet_count", 1),
+    ("facet_axis", ctypes.c_int32, np.int32, "facet_count", 1),
+    ("facet_coordinate", ctypes.c_double, np.float64, "facet_count", 1),
+    ("facet_bounds", ctypes.c_double, np.float64, "facet_count", 4),
     ("projection_cell", ctypes.c_uint32, np.uint32, "projection_count", 1),
     ("projection_source", ctypes.c_uint32, np.uint32, "projection_count", 1),
     ("projection_volume", ctypes.c_double, np.float64, "projection_count", 1),
@@ -137,7 +138,7 @@ def _compiled_info(dll, handle) -> CompiledInfo:
 
     return CompiledInfo(
         cell_count=int(info.cell_count),
-        face_count=int(info.face_count),
+        facet_count=int(info.facet_count),
         projection_count=int(info.projection_count),
         source_count=int(info.source_count),
         reference_temperature=float(info.reference_temperature),
@@ -150,20 +151,18 @@ def _compiled_fields(dll, handle, info: CompiledInfo) -> CompiledFields:
             (int(getattr(info, count)), dim) if dim > 1 else int(getattr(info, count)),
             dtype=dtype,
         )
-        for name, _, dtype, count, dim in _CELL_FIELD_SPECS
+        for name, _, dtype, count, dim in _COMPILED_FIELD_SPECS
     }
-    native = MhsCellFields(
+    native = MhsCompiledFields(
         cell_count=info.cell_count,
-        face_count=info.face_count,
+        facet_count=info.facet_count,
         projection_count=info.projection_count,
         **{
             name: arrays[name].ctypes.data_as(ctypes.POINTER(ctype))
-            for name, ctype, _, _, _ in _CELL_FIELD_SPECS
+            for name, ctype, _, _, _ in _COMPILED_FIELD_SPECS
         },
     )
-    check(
-        dll.mhs_compiled_copy_cell_fields(handle, ctypes.byref(native)), "cell_fields"
-    )
+    check(dll.mhs_compiled_copy_fields(handle, ctypes.byref(native)), "compiled_fields")
     return CompiledFields(**arrays)
 
 

@@ -5,8 +5,6 @@
 #include "core/vector.hpp"
 #include "expression/expression.hpp"
 
-#include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <stdexcept>
 
@@ -60,41 +58,63 @@ namespace mhs::compiler {
             return compiled;
         }
 
+        void validate_surface_regions(const mhs::model::ModelDefinition& definition)
+        {
+            auto check = [](const mhs::model::SurfaceRegion& region) {
+                const auto& r = region.rectangle;
+                if (static_cast<unsigned>(region.axis) > 2 || !std::isfinite(region.coordinate)
+                    || !std::isfinite(r.a_min) || !std::isfinite(r.a_max) || !std::isfinite(r.b_min)
+                    || !std::isfinite(r.b_max) || r.a_min >= r.a_max || r.b_min >= r.b_max)
+                    throw std::invalid_argument("surface region requires a valid axis and finite, increasing bounds");
+            };
+            for (const auto& boundary : definition.thermal_boundaries)
+                for (const auto& region : boundary.regions)
+                    check(region);
+            for (const auto& boundary : definition.fluid_boundaries)
+                for (const auto& region : boundary.regions)
+                    check(region);
+        }
+
     } // namespace
 
-    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition)
+    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition, const mhs::model::MeshSpec& mesh)
     {
         if (!std::isfinite(definition.reference_temperature))
             throw std::invalid_argument("reference temperature must be finite");
+        validate_surface_regions(definition);
 
         mhs::model::Model model;
         model.reference_temperature = definition.reference_temperature;
 
-        auto symbols = build_symbol_table(definition);
+        mhs::expression::SymbolTable symbols;
+        register_all_functions(symbols, definition.functions);
         for (const auto& p : definition.point_probes)
-            model.point_probes.push_back({p.name, p.x, p.y, p.z});
+            model.point_probes.push_back({p.name, {p.x, p.y, p.z}});
 
         // Compile material properties in ModelDefinition::materials order.
         model.material_table.resize(definition.materials.size());
-        mhs::compiler::fluid::FluidMaterialData fluid_materials;
-        fluid_materials.initial_viscosity.assign(definition.materials.size(), std::nullopt);
+        mhs::core::Vector<double> initial_viscosity(definition.materials.size());
 
         for (size_t m = 0; m < definition.materials.size(); m++) {
             const auto& mat = definition.materials[m].value;
             auto compile_mat = [&](const std::string& expr) { return mhs::expression::parse(expr, symbols); };
             auto& props = model.material_table[m];
+            props.kind = mat.kind;
             props.kx = compile_mat(mat.conductivity_x);
             props.ky = compile_mat(mat.conductivity_y);
             props.kz = compile_mat(mat.conductivity_z);
             props.rho = compile_mat(mat.density);
             props.c = compile_mat(mat.specific_heat);
-            if (mat.dynamic_viscosity.has_value()) {
-                if (mat.dynamic_viscosity->empty()) {
+            if (mat.kind == mhs::model::MaterialKind::Fluid) {
+                if (!mat.dynamic_viscosity || mat.dynamic_viscosity->empty())
                     throw std::runtime_error(
                         "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
-                }
-                fluid_materials.initial_viscosity[m]
+                initial_viscosity[m]
                     = compile_mat(*mat.dynamic_viscosity).eval({0, 0, 0, model.reference_temperature, 0});
+            }
+            else if (mat.dynamic_viscosity) {
+                throw std::invalid_argument(
+                    "solid material '" + definition.materials[m].name + "' must not define DynamicViscosity");
             }
         }
 
@@ -119,22 +139,30 @@ namespace mhs::compiler {
         auto default_thermal_boundary
             = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
 
-        compile_cartesian_mesh(model, definition.mesh, definition.volumes);
-        project_cell_regions(model, definition.volumes);
+        compile_conformal_mesh(model, mesh, definition.volumes);
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())
                 throw std::out_of_range("cell has no valid material assignment");
-        for (const auto& patch :
-            project_exterior_surface_regions(model.discrete, compiled_boundaries, default_thermal_boundary))
-            model.boundary_faces.push_back({patch.cell, patch.axis, patch.sign,
-                static_cast<mhs::model::BoundaryConditionId>(patch.tag), patch.bounds});
 
-        // Fluid coupling.
-        const bool has_fluid_material = std::any_of(definition.materials.begin(), definition.materials.end(),
-            [](const mhs::model::NamedMaterial& material) { return material.value.dynamic_viscosity.has_value(); });
-        if (has_fluid_material) {
-            mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_materials);
-        }
+        // Canonical geometric partition shared by all boundary physics.
+        mhs::core::Vector<mhs::model::SurfaceRegion> cuts;
+        for (const auto& boundary : compiled_boundaries)
+            cuts.push_back(boundary.region);
+        mhs::core::Vector<TaggedSurfaceRegion> fluid_regions;
+        for (std::size_t id = 0; id < definition.fluid_boundaries.size(); ++id)
+            for (const auto& region : definition.fluid_boundaries[id].regions) {
+                cuts.push_back(region);
+                fluid_regions.push_back({region, static_cast<SurfaceTag>(id)});
+            }
+        refine_exterior_facets(model.discrete, cuts);
+        build_cell_facet_incidence(model.discrete);
+
+        model.facet_thermal_condition
+            = assign_exterior_regions(model.discrete, compiled_boundaries, default_thermal_boundary);
+
+        // Hydraulic boundary assignments share the same canonical FacetIds.
+        auto fluid_tags = assign_exterior_regions(model.discrete, fluid_regions);
+        mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_tags, initial_viscosity);
 
         return model;
     }

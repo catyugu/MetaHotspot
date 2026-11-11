@@ -166,36 +166,4 @@ namespace mhs::expression {
         return CompiledExpression::make_evaluator(formula, symbols);
     }
 
-    double eval_geometry(const std::string& formula, const SymbolTable& symbols)
-    {
-        if (formula.empty())
-            return 0.0;
-
-        const auto& vars = symbols.variables;
-
-        auto var_it = vars.find(formula);
-        if (var_it != vars.end()) {
-            return var_it->second;
-        }
-
-        mu::Parser parser;
-        mhs::core::Vector<std::pair<std::string, double>> active_vars;
-        active_vars.reserve(vars.size());
-
-        for (const auto& [name, val] : vars) {
-            if (formula.find(name) != std::string::npos) {
-                active_vars.emplace_back(name, val);
-                parser.DefineVar(active_vars.back().first, &active_vars.back().second);
-            }
-        }
-
-        try {
-            parser.SetExpr(formula);
-            return parser.Eval();
-        }
-        catch (const mu::ParserError& e) {
-            throw std::runtime_error(std::string("geometry eval error: '") + formula + "': " + e.GetMsg());
-        }
-    }
-
 } // namespace mhs::expression

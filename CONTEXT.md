@@ -11,7 +11,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 依赖方向：
 
 ```text
-IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
+IO → (ModelDefinition, MeshSpec) → Compiler → Model → Solver → Solution → IO
 ```
 
 `mhs::core` 是编译后的公共内核，提供容器、内存池与低级 kernel；`model` 保存输入定义和运行期领域数据。依赖为 `model → expression → core`、`linear → core`，compiler/solver 在其上工作。Eigen 仅用于内部小规模 QR 与可选 PARDISO 实现，不属于公开头或 SDK 链接依赖。
@@ -23,13 +23,8 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 - `solve_system` 只负责非线性迭代、时间推进和输出时刻；它通过
   `SystemAssembler(state, time)` 请求整个系统的当前线性化，不理解 FVM、
   端口或耦合拓扑。
-- 模型降阶（BCI-FANTASTIC）在 `python/metahotspot/macromodel` 与 `playground/`
-  用例中以纯 Python 实现：目标是逼近**全场传递算子** `X(p, s) = A(p, s)^-1 G`
-  （功率端口到整场温度分布的状态级算子），热源区作为端口、边界组作为仿射 Robin 项，
-  降阶基由功率输入驱动，在线用 scipy 固定步 BDF1 求解，不依赖 C++ 端口耦合。
-- 瞬态只保留 `Adaptive` 与 `Fixed` 两种步进。二者都会在输出时刻和终止
-  时刻截短当前步，observer 只接收真实积分状态；禁止对包含模态系数的
-  全局状态做时间插值。
+- Python 宏模型原型位于 `python/metahotspot/macromodel` 与 `playground/`，分别处理源端口、边界参数和可嵌入接口；其降阶误差与接口模型假设由各实验独立验证。
+- 核心瞬态采用 AdaptiveTimeStepper 自适应 BDF1/2；输出时刻可由稠密插值采样，终点为真实积分状态。
 - 模态瞬态宏模型必须在同一基底下提供完整的 `K_r`、`C_r`、`f_r` 和一致
   初态。静态端口柔度的 SVD 只验证稳态端口响应，不能单独证明瞬态降阶精度；
   瞬态 ROM 需要动态模态或时域快照及时间步收敛验证。
@@ -43,8 +38,8 @@ IO → ModelDefinition → Compiler → Model → Solver → Solution → IO
 
 - 内部几何一律使用 SI 米。
 - 控制体、唯一有向面片与 CSR 关联构成离散网格；CellId 同时标识控制体与温度状态下标。
-- `boundary_faces` 按父 FaceId 排序；每片引用原始 FaceId 与类型化 `BoundaryCondition`，不修改网格拓扑。边界表达式中的 `T` 指该片温度迹。
-- 当前 TPFA 要求轴对齐控制体的相邻中心沿面法向对齐，并采用对角导热张量；网格由调用方提供。
+- `DiscreteMesh::facets` 是唯一的积分面片集合，热学与流体边界矩形在几何编译阶段共同切分外表面；`facet_thermal_condition` 按 FacetId 绑定类型化 `BoundaryCondition`。边界表达式中的 `T` 指物理表面温度迹。
+- 当前 TPFA 要求轴对齐控制体的相邻中心沿面法向对齐，并采用对角导热张量；网格由调用方提供。共形体编译路径要求内部 Box 边界落在输入网格平面上。
 - 材料、边界和热源表达式在 setup 阶段编译，热循环中不解析字符串。
 - Layer / Block / Rect / Boundary 的输入顺序属于模型语义，后出现的覆盖先出现的。
 - 当前只支持三维网格。

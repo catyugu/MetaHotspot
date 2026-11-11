@@ -69,6 +69,7 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts);
 
 struct mhs_model_t {
     mhs::model::ModelDefinition def;
+    mhs::model::MeshSpec mesh;
 };
 
 struct mhs_compiled_t {
@@ -109,12 +110,29 @@ static mhs::model::Axis _to_axis(mhs_axis_t a)
     }
 }
 
-static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
+static mhs::model::MaterialKind _to_material_kind(mhs_material_kind_t kind)
 {
-    if (!std::isfinite(coord) || !std::isfinite(r.a_min) || !std::isfinite(r.a_max) || !std::isfinite(r.b_min)
-        || !std::isfinite(r.b_max) || r.a_min >= r.a_max || r.b_min >= r.b_max)
-        throw std::invalid_argument("surface region bounds must be finite and increasing");
-    return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}};
+    switch (kind) {
+    case MHS_MATERIAL_SOLID:
+        return mhs::model::MaterialKind::Solid;
+    case MHS_MATERIAL_FLUID:
+        return mhs::model::MaterialKind::Fluid;
+    default:
+        throw std::invalid_argument("invalid material kind: " + std::to_string(kind));
+    }
+}
+
+static mhs::model::SurfaceRegion _make_surface_region(mhs_axis_t axis, double coord, mhs_rect2d_t r)
+{ return {_to_axis(axis), coord, {r.a_min, r.a_max, r.b_min, r.b_max}}; }
+
+static mhs::core::Vector<mhs::model::SurfaceRegion> _copy_surface_regions(
+    const mhs_surface_region_t* regions, size_t count)
+{
+    mhs::core::Vector<mhs::model::SurfaceRegion> result;
+    result.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+        result.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
+    return result;
 }
 
 template <typename Boundary> static void _add_thermal_boundary(
@@ -122,12 +140,22 @@ template <typename Boundary> static void _add_thermal_boundary(
 {
     if (!n_regions)
         throw std::invalid_argument("surface regions must not be empty");
-    mhs::model::ThermalBoundarySpec bp;
-    bp.condition = std::move(condition);
-    bp.regions.reserve(n_regions);
-    for (size_t i = 0; i < n_regions; ++i)
-        bp.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-    m->def.thermal_boundaries.push_back(std::move(bp));
+    m->def.thermal_boundaries.push_back({_copy_surface_regions(regions, n_regions), std::move(condition)});
+}
+
+static void _add_fluid_boundary(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, mhs::model::FluidBoundaryCondition condition)
+{
+    if (!n_regions)
+        throw std::invalid_argument("surface regions must not be empty");
+    m->def.fluid_boundaries.push_back({_copy_surface_regions(regions, n_regions), std::move(condition)});
+}
+
+static std::optional<double> _inlet_temperature(const double* temperature)
+{
+    if (temperature && !std::isfinite(*temperature))
+        throw std::invalid_argument("inlet temperature must be finite");
+    return temperature ? std::optional<double>(*temperature) : std::nullopt;
 }
 
 static mhs::solver::SolveOptions::LinearSolverType _to_solver_type(mhs_solver_type_t t)
@@ -200,16 +228,12 @@ MHS_API mhs_status_t mhs_model_create(mhs_model_t** out)
 MHS_API void mhs_model_destroy(mhs_model_t* m) { delete m; }
 
 /* ------------------------------------------------------------------ */
-/*  Model construction  —  settings, mesh, variables                   */
+/*  Model construction  —  settings, mesh                   */
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_set_reference_temperature(mhs_model_t* m, double temperature_K)
 {
     CHECK_NULL(m);
-    if (!std::isfinite(temperature_K)) {
-        SET_ERR("reference temperature must be finite");
-        return MHS_ERROR;
-    }
     m->def.reference_temperature = temperature_K;
     mhs_detail_clear_last_error();
     return MHS_OK;
@@ -223,23 +247,11 @@ MHS_API mhs_status_t mhs_model_set_cartesian_mesh(
         auto axis = [](const double* data, size_t count) {
             if (!data || count < 2)
                 throw std::invalid_argument("mesh axes require at least two vertices");
-            mhs::core::Vector<double> result(data, data + count);
-            for (size_t i = 0; i < count; ++i)
-                if (!std::isfinite(result[i]) || (i && result[i] <= result[i - 1]))
-                    throw std::invalid_argument("mesh vertices must be finite and strictly increasing");
-            return result;
+            return mhs::core::Vector<double>(data, data + count);
         };
         mhs::model::MeshSpec mesh {axis(x, nx), axis(y, ny), axis(z, nz)};
-        m->def.mesh = std::move(mesh);
+        m->mesh = std::move(mesh);
     });
-}
-
-MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, const char* expression)
-{
-    CHECK_NULL(m);
-    CHECK_NULL(name);
-    CHECK_NULL(expression);
-    MHS_TRY({ m->def.variables.push_back({name, expression}); });
 }
 
 /* ------------------------------------------------------------------ */
@@ -247,7 +259,8 @@ MHS_API mhs_status_t mhs_model_add_variable(mhs_model_t* m, const char* name, co
 /* ------------------------------------------------------------------ */
 
 MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, const char* kx, const char* ky,
-    const char* kz, const char* rho, const char* c, const char* dynamic_viscosity, mhs_index_t* out_id)
+    const char* kz, const char* rho, const char* c, mhs_material_kind_t kind, const char* dynamic_viscosity,
+    mhs_index_t* out_id)
 {
     CHECK_NULL(m);
     CHECK_NULL(name);
@@ -259,16 +272,14 @@ MHS_API mhs_status_t mhs_model_add_material(mhs_model_t* m, const char* name, co
     CHECK_NULL(c);
     MHS_TRY({
         mhs::model::MaterialSpec spec;
+        spec.kind = _to_material_kind(kind);
         spec.conductivity_x = kx;
         spec.conductivity_y = ky;
         spec.conductivity_z = kz;
         spec.density = rho;
         spec.specific_heat = c;
-        if (dynamic_viscosity) {
-            if (!dynamic_viscosity[0])
-                throw std::invalid_argument("dynamic viscosity expression must not be empty");
-            spec.dynamic_viscosity = std::string(dynamic_viscosity);
-        }
+        if (dynamic_viscosity)
+            spec.dynamic_viscosity = dynamic_viscosity;
         *out_id = static_cast<mhs_index_t>(m->def.materials.size());
         m->def.materials.push_back({name, std::move(spec)});
     });
@@ -289,10 +300,6 @@ MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, 
     CHECK_NULL(m);
     CHECK_NULL(out_id);
     MHS_TRY({
-        if (material >= m->def.materials.size())
-            throw std::out_of_range("material ID out of range");
-        if (source != MHS_INVALID_INDEX && source >= m->def.sources.size())
-            throw std::out_of_range("source ID out of range");
         *out_id = static_cast<mhs_index_t>(m->def.volumes.size());
         m->def.volumes.push_back({material, source, {}});
     });
@@ -458,32 +465,43 @@ MHS_API mhs_status_t mhs_model_add_point_probe(mhs_model_t* m, const char* name,
     });
 }
 
-MHS_API mhs_status_t mhs_model_add_fluid_boundary(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
-    mhs_fluid_bc_t kind, double value, const double* inlet_temperature)
+MHS_API mhs_status_t mhs_model_add_pressure_inlet(mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions,
+    double pressure, const double* inlet_temperature, double pump_resistance)
 {
     CHECK_NULL(m);
     CHECK_NULL(regions);
     MHS_TRY({
-        if (!n_regions || !std::isfinite(value) || (inlet_temperature && !std::isfinite(*inlet_temperature)))
-            throw std::invalid_argument("fluid boundary requires regions and finite values");
-        mhs::model::FluidBoundarySpec fb;
-        for (size_t i = 0; i < n_regions; ++i)
-            fb.regions.push_back(_make_surface_region(regions[i].axis, regions[i].coordinate, regions[i].rectangle));
-        const auto temperature = inlet_temperature ? std::optional<double>(*inlet_temperature) : std::nullopt;
-        switch (kind) {
-        case MHS_FLUID_PRESSURE_INLET:
-            fb.condition = mhs::model::PressureInlet {value, temperature};
-            break;
-        case MHS_FLUID_MASS_FLOW_INLET:
-            fb.condition = mhs::model::MassFlowInlet {value, temperature};
-            break;
-        case MHS_FLUID_OUTLET:
-            fb.condition = mhs::model::PressureOutlet {value};
-            break;
-        default:
-            throw std::invalid_argument("invalid fluid boundary kind");
-        }
-        m->def.fluid_boundaries.push_back(std::move(fb));
+        if (!std::isfinite(pressure))
+            throw std::invalid_argument("pressure inlet must have finite pressure");
+        if (!std::isfinite(pump_resistance) || pump_resistance < 0)
+            throw std::invalid_argument("PumpResistance must be finite and nonnegative");
+        _add_fluid_boundary(m, regions, n_regions,
+            mhs::model::PressureInlet {pressure, _inlet_temperature(inlet_temperature), pump_resistance});
+    });
+}
+
+MHS_API mhs_status_t mhs_model_add_mass_flow_inlet(mhs_model_t* m, const mhs_surface_region_t* regions,
+    size_t n_regions, double mass_flow_rate, const double* inlet_temperature)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(regions);
+    MHS_TRY({
+        if (!std::isfinite(mass_flow_rate))
+            throw std::invalid_argument("mass flow inlet must have finite mass flow rate");
+        _add_fluid_boundary(
+            m, regions, n_regions, mhs::model::MassFlowInlet {mass_flow_rate, _inlet_temperature(inlet_temperature)});
+    });
+}
+
+MHS_API mhs_status_t mhs_model_add_pressure_outlet(
+    mhs_model_t* m, const mhs_surface_region_t* regions, size_t n_regions, double pressure)
+{
+    CHECK_NULL(m);
+    CHECK_NULL(regions);
+    MHS_TRY({
+        if (!std::isfinite(pressure))
+            throw std::invalid_argument("pressure outlet must have finite pressure");
+        _add_fluid_boundary(m, regions, n_regions, mhs::model::PressureOutlet {pressure});
     });
 }
 
@@ -498,7 +516,7 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     CHECK_NULL(m);
     MHS_TRY({
         auto c = std::make_unique<mhs_compiled_t>();
-        c->model = mhs::compiler::build_model(m->def);
+        c->model = mhs::compiler::build_model(m->def, m->mesh);
         *out = c.release();
     });
 }
@@ -514,7 +532,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(c);
     CHECK_NULL(out);
     out->cell_count = c->model.discrete.cells.size();
-    out->face_count = c->model.discrete.faces.size();
+    out->facet_count = c->model.discrete.facets.size();
     out->projection_count = c->model.source_terms.size();
     out->source_count = c->model.heat_source_table.size();
     out->reference_temperature = c->model.reference_temperature;
@@ -559,24 +577,25 @@ namespace {
     }
 } // namespace
 
-MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_cell_fields_t* fields)
+MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compiled_fields_t* fields)
 {
     CHECK_NULL(c);
     CHECK_NULL(fields);
     const auto& model = c->model;
     const auto& mesh = model.discrete;
-    if (fields->cell_count != mesh.cells.size() || fields->face_count != mesh.faces.size()
+    if (fields->cell_count != mesh.cells.size() || fields->facet_count != mesh.facets.size()
         || fields->projection_count != model.source_terms.size()) {
-        SET_ERR("CellFields buffer sizes do not match compiled model");
+        SET_ERR("compiled fields buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
     if (fields->cell_count && (!fields->cell_min || !fields->cell_max || !fields->material_id)) {
         SET_ERR("NULL cell field buffer");
         return MHS_ERROR;
     }
-    if (fields->face_count
-        && (!fields->face_minus || !fields->face_plus || !fields->face_axis || !fields->face_bounds)) {
-        SET_ERR("NULL face field buffer");
+    const bool missing_facet_buffer = !fields->facet_minus || !fields->facet_plus || !fields->facet_axis
+        || !fields->facet_coordinate || !fields->facet_bounds;
+    if (fields->facet_count && missing_facet_buffer) {
+        SET_ERR("NULL facet field buffer");
         return MHS_ERROR;
     }
     if (fields->projection_count
@@ -592,13 +611,14 @@ MHS_API mhs_status_t mhs_compiled_copy_cell_fields(const mhs_compiled_t* c, mhs_
         }
         fields->material_id[cidx] = model.cell_material[cidx];
     }
-    for (size_t id = 0; id < mesh.faces.size(); ++id) {
-        const auto& face = mesh.faces[id];
-        fields->face_minus[id] = face.minus;
-        fields->face_plus[id] = face.plus;
-        fields->face_axis[id] = static_cast<mhs_axis_t>(face.axis);
+    for (size_t id = 0; id < mesh.facets.size(); ++id) {
+        const auto& facet = mesh.facets[id];
+        fields->facet_minus[id] = facet.minus;
+        fields->facet_plus[id] = facet.plus;
+        fields->facet_axis[id] = static_cast<mhs_axis_t>(facet.axis);
+        fields->facet_coordinate[id] = facet.coordinate;
         for (size_t a = 0; a < 4; ++a)
-            fields->face_bounds[4 * id + a] = face.bounds[a];
+            fields->facet_bounds[4 * id + a] = facet.bounds[a];
     }
     for (size_t id = 0; id < model.source_terms.size(); ++id) {
         const auto& term = model.source_terms[id];
@@ -721,18 +741,7 @@ MHS_API mhs_status_t mhs_operators_copy_c(const mhs_operators_t* operators, mhs_
 MHS_API mhs_status_t mhs_operators_copy_rhs(const mhs_operators_t* operators, double* out, size_t count)
 {
     CHECK_NULL(operators);
-    const auto expected_count = operators->operators.f.size();
-    if (count != expected_count) {
-        SET_ERR("rhs count must equal " << expected_count);
-        return MHS_ERROR;
-    }
-    if (count > 0 && !out) {
-        SET_ERR("NULL pointer: out");
-        return MHS_ERROR;
-    }
-    std::copy_n(operators->operators.f.data(), count, out);
-    mhs_detail_clear_last_error();
-    return MHS_OK;
+    return copy_vector(operators->operators.f, out, count, "rhs");
 }
 
 /* ------------------------------------------------------------------ */
@@ -792,16 +801,9 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study
             throw std::invalid_argument("initial state must be NULL/0 or have cell_count entries");
         const std::span<const double> init_span(state, state_count);
 
-        auto sol = mhs::solver::solve(c->model, run, init_span, so);
-
-        auto* s = new (std::nothrow) mhs_solution_t;
-        if (!s) {
-            *out = nullptr;
-            SET_ERR("memory allocation failed");
-            return MHS_ERROR;
-        }
-        s->sol = std::move(sol);
-        *out = s;
+        auto result = std::make_unique<mhs_solution_t>();
+        result->sol = mhs::solver::solve(c->model, run, init_span, so);
+        *out = result.release();
     });
 }
 

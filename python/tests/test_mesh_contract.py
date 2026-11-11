@@ -5,17 +5,19 @@ import pytest
 from test_model_binding import _model
 
 from metahotspot import SurfaceRegion
+from metahotspot.enums import MaterialKind
 
 
-def test_subcell_sources_keep_independent_power_columns():
+def test_conformal_sources_keep_independent_power_columns():
     from metahotspot.macromodel.affine import AffineParametricModel, SourcePort
 
     model = _model()
+    model.set_cartesian_mesh([0, 0.00025, 0.001], [0, 0.001], [0, 0.001])
     second = model.add_volume(0, model.add_source("2e6"))
     model.add_box(second, [0, 0, 0], [0.00025, 0.001, 0.001])
     compiled = model.compile()
     q = compiled.source_operator()
-    np.testing.assert_allclose(q.toarray(), [[0.00075, 0.0005]])
+    np.testing.assert_allclose(q.toarray(), [[0, 0.0005], [0.00075, 0]])
     np.testing.assert_allclose(q.sum(axis=1).A.ravel(), compiled.assemble().f)
     np.testing.assert_allclose(compiled.fields.projection_volume.sum(), 1e-9)
 
@@ -30,7 +32,7 @@ def test_subcell_sources_keep_independent_power_columns():
             ]
 
     ports = Ports()
-    np.testing.assert_allclose(ports.source_shape, [[1, 1]])
+    np.testing.assert_allclose(ports.source_shape, [[0, 1], [1, 0]])
     np.testing.assert_allclose(
         ports.source_shape @ ports.nominal_power(), compiled.assemble().f
     )
@@ -43,16 +45,26 @@ def test_cartesian_fluid_model_recompiles_consistently(case):
     def fluid_model():
         model = _model()
         material = model.add_material(
-            "fluid", "0.6", "0.6", "0.6", "1000", "4200", "0.001"
+            "fluid",
+            "0.6",
+            "0.6",
+            "0.6",
+            "1000",
+            "4200",
+            kind=MaterialKind.FLUID,
+            dynamic_viscosity="0.001",
         )
         volume = model.add_volume(material, 0)
         model.add_box(volume, [0, 0, 0], [0.001, 0.001, 0.001])
         model.set_cartesian_mesh(*(np.linspace(0, 0.001, 4) for _ in range(3)))
         model.set_default_convection("10", "300")
-        model.add_fluid_boundary(
-            [SurfaceRegion(0, 0, 0, 0.001, 0, 0.001)], 1, 100 if case == 1 else 200, 300
+        model.add_pressure_inlet(
+            [SurfaceRegion(0, 0, 0, 0.001, 0, 0.001)],
+            100 if case == 1 else 200,
+            inlet_temperature=300,
+            pump_resistance=0 if case == 1 else 1e7,
         )
-        model.add_fluid_boundary([SurfaceRegion(0, 0.001, 0, 0.001, 0, 0.001)], 3, 0)
+        model.add_pressure_outlet([SurfaceRegion(0, 0.001, 0, 0.001, 0, 0.001)], 0)
         return model
 
     original = fluid_model().compile()
@@ -95,9 +107,9 @@ def test_ctm_robin_projection_uses_native_face_normal_and_distance():
             return (boundary,)
 
     fields = compiled.fields
-    axes = fields.face_axis[boundary.face_ids]
-    half = CellGeometry(fields).half_sizes[boundary.cells, axes]
-    expected = np.average(1000 / (1 + 1000 * half), weights=boundary.areas)
+    axes = fields.facet_axis[boundary.surface.facet_ids]
+    half = CellGeometry(fields).half_sizes[boundary.surface.cell_ids, axes]
+    expected = np.average(1000 / (1 + 1000 * half), weights=boundary.surface.areas)
     np.testing.assert_allclose(Ports().physical_to_effective([1000]), [expected])
 
 
@@ -108,7 +120,10 @@ def test_native_mesh_input_rejects_invalid_vertices(axis):
     from metahotspot._error import MetaHotspotError
 
     model = _model()
-    reference = model.compile().fields.cell_min.copy()
-    with pytest.raises((ValueError, MetaHotspotError)):
+    if len(axis) < 2:
+        with pytest.raises((ValueError, MetaHotspotError)):
+            model.set_cartesian_mesh(axis, [0.0, 0.001], [0.0, 0.001])
+    else:
         model.set_cartesian_mesh(axis, [0.0, 0.001], [0.0, 0.001])
-    np.testing.assert_array_equal(model.compile().fields.cell_min, reference)
+        with pytest.raises((ValueError, MetaHotspotError)):
+            model.compile()

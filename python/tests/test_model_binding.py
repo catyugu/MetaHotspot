@@ -36,13 +36,28 @@ def test_model_native_calls_compile_and_assemble():
     operators = compiled.assemble()
 
     assert compiled.cell_count == 1
-    assert compiled.info.face_count == 6
+    assert compiled.info.facet_count == 6
     assert operators.K.format == operators.C.format == "csr"
     assert operators.K.shape == (1, 1)
     assert operators.C.shape == (1, 1)
     assert operators.f.shape == (1,)
     assert operators.f[0] == pytest.approx(1.0e-3)
     assert compiled.fields is compiled.fields
+    fields = compiled.fields
+    assert fields.facet_coordinate.shape == (compiled.info.facet_count,)
+    for axis in range(3):
+        ids = np.flatnonzero(fields.facet_axis == axis)
+        owners = np.where(
+            fields.facet_minus[ids] == np.iinfo(np.uint32).max,
+            fields.facet_plus[ids],
+            fields.facet_minus[ids],
+        )
+        expected = np.where(
+            fields.facet_minus[ids] == np.iinfo(np.uint32).max,
+            fields.cell_min[owners, axis],
+            fields.cell_max[owners, axis],
+        )
+        np.testing.assert_allclose(fields.facet_coordinate[ids], expected)
 
 
 def test_model_native_boundary_and_function_calls():
@@ -54,7 +69,6 @@ def test_model_native_boundary_and_function_calls():
     model.set_default_dirichlet("300")
     model.set_default_neumann("0")
     model.set_default_convection("10", "300")
-    model.add_variable("x0", "0")
     model.add_function_expr("constant", "1")
     model.add_function_gauss("gauss", 1.0, 1.0, 0.0)
     model.add_function_sine("sine", 1.0, 1.0, 0.0)
@@ -64,10 +78,11 @@ def test_model_native_boundary_and_function_calls():
         "periodic", np.array([0.0, 0.001]), 1.0
     )
     model.add_point_probe("center", (0.0005, 0.0005, 0.0005))
-    with pytest.raises(MetaHotspotError, match="invalid fluid boundary kind"):
-        model.add_fluid_boundary(
-            [SurfaceRegion(Axis.Z, 0.0, 0.0, 1.0, 0.0, 1.0)], 0, 0.0
-        )
+    model.add_pressure_inlet(region, 100.0, inlet_temperature=300.0)
+    model.add_mass_flow_inlet(region, 1e-6, inlet_temperature=300.0)
+    model.add_pressure_outlet(region, 0.0)
+    with pytest.raises(MetaHotspotError, match="PumpResistance"):
+        model.add_pressure_inlet(region, 100.0, pump_resistance=-1.0)
 
     compiled = model.compile()
     assert compiled.cell_count == 1

@@ -25,9 +25,12 @@ namespace mhs::app::pta {
         const XMLElement* inlet = child_by_local_name(source, "InletTemperature");
         const XMLElement* pressure = child_by_local_name(source, "Pressure");
         const XMLElement* mass_flow = child_by_local_name(source, "MassFlowRate");
+        const XMLElement* pump_resistance = child_by_local_name(source, "PumpResistance");
+        if (pump_resistance && (!inlet || !pressure || mass_flow))
+            throw std::runtime_error("PumpResistance is only valid for a pressure inlet");
         if (inlet && pressure && !mass_flow) {
-            boundary.condition
-                = mhs::model::PressureInlet {parse_double(get_text(pressure)), parse_double(get_text(inlet))};
+            boundary.condition = mhs::model::PressureInlet {parse_double(get_text(pressure)),
+                parse_double(get_text(inlet)), pump_resistance ? parse_double(get_text(pump_resistance)) : 0.0};
         }
         else if (inlet && mass_flow && !pressure) {
             boundary.condition
@@ -206,7 +209,7 @@ namespace mhs::app::pta {
         // Variables
         if (const XMLElement* vars = root->FirstChildElement("Variables")) {
             for (const XMLElement* kv = vars->FirstChildElement(); kv; kv = kv->NextSiblingElement()) {
-                mhs::model::VariableSpec var;
+                VariableSpec var;
                 if (const XMLElement* key = child_by_local_name(kv, "Key")) {
                     var.name = get_text(key);
                 }
@@ -214,7 +217,7 @@ namespace mhs::app::pta {
                     var.value = get_text(val);
                 }
                 if (!var.name.empty()) {
-                    def.model.variables.push_back(std::move(var));
+                    def.variables.push_back(std::move(var));
                 }
             }
         }
@@ -275,9 +278,10 @@ namespace mhs::app::pta {
                         const std::string value = get_text(fluid);
                         if (value != "true" && value != "false")
                             throw std::runtime_error("FluidMaterial must be true or false");
-                        if (value == "true" && !mat.dynamic_viscosity)
+                        mat.kind = value == "true" ? mhs::model::MaterialKind::Fluid : mhs::model::MaterialKind::Solid;
+                        if (mat.kind == mhs::model::MaterialKind::Fluid && !mat.dynamic_viscosity)
                             throw std::runtime_error("fluid material '" + name + "' is missing DynamicViscosity");
-                        if (value == "false")
+                        if (mat.kind == mhs::model::MaterialKind::Solid)
                             mat.dynamic_viscosity.reset();
                     }
                     else {
@@ -407,6 +411,10 @@ namespace mhs::app::pta {
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
                             for (const XMLElement* rect_elem = rects_elem->FirstChildElement("Rect"); rect_elem;
                                 rect_elem = rect_elem->NextSiblingElement("Rect")) {
+                                // PTA array placeholders are not physical rectangles.
+                                const XMLElement* disguise = rect_elem->FirstChildElement("ArrayDisguise");
+                                if (disguise && get_text(disguise) == "true")
+                                    continue;
                                 RectOperation rect;
                                 if (const XMLElement* adds = rect_elem->FirstChildElement("Add_sub")) {
                                     rect.operation = get_text(adds) == "true" ? mhs::model::GeometryOperation::Add
@@ -516,26 +524,25 @@ namespace mhs::app::pta {
                     if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
                         for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.model.mesh.x_vertices.push_back(parse_double(get_text(val)));
+                            def.mesh.x_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
                         for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.model.mesh.y_vertices.push_back(parse_double(get_text(val)));
+                            def.mesh.y_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                     if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
                         for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
                             val = val->NextSiblingElement("a:double")) {
-                            def.model.mesh.z_vertices.push_back(parse_double(get_text(val)));
+                            def.mesh.z_vertices.push_back(parse_double(get_text(val)));
                         }
                     }
                 }
             }
         }
-        if (def.model.mesh.x_vertices.empty() || def.model.mesh.y_vertices.empty()
-            || def.model.mesh.z_vertices.empty()) {
+        if (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()) {
             if (const XMLElement* generated_mesh = root->FirstChildElement("GeneratedMesh")) {
                 const auto read_vertices = [&](const char* axis, mhs::core::Vector<double>& vertices) {
                     const XMLElement* array = child_by_local_name(generated_mesh, axis);
@@ -551,9 +558,9 @@ namespace mhs::app::pta {
                             vertices.push_back(parse_double(get_text(value)));
                     }
                 };
-                read_vertices("XArray", def.model.mesh.x_vertices);
-                read_vertices("YArray", def.model.mesh.y_vertices);
-                read_vertices("ZArray", def.model.mesh.z_vertices);
+                read_vertices("XArray", def.mesh.x_vertices);
+                read_vertices("YArray", def.mesh.y_vertices);
+                read_vertices("ZArray", def.mesh.z_vertices);
             }
         }
 
@@ -579,7 +586,8 @@ namespace mhs::app::pta {
         }
 
         def.model.default_thermal_boundary = std::move(default_thermal_boundary);
-        return {study, normalize(std::move(def))};
+        normalize(def);
+        return {study, std::move(def.model), std::move(def.mesh)};
     }
 
 } // namespace mhs::app::pta

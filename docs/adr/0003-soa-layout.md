@@ -10,10 +10,10 @@ Large control-volume models require compact storage and predictable iteration wi
 
 ## Decision
 
-Store cell geometry and face patches in contiguous vectors, adjacency in CSR arrays, and physical attributes in separate arrays and expression tables. See `include/metahotspot/model/discrete_mesh.hpp` and `include/metahotspot/model/model.hpp`. `ModelDefinition` keeps the input-oriented structure; conversion happens once in the compiler.
+Store cell geometry and canonical facets in contiguous vectors, adjacency in CSR arrays, and physical attributes in separate arrays and expression tables. See `include/metahotspot/model/discrete_mesh.hpp` and `include/metahotspot/model/model.hpp`. `ModelDefinition` keeps the input-oriented structure; conversion happens once in the compiler.
 
 ## Rationale
 
-- Contiguous cell and face loops avoid pointer chasing.
+- Contiguous cell and facet loops avoid pointer chasing.
 - Attribute arrays separate physical assignments from geometric and algebraic identities.
 - AoS in IO is correct: it maps 1:1 to XML elements.

@@ -28,7 +28,6 @@ namespace mhs::expression {
     };
 
     struct SymbolTable {
-        std::unordered_map<std::string, double> variables;
         std::unordered_map<std::string, NativeFunction> natives;
     };
 
@@ -64,8 +63,5 @@ namespace mhs::expression {
 
     // Parse a field expression string against the supplied SymbolTable.
     CompiledExpression parse(const std::string& formula, const SymbolTable& symbols);
-
-    // Evaluate a geometry expression against the supplied SymbolTable's variables.
-    double eval_geometry(const std::string& formula, const SymbolTable& symbols);
 
 } // namespace mhs::expression

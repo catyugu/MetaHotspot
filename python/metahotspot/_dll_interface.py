@@ -8,8 +8,8 @@ from __future__ import annotations
 import ctypes
 
 from metahotspot.types import (
-    MhsCellFields,
     MhsCompiled,
+    MhsCompiledFields,
     MhsCompiledInfo,
     MhsMaterialValues,
     MhsModel,
@@ -50,11 +50,21 @@ _CORE_FUNC_SIGS = [
         I32,
         [P(MhsModel), Size, P(F64), Size, P(F64), Size, P(F64)],
     ),
-    ("mhs_model_add_variable", I32, [P(MhsModel), Text, Text]),
     (
         "mhs_model_add_material",
         I32,
-        [P(MhsModel), Text, Text, Text, Text, Text, Text, Text, P(ctypes.c_uint32)],
+        [
+            P(MhsModel),
+            Text,
+            Text,
+            Text,
+            Text,
+            Text,
+            Text,
+            I32,
+            Text,
+            P(ctypes.c_uint32),
+        ],
     ),
     ("mhs_model_add_source", I32, [P(MhsModel), Text, P(ctypes.c_uint32)]),
     (
@@ -93,14 +103,24 @@ _CORE_FUNC_SIGS = [
     ),
     ("mhs_model_add_point_probe", I32, [P(MhsModel), Text, P(F64)]),
     (
-        "mhs_model_add_fluid_boundary",
+        "mhs_model_add_pressure_inlet",
         I32,
-        [P(MhsModel), P(MhsSurfaceRegion), Size, I32, F64, P(F64)],
+        [P(MhsModel), P(MhsSurfaceRegion), Size, F64, P(F64), F64],
+    ),
+    (
+        "mhs_model_add_mass_flow_inlet",
+        I32,
+        [P(MhsModel), P(MhsSurfaceRegion), Size, F64, P(F64)],
+    ),
+    (
+        "mhs_model_add_pressure_outlet",
+        I32,
+        [P(MhsModel), P(MhsSurfaceRegion), Size, F64],
     ),
     ("mhs_model_compile", I32, [P(MhsModel), P(P(MhsCompiled))]),
     ("mhs_compiled_destroy", None, [P(MhsCompiled)]),
     ("mhs_compiled_get_info", I32, [P(MhsCompiled), P(MhsCompiledInfo)]),
-    ("mhs_compiled_copy_cell_fields", I32, [P(MhsCompiled), P(MhsCellFields)]),
+    ("mhs_compiled_copy_fields", I32, [P(MhsCompiled), P(MhsCompiledFields)]),
     (
         "mhs_compiled_eval_materials",
         I32,

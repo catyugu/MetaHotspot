@@ -11,16 +11,8 @@
 
 namespace mhs::model {
 
-    // Projected external boundary integration term; independent of mesh face IDs.
-    struct BoundaryFace {
-        CellId cell = mhs::core::invalid_id;
-        Axis axis = Axis::X;
-        std::int8_t sign = 1;
-        BoundaryConditionId condition = mhs::core::invalid_id; // index in the condition table used for this projection
-        std::array<double, 4> bounds; // tangential min/max pairs
-    };
-
     struct MaterialProps {
+        MaterialKind kind = MaterialKind::Solid;
         mhs::expression::CompiledExpression kx;
         mhs::expression::CompiledExpression ky;
         mhs::expression::CompiledExpression kz;
@@ -41,7 +33,7 @@ namespace mhs::model {
         mhs::expression::CompiledExpression ambient_temperature;
     };
 
-    // Shared compiled laws; per-face BoundaryFace records store only an index.
+    // Compiled laws are assigned independently to canonical exterior FacetIds.
     using BoundaryCondition = std::variant<Dirichlet, Neumann, Convection>;
 
     // Midpoint quadrature on a physical source subvolume.
@@ -54,9 +46,8 @@ namespace mhs::model {
 
     struct PointProbe {
         std::string name;
-        double x = 0.0;
-        double y = 0.0;
-        double z = 0.0;
+        Vec3 point {};
+        CellId cell = mhs::core::invalid_id;
     };
 
     struct Model {
@@ -67,7 +58,7 @@ namespace mhs::model {
         mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
         mhs::core::Vector<BoundaryCondition> boundary_conditions;
         mhs::core::Vector<SourceTerm> source_terms;
-        mhs::core::Vector<BoundaryFace> boundary_faces; // sorted by CellId
+        mhs::core::Vector<BoundaryConditionId> facet_thermal_condition; // by FacetId; invalid for interior facets
         FluidModel fluid;
 
         double reference_temperature = 300.0;

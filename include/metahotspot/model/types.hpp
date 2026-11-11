@@ -3,7 +3,7 @@
 
 namespace mhs::model {
     using CellId = core::EntityIndex;
-    using FaceId = core::EntityIndex;
+    using FacetId = core::EntityIndex;
     using MaterialId = core::EntityIndex;
     using SourceId = core::EntityIndex;
     using BoundaryConditionId = core::EntityIndex;
@@ -11,6 +11,7 @@ namespace mhs::model {
     using PointId = core::EntityIndex;
 
     enum class Axis : std::uint8_t { X, Y, Z };
+    enum class MaterialKind : std::uint8_t { Solid, Fluid };
 
     enum class StudyType : std::uint8_t { Steady, Transient };
 

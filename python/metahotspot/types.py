@@ -65,25 +65,26 @@ class MhsStudy(ctypes.Structure):
 class MhsCompiledInfo(ctypes.Structure):
     _fields_ = [
         ("cell_count", ctypes.c_size_t),
-        ("face_count", ctypes.c_size_t),
+        ("facet_count", ctypes.c_size_t),
         ("projection_count", ctypes.c_size_t),
         ("source_count", ctypes.c_size_t),
         ("reference_temperature", ctypes.c_double),
     ]
 
 
-class MhsCellFields(ctypes.Structure):
+class MhsCompiledFields(ctypes.Structure):
     _fields_ = [
         ("cell_count", ctypes.c_size_t),
-        ("face_count", ctypes.c_size_t),
+        ("facet_count", ctypes.c_size_t),
         ("projection_count", ctypes.c_size_t),
         ("cell_min", ctypes.POINTER(ctypes.c_double)),
         ("cell_max", ctypes.POINTER(ctypes.c_double)),
         ("material_id", ctypes.POINTER(ctypes.c_uint32)),
-        ("face_minus", ctypes.POINTER(ctypes.c_uint32)),
-        ("face_plus", ctypes.POINTER(ctypes.c_uint32)),
-        ("face_axis", ctypes.POINTER(ctypes.c_int32)),
-        ("face_bounds", ctypes.POINTER(ctypes.c_double)),
+        ("facet_minus", ctypes.POINTER(ctypes.c_uint32)),
+        ("facet_plus", ctypes.POINTER(ctypes.c_uint32)),
+        ("facet_axis", ctypes.POINTER(ctypes.c_int32)),
+        ("facet_coordinate", ctypes.POINTER(ctypes.c_double)),
+        ("facet_bounds", ctypes.POINTER(ctypes.c_double)),
         ("projection_cell", ctypes.POINTER(ctypes.c_uint32)),
         ("projection_source", ctypes.POINTER(ctypes.c_uint32)),
         ("projection_volume", ctypes.POINTER(ctypes.c_double)),

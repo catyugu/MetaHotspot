@@ -4,8 +4,9 @@
 #include "logging/logger.hpp"
 #include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
-#include "solver/probe_recorder.hpp"
 #include "solver/solver.hpp"
+#include "thermal_reconstruction.hpp"
+#include <atstep/settings.hpp>
 #include <atstep/stepper.hpp>
 
 #include <cmath>
@@ -89,6 +90,7 @@ namespace mhs::solver {
             settings.error.relative = opts.time_tolerance;
             settings.error.scaled = false;
             settings.storage = study.output_interval > 0.0 ? atstep::Storage::interpolate : atstep::Storage::steps;
+            settings.initialization = atstep::Initialization::off;
 
             const auto& initial_ops = assemble(state, 0.0);
             validate_operator_dimensions(initial_ops, state_count);
@@ -96,21 +98,6 @@ namespace mhs::solver {
             // retaining independent numerical storage and arbitrary sparse C.
             auto A = core::add_scaled(initial_ops.K, 0.0, initial_ops.C);
             State rhs(state_count);
-            State derivative(state_count);
-            bool positive_diagonal = true;
-            const auto C = initial_ops.C.view();
-            for (std::size_t i = 0; i < state_count; ++i) {
-                double capacity = 0.0;
-                for (auto j = C.row_ptr[i]; j < C.row_ptr[i + 1]; ++j) {
-                    if (static_cast<std::size_t>(C.col_idx[j]) == i)
-                        capacity = C.values[j];
-                    else if (C.values[j] != 0.0)
-                        positive_diagonal = false;
-                }
-                if (!std::isfinite(capacity) || capacity <= 0.0)
-                    positive_diagonal = false;
-                derivative[i] = capacity;
-            }
 
             atstep::TimeStepper<State> stepper(settings, [&](const atstep::StepRequest<State>& request, State& trial) {
                 LinearSystemProvider provider = [&](std::span<const double> iterate) -> LinearSystemView {
@@ -124,17 +111,7 @@ namespace mhs::solver {
                 return nonlinear_solve(provider, trial, solver, nl_config);
             });
 
-            // Preserve the supplied T(0) for positive diagonal capacity.
-            // Algebraic or coupled capacity retains consistent initialization.
-            if (positive_diagonal) {
-                std::copy(initial_ops.f.begin(), initial_ops.f.end(), rhs.begin());
-                core::spmv(initial_ops.K.view(), state, rhs, -1.0, 1.0);
-                for (std::size_t i = 0; i < state_count; ++i)
-                    derivative[i] = rhs[i] / derivative[i];
-                stepper.start(0.0, state, derivative, study.duration);
-            }
-            else
-                stepper.start(0.0, state, study.duration);
+            stepper.start(0.0, state, study.duration);
 
             State output_times {0.0};
             if (study.output_interval > 0.0) {
@@ -212,12 +189,18 @@ namespace mhs::solver {
             return assembler.assemble(current, time);
         };
 
-        ProbeRecorder probe_recorder(model);
-        StateObserver observe
-            = [&](double t, std::span<const double> accepted_state) { probe_recorder.record(t, accepted_state); };
+        mhs::core::Vector<ProbeTrace> probe_traces;
+        for (const auto& probe : model.point_probes)
+            probe_traces.push_back({probe.name, {}});
+        StateObserver observe = [&](double time, std::span<const double> accepted_state) {
+            for (std::size_t i = 0; i < model.point_probes.size(); ++i) {
+                const auto& probe = model.point_probes[i];
+                probe_traces[i].values.push_back(sample_point(model, accepted_state, time, probe.cell, probe.point));
+            }
+        };
 
         auto sol = solve_system(study, assemble, std::move(state), options, observe);
-        sol.probe_traces = std::move(probe_recorder).take_traces();
+        sol.probe_traces = std::move(probe_traces);
         return sol;
     }
 

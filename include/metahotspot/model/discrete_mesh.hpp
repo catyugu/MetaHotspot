@@ -1,7 +1,9 @@
 #pragma once
 #include "core/vector.hpp"
+#include "model/constants.hpp"
 #include "model/types.hpp"
 #include <array>
+#include <cmath>
 #include <span>
 
 namespace mhs::model {
@@ -18,29 +20,51 @@ namespace mhs::model {
         }
     };
 
-    // One rectangular flux integration patch; positive flux runs minus -> plus.
-    // An exterior patch has exactly one invalid cell; its outward sign follows from that side.
+    // One geometrically unique rectangular flux integration region.
+    // Positive normal points from minus to plus; an exterior facet has one invalid cell.
     // Bounds follow ascending tangential axes: YZ for X, XZ for Y, XY for Z.
-    struct FacePatch {
+    struct Facet {
         CellId minus = core::invalid_id, plus = core::invalid_id;
         Axis axis = Axis::X;
+        double coordinate = 0.0;
         std::array<double, 4> bounds {};
 
         bool exterior() const { return minus == core::invalid_id || plus == core::invalid_id; }
+        CellId owner() const { return minus != core::invalid_id ? minus : plus; }
+        int outward_sign() const { return minus != core::invalid_id ? 1 : -1; }
         double area() const { return (bounds[1] - bounds[0]) * (bounds[3] - bounds[2]); }
+        Vec3 center() const
+        {
+            const auto a = static_cast<std::size_t>(axis);
+            Vec3 p {};
+            p[a] = coordinate;
+            p[a == 0 ? 1 : 0] = (bounds[0] + bounds[1]) / 2;
+            p[a == 2 ? 1 : 2] = (bounds[2] + bounds[3]) / 2;
+            return p;
+        }
+        bool contains(const Vec3& p) const
+        {
+            constexpr double eps = geometry_eps;
+            const auto a = static_cast<std::size_t>(axis);
+            const auto u = a == 0 ? 1 : 0, v = a == 2 ? 1 : 2;
+            const bool on_plane = std::abs(p[a] - coordinate) <= eps;
+            const bool inside_u = p[u] >= bounds[0] - eps && p[u] <= bounds[1] + eps;
+            const bool inside_v = p[v] >= bounds[2] - eps && p[v] <= bounds[3] + eps;
+            return on_plane && inside_u && inside_v;
+        }
     };
 
-    // Compiled geometry and connectivity; compilers build the incidence index.
-    // Geometry, connectivity and TPFA orthogonality are caller preconditions.
+    // Canonical integration geometry and cell-facet incidence. A physical boundary
+    // can be partitioned for multiple physics without duplicating facet geometry.
     struct DiscreteMesh {
         mhs::core::Vector<CellGeometry> cells;
-        mhs::core::Vector<FacePatch> faces;
-        mhs::core::Vector<std::size_t> cell_face_offsets;
-        mhs::core::Vector<FaceId> cell_face_ids;
-        std::span<const FaceId> incident_faces(CellId c) const
+        mhs::core::Vector<Facet> facets;
+        mhs::core::Vector<std::size_t> cell_facet_offsets;
+        mhs::core::Vector<FacetId> cell_facet_ids;
+        std::span<const FacetId> incident_facets(CellId c) const
         {
-            return std::span(cell_face_ids)
-                .subspan(cell_face_offsets[c], cell_face_offsets[c + 1] - cell_face_offsets[c]);
+            return std::span(cell_facet_ids)
+                .subspan(cell_facet_offsets[c], cell_facet_offsets[c + 1] - cell_facet_offsets[c]);
         }
     };
 } // namespace mhs::model
