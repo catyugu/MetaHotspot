@@ -124,7 +124,9 @@ python .github/scripts/check_clang_tidy.py
 
 CMake exports `compile_commands.json` with tests, CLI and the C API enabled.
 The lint job configures with Clang 18 from the Ubuntu image; clang-tidy itself is
-21.1.8. Optional MKL code requires a separate `MHS_USE_MKL=ON` configuration and
+21.1.8. The script queries the build compiler's header directory and searches it
+after clang-tidy's own headers so OpenMP headers remain available across LLVM
+versions. Optional MKL code requires a separate `MHS_USE_MKL=ON` configuration and
 an installed MKL. Checks run once per workflow and never rewrite sources or the
 Git index.
 

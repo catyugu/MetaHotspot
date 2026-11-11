@@ -3,10 +3,12 @@
 import argparse
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import cache
 from pathlib import Path
 
 import tomllib
@@ -49,20 +51,35 @@ def main():
 
     database = json.loads((build / "compile_commands.json").read_text(encoding="utf-8"))
     directories = [root / name for name in ("src", "apps", "tests")]
-    sources = {
-        (Path(entry["directory"]) / entry["file"]).resolve() for entry in database
+    commands = {
+        (Path(entry["directory"]) / entry["file"]).resolve(): entry
+        for entry in database
     }
     sources = sorted(
         source
-        for source in sources
+        for source in commands
         if any(source.is_relative_to(directory) for directory in directories)
     )
     if not sources:
         raise RuntimeError("No project translation units in compile_commands.json")
 
-    def check(source):
+    @cache
+    def compiler_headers(compiler):
+        # OpenMP headers can live in the build compiler's resource directory.
+        # Search it after tidy's own headers when their LLVM versions differ.
         result = subprocess.run(
-            [binary, "-p", str(build), str(source)],
+            [compiler, "-print-file-name=include"], capture_output=True, text=True
+        )
+        directory = Path(result.stdout.strip())
+        if result.returncode == 0 and directory.is_absolute() and directory.is_dir():
+            return ["--extra-arg=-idirafter", f"--extra-arg={directory}"]
+        return []
+
+    def check(source):
+        entry = commands[source]
+        command = entry.get("arguments") or shlex.split(entry["command"])
+        result = subprocess.run(
+            [binary, "-p", str(build), *compiler_headers(command[0]), str(source)],
             cwd=root,
             capture_output=True,
             text=True,
