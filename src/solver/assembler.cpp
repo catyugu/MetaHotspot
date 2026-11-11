@@ -108,7 +108,7 @@ namespace mhs::solver {
             [&](const auto& mesh) {
                 for_each_connection(mesh, [&](Connection c) {
                     const auto a = cell_geometry(mesh, c.a), b = cell_geometry(mesh, c.b);
-                    const auto geometry = connection_geometry(a, b);
+                    const auto geometry = connection_facet(c, a, b);
                     const auto axis = static_cast<std::size_t>(geometry.axis);
                     const auto [ra, rb] = connection_resistances(
                         model, c, a, b, geometry.axis, conductivity_[c.a][axis], conductivity_[c.b][axis]);
@@ -136,7 +136,7 @@ namespace mhs::solver {
             const auto& facet = model.boundary_facets[id];
             if (model.boundary_thermal_condition[id] == invalid_id)
                 continue;
-            const auto cell = facet.cell;
+            const auto cell = facet.owner();
             const auto axis = static_cast<std::size_t>(facet.axis);
             const auto row = static_cast<SparseIndex>(cell);
             const auto center = facet.center();
@@ -149,7 +149,7 @@ namespace mhs::solver {
             values[diagonal_positions_[row]] += trace.conductance;
         }
         for (const auto& term : model.fluid.boundary_terms) {
-            const auto cell = model.boundary_facets[term.facet].cell;
+            const auto cell = model.boundary_facets[term.facet].owner();
             const auto row = static_cast<SparseIndex>(cell);
             const auto cp = specific_heat_[model.fluid.global_to_fluid[cell]];
             std::visit(

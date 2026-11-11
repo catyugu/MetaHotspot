@@ -13,13 +13,13 @@ namespace mhs::solver {
             const auto& m = model.material_table[model.cells[cell].material];
             return {m.kx.eval(ctx), m.ky.eval(ctx), m.kz.eval(ctx)};
         }
-        double boundary_trace(const mhs::model::Model& model, const mhs::model::BoundaryFacet& facet, std::size_t id,
+        double boundary_trace(const mhs::model::Model& model, const mhs::model::Facet& facet, std::size_t id,
             std::span<const double> temperature, double time, double k)
         {
             const auto center = facet.center();
             const mhs::expression::FieldContext context {
-                center[0], center[1], center[2], temperature[facet.cell], time};
-            const double d = cell_geometry(model.mesh, facet.cell).size()[static_cast<std::size_t>(facet.axis)] / 2;
+                center[0], center[1], center[2], temperature[facet.owner()], time};
+            const double d = cell_geometry(model.mesh, facet.owner()).size()[static_cast<std::size_t>(facet.axis)] / 2;
             return evaluate_boundary(model.boundary_conditions[model.boundary_thermal_condition[id]], context,
                 facet.area(), facet.area() / side_thermal_resistance(d, k))
                 .temperature;
@@ -39,19 +39,18 @@ namespace mhs::solver {
                 }
                 for_each_connection(mesh, [&](Connection c) {
                     const auto a = cell_geometry(mesh, c.a), b = cell_geometry(mesh, c.b);
-                    const auto g = connection_geometry(a, b);
+                    const auto g = connection_facet(c, a, b);
                     const auto axis = static_cast<std::size_t>(g.axis);
                     const auto [ra, rb] = connection_resistances(model, c, a, b, g.axis, k[c.a][axis], k[c.b][axis]);
                     const double trace = (rb * temperature[c.a] + ra * temperature[c.b]) / (ra + rb);
-                    const double flux = (a.center()[axis] < b.center()[axis] ? 1 : -1) * g.area() * trace;
-                    gradients[c.a][axis] += flux;
-                    gradients[c.b][axis] -= flux;
+                    gradients[g.minus][axis] += g.area() * trace;
+                    gradients[g.plus][axis] -= g.area() * trace;
                 });
                 for (std::size_t i = 0; i < model.boundary_facets.size(); ++i) {
                     const auto& f = model.boundary_facets[i];
                     const auto axis = static_cast<std::size_t>(f.axis);
-                    const auto trace = boundary_trace(model, f, i, temperature, time, k[f.cell][axis]);
-                    gradients[f.cell][axis] += f.side * f.area() * trace;
+                    const auto trace = boundary_trace(model, f, i, temperature, time, k[f.owner()][axis]);
+                    gradients[f.owner()][axis] += f.outward_sign() * f.area() * trace;
                 }
                 for (std::size_t i = 0; i < gradients.size(); ++i) {
                     const auto volume = cell_geometry(mesh, static_cast<CellId>(i)).volume();
@@ -73,8 +72,8 @@ namespace mhs::solver {
         std::size_t count = 0, dirichlet_count = 0;
         // The compiler emits exterior pieces in owner order, including after partitioning.
         auto it = std::lower_bound(model.boundary_facets.begin(), model.boundary_facets.end(), cell,
-            [](const auto& f, mhs::model::CellId c) { return f.cell < c; });
-        for (; it != model.boundary_facets.end() && it->cell == cell; ++it) {
+            [](const auto& f, mhs::model::CellId c) { return f.owner() < c; });
+        for (; it != model.boundary_facets.end() && it->owner() == cell; ++it) {
             const auto& f = *it;
             if (!f.contains(p))
                 continue;

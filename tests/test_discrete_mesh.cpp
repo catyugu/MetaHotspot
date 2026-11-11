@@ -45,18 +45,18 @@ TEST(Mesh, ConformalTopologyHasImplicitConnectionsAndClosedCells)
     std::size_t internal = 0;
     for_each_connection(mesh, [&](Connection c) {
         const auto a = cell_geometry(mesh, c.a), b = cell_geometry(mesh, c.b);
-        const auto face = connection_geometry(a, b);
+        const auto face = connection_facet(c, a, b);
         const auto axis = static_cast<std::size_t>(face.axis);
-        closure[c.a][axis] += face.area();
-        closure[c.b][axis] -= face.area();
+        closure[face.minus][axis] += face.area();
+        closure[face.plus][axis] -= face.area();
         surface[c.a] += face.area();
         surface[c.b] += face.area();
         ++internal;
     });
     EXPECT_EQ(internal, 12u);
     for (const auto& f : model.boundary_facets) {
-        closure[f.cell][static_cast<std::size_t>(f.axis)] += f.side * f.area();
-        surface[f.cell] += f.area();
+        closure[f.owner()][static_cast<std::size_t>(f.axis)] += f.outward_sign() * f.area();
+        surface[f.owner()] += f.area();
     }
     for (std::size_t c = 0; c < 8; ++c) {
         EXPECT_DOUBLE_EQ(cell_geometry(mesh, static_cast<CellId>(c)).volume(), 0.125);
@@ -80,7 +80,7 @@ TEST(Mesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             const auto& facet = model.boundary_facets[id];
             const auto& condition = model.boundary_conditions[model.boundary_thermal_condition[id]];
             const auto center = facet.center();
-            const double d = cell_geometry(model.mesh, facet.cell).size()[static_cast<std::size_t>(facet.axis)] / 2;
+            const double d = cell_geometry(model.mesh, facet.owner()).size()[static_cast<std::size_t>(facet.axis)] / 2;
             const mhs::expression::FieldContext cell_context {center[0], center[1], center[2], state[0], 0};
             const auto trace = mhs::solver::evaluate_boundary(condition, cell_context, facet.area(), facet.area() / d);
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], trace.temperature, 0};
@@ -266,6 +266,11 @@ TEST(Mesh, NonConformalCoarseFineContactsMatchIndependentMatrix)
     d.volumes[0].geometry[0].max = {2, 2, 1};
     const auto model = mhs::compiler::build_model(d, coarse_fine_mesh());
     ASSERT_TRUE(std::holds_alternative<NonConformalMesh>(model.mesh));
+    const auto& mesh = std::get<NonConformalMesh>(model.mesh);
+    const auto facet = connection_facet(mesh.connections[1], mesh.cells[2], mesh.cells[0]);
+    EXPECT_EQ(facet.minus, 0u);
+    EXPECT_EQ(facet.plus, 2u);
+    EXPECT_FALSE(facet.exterior());
     const auto ops = mhs::solver::assemble_thermal(model, Vector<double> {300, 310, 320}, 0);
     for (std::size_t i = 0; i < 3; ++i)
         for (std::size_t j = 0; j < 3; ++j) {

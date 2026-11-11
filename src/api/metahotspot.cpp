@@ -636,8 +636,8 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
     }
     for (size_t id = 0; id < model.boundary_facets.size(); ++id) {
         const auto& facet = model.boundary_facets[id];
-        fields->boundary_owner[id] = facet.cell;
-        fields->boundary_side[id] = facet.side;
+        fields->boundary_owner[id] = facet.owner();
+        fields->boundary_side[id] = facet.outward_sign();
         fields->boundary_axis[id] = static_cast<mhs_axis_t>(facet.axis);
         fields->boundary_coordinate[id] = facet.coordinate;
         for (size_t a = 0; a < 4; ++a)

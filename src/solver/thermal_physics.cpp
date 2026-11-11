@@ -10,21 +10,21 @@
 
 namespace mhs::solver {
     std::pair<double, double> connection_resistances(const mhs::model::Model& model, mhs::model::Connection connection,
-        const mhs::model::CellGeometry& a, const mhs::model::CellGeometry& b, mhs::model::Axis normal, double k_minus,
-        double k_plus)
+        const mhs::model::CellGeometry& a, const mhs::model::CellGeometry& b, mhs::model::Axis normal, double k_a,
+        double k_b)
     {
         const auto axis = static_cast<std::size_t>(normal);
-        double minus = side_thermal_resistance(a.size()[axis] / 2, k_minus);
-        double plus = side_thermal_resistance(b.size()[axis] / 2, k_plus);
+        double ra = side_thermal_resistance(a.size()[axis] / 2, k_a);
+        double rb = side_thermal_resistance(b.size()[axis] / 2, k_b);
         const auto& fluid = model.fluid;
         if (!fluid.global_to_fluid.empty()) {
             const auto fi = fluid.global_to_fluid[connection.a], fj = fluid.global_to_fluid[connection.b];
             if (fi != mhs::core::invalid_id && fj == mhs::core::invalid_id)
-                minus = fluid_film_resistance(fluid.interface_heat_transfer_factor[fi], k_minus);
+                ra = fluid_film_resistance(fluid.interface_heat_transfer_factor[fi], k_a);
             else if (fj != mhs::core::invalid_id && fi == mhs::core::invalid_id)
-                plus = fluid_film_resistance(fluid.interface_heat_transfer_factor[fj], k_plus);
+                rb = fluid_film_resistance(fluid.interface_heat_transfer_factor[fj], k_b);
         }
-        return {minus, plus};
+        return {ra, rb};
     }
     namespace {
         // Bracketed bisection on the trace temperature. The condensed

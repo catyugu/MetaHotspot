@@ -33,7 +33,7 @@ namespace mhs::model {
         mhs::expression::CompiledExpression ambient_temperature;
     };
 
-    // Compiled laws are assigned independently to exterior BoundaryFacetIds.
+    // Compiled laws are assigned to stored exterior Facets.
     using BoundaryCondition = std::variant<Dirichlet, Neumann, Convection>;
 
     // Midpoint quadrature on a physical source subvolume.
@@ -57,7 +57,7 @@ namespace mhs::model {
     struct Model {
         Mesh mesh;
         core::Vector<Cell> cells;
-        core::Vector<BoundaryFacet> boundary_facets;
+        core::Vector<Facet> boundary_facets;
 
         mhs::core::Vector<MaterialProps> material_table;
         mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;

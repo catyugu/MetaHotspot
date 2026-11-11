@@ -72,9 +72,9 @@ namespace mhs::compiler {
         };
         std::uint64_t key(CellId a, CellId b)
         { return (static_cast<std::uint64_t>(std::min(a, b)) << 32) | std::max(a, b); }
-        void subtract(Vector<BoundaryFacet>& pieces, const FaceGeometry& cut)
+        void subtract(Vector<Facet>& pieces, const Facet& cut)
         {
-            Vector<BoundaryFacet> result;
+            Vector<Facet> result;
             for (const auto& f : pieces) {
                 const double u0 = std::max(f.bounds[0], cut.bounds[0]), u1 = std::min(f.bounds[1], cut.bounds[1]);
                 const double v0 = std::max(f.bounds[2], cut.bounds[2]), v1 = std::min(f.bounds[3], cut.bounds[3]);
@@ -112,7 +112,7 @@ namespace mhs::compiler {
         for (const auto [a, b] : input.connections) {
             if (a >= input.cells.size() || b >= input.cells.size() || a == b)
                 throw std::invalid_argument("NonConformalMesh Connection has invalid CellIds");
-            (void)connection_geometry(input.cells[a], input.cells[b]);
+            (void)connection_facet({a, b}, input.cells[a], input.cells[b]);
             if (!connections.insert(key(a, b)).second)
                 throw std::invalid_argument("duplicate NonConformalMesh Connection");
             ++offsets[a + 1];
@@ -152,18 +152,12 @@ namespace mhs::compiler {
             const auto& cell = input.cells[i];
             for (int a = 0; a < 3; ++a)
                 for (int sign : {-1, 1}) {
-                    BoundaryFacet f;
-                    f.cell = static_cast<CellId>(i);
-                    f.side = sign;
-                    f.axis = static_cast<Axis>(a);
-                    f.coordinate = sign > 0 ? cell.max[a] : cell.min[a];
-                    const int u = a == 0 ? 1 : 0, v = a == 2 ? 1 : 2;
-                    f.bounds = {cell.min[u], cell.max[u], cell.min[v], cell.max[v]};
-                    Vector<BoundaryFacet> remaining {f};
+                    const auto f = boundary_facet(static_cast<CellId>(i), cell, static_cast<Axis>(a), sign);
+                    Vector<Facet> remaining {f};
                     for (auto j = offsets[i]; j < offsets[i + 1]; ++j) {
                         const auto other = neighbors[j];
-                        const auto g = connection_geometry(cell, input.cells[other]);
-                        const int side = input.cells[other].center()[a] > cell.center()[a] ? 1 : -1;
+                        const auto g = connection_facet({static_cast<CellId>(i), other}, cell, input.cells[other]);
+                        const int side = g.minus == i ? 1 : -1;
                         if (g.axis == f.axis && side == sign && std::abs(g.coordinate - f.coordinate) <= geometry_eps)
                             subtract(remaining, g);
                     }

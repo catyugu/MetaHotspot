@@ -38,7 +38,7 @@ IO → (ModelDefinition, MeshSpec) → Compiler → Model → Solver → Solutio
 
 - 内部几何一律使用 SI 米。
 - `Mesh` 区分隐式 `ConformalMesh` 和显式 `NonConformalMesh`；CellId 同时标识控制体与温度状态下标。共形网格只保存坐标轴和必要的空洞映射，非共形网格保存单元包围盒与 CellId 对。内部连接不保存派生几何。
-- `Model::boundary_facets` 保存外边界积分片，热学与流体边界矩形在几何编译阶段共同切分外表面；`boundary_thermal_condition` 按 BoundaryFacetId 绑定类型化 `BoundaryCondition`。边界表达式中的 `T` 指物理表面温度迹。
+- `Facet` 统一表示有向积分片（minus/plus，内部临时生成）；`Model::boundary_facets` 仅保存外边界积分片，热学与流体边界矩形在几何编译阶段共同切分外表面；`boundary_thermal_condition` 按 BoundaryFacetId 绑定类型化 `BoundaryCondition`。边界表达式中的 `T` 指物理表面温度迹。
 - 域内采用轴对齐控制体、对角导热张量和 TPFA，非共形接触暂不进行通量修正；网格由调用方提供。编译器拒绝穿过有效材料界面或活动域边界的单元；同材料热源可通过子体积积分划分。
 - 材料、边界和热源表达式在 setup 阶段编译，热循环中不解析字符串。
 - Layer / Block / Rect / Boundary 的输入顺序属于模型语义，后出现的覆盖先出现的。

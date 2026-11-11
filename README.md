@@ -121,7 +121,7 @@ solution = compiled.solve(opts=SolveOptions(
 
 运行期以 `Mesh = variant<ConformalMesh, NonConformalMesh>` 及独立的材料、热源积分和外边界数据为契约。`ConformalMesh` 保存三组顶点坐标轴，仅在存在空洞时保存活动单元映射；`NonConformalMesh` 保存轴对齐单元包围盒和 CellId 对形式的 Connection。内部连接通过统一遍历进入 TPFA 装配，接触几何按需计算。`Model::cells` 保存编译后的材料索引和流体身份，运行期直接使用。
 
-主温度状态按 CellId 编号，每个 `BoundaryFacet` 具有局部温度迹；迹在局部边界方程中求解并凝聚，因此全局算子仍是单元规模。热学与流体边界共用外表面划分。C++ / C / Python 支持共形坐标轴输入及非共形网格的程序构造；PTA XML 仅支持共形输入，现有 CLI VTU 输出使用统一单元几何查询。
+主温度状态按 CellId 编号，每个外边界 `Facet` 具有局部温度迹；迹在局部边界方程中求解并凝聚，因此全局算子仍是单元规模。热学与流体边界共用外表面划分。C++ / C / Python 支持共形坐标轴输入及非共形网格的程序构造；PTA XML 仅支持共形输入，现有 CLI VTU 输出使用统一单元几何查询。
 
 当前采用对角导热张量和域内 TPFA；非共形接触暂不进行通量修正。编译器拒绝穿过有效材料界面或活动域边界的单元，并校验显式网格的重叠、重复及缺失连接。接口和数据顺序见[数据流与设计原则](docs/design/data-flow.md)。
 

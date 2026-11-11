@@ -50,14 +50,8 @@ namespace mhs::compiler {
                         if (mesh.logical_to_cell.empty() || mesh.logical_to_cell[other] != invalid_id)
                             continue;
                     }
-                    BoundaryFacet f;
-                    f.cell = static_cast<CellId>(c);
-                    f.side = sign;
-                    f.axis = static_cast<Axis>(a);
-                    f.coordinate = sign > 0 ? cell.max[a] : cell.min[a];
-                    const int u = a == 0 ? 1 : 0, v = a == 2 ? 1 : 2;
-                    f.bounds = {cell.min[u], cell.max[u], cell.min[v], cell.max[v]};
-                    model.boundary_facets.push_back(f);
+                    model.boundary_facets.push_back(
+                        boundary_facet(static_cast<CellId>(c), cell, static_cast<Axis>(a), sign));
                 }
         }
         model.mesh = std::move(mesh);

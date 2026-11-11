@@ -110,11 +110,11 @@ namespace mhs::compiler {
         return true;
     }
 
-    void refine_boundary_facets(mhs::core::Vector<mhs::model::BoundaryFacet>& facets,
+    void refine_boundary_facets(mhs::core::Vector<mhs::model::Facet>& facets,
         const mhs::core::Vector<mhs::model::SurfaceRegion>& regions)
     {
         using namespace mhs::model;
-        mhs::core::Vector<BoundaryFacet> refined;
+        mhs::core::Vector<Facet> refined;
         refined.reserve(facets.size());
         for (const auto& facet : facets) {
             mhs::core::Vector<double> a, b;
@@ -156,7 +156,7 @@ namespace mhs::compiler {
         facets = std::move(refined);
     }
 
-    mhs::core::Vector<SurfaceTag> assign_boundary_regions(const mhs::core::Vector<mhs::model::BoundaryFacet>& facets,
+    mhs::core::Vector<SurfaceTag> assign_boundary_regions(const mhs::core::Vector<mhs::model::Facet>& facets,
         const mhs::core::Vector<TaggedSurfaceRegion>& regions, SurfaceTag fallback)
     {
         mhs::core::Vector<SurfaceTag> assigned(facets.size(), mhs::core::invalid_id);

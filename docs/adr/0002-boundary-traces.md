@@ -14,8 +14,9 @@ thermal conditions must be evaluated at physical surface temperature.
 ## Decision
 
 `Model::boundary_facets` is the unique collection of external rectangular integration
-regions. `BoundaryFacet` stores its owner CellId, normal axis, outward side, plane
-coordinate and tangential bounds. `BoundaryFacetId` identifies one such piece.
+regions. Each stored `Facet` has one valid CellId (minus or plus), a normal
+axis, plane coordinate and tangential bounds; the missing side determines its
+outward normal. `BoundaryFacetId` identifies one stored boundary piece.
 
 The geometry compiler partitions these pieces against the union of thermal and
 fluid boundary region cuts. A partially covered rectangle creates several pieces,
@@ -25,8 +26,8 @@ BoundaryFacetIds. Later regions take precedence within each physics. The default
 thermal condition applies to uncovered pieces.
 
 Internal contacts use CellId connections, implicit for ConformalMesh and explicit
-for NonConformalMesh. Their integration geometry is calculated during assembly;
-there is no internal Facet layer or cell-facet incidence index.
+for NonConformalMesh. A transient, oriented `Facet` with both sides populated
+is derived during assembly. No internal Facet array or cell-facet incidence is retained.
 
 For cell temperature `T`, trace `lambda`, normal conductivity `k`, center-to-wall
 distance `d`, and facet area `A`, conductive flux is `F = k A (T - lambda) / d`.

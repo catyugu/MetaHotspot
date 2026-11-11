@@ -27,10 +27,10 @@ namespace mhs::compiler {
 
     // Partition exterior facets once against the union of thermal and fluid regions,
     // before assigning physics-specific boundary conditions.
-    void refine_boundary_facets(mhs::core::Vector<mhs::model::BoundaryFacet>& facets,
+    void refine_boundary_facets(mhs::core::Vector<mhs::model::Facet>& facets,
         const mhs::core::Vector<mhs::model::SurfaceRegion>& regions);
 
     // Later regions take precedence. Only external boundary pieces are assigned.
-    mhs::core::Vector<SurfaceTag> assign_boundary_regions(const mhs::core::Vector<mhs::model::BoundaryFacet>& facets,
+    mhs::core::Vector<SurfaceTag> assign_boundary_regions(const mhs::core::Vector<mhs::model::Facet>& facets,
         const mhs::core::Vector<TaggedSurfaceRegion>& regions, SurfaceTag fallback = mhs::core::invalid_id);
 } // namespace mhs::compiler

@@ -83,7 +83,7 @@ TEST(Mesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         for (std::size_t id = 0; id < model.boundary_facets.size(); ++id) {
             const auto& facet = model.boundary_facets[id];
             const auto& condition = model.boundary_conditions[model.boundary_thermal_condition[id]];
-            if (facet.axis != Axis::X || facet.side != 1) {
+            if (facet.axis != Axis::X || facet.outward_sign() != 1) {
                 EXPECT_TRUE(std::holds_alternative<Neumann>(condition));
                 continue;
             }

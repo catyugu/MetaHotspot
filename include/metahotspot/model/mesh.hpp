@@ -22,12 +22,17 @@ namespace mhs::model {
         }
     };
 
-    // Derived rectangle geometry, returned by value and never cached on connections.
-    struct FaceGeometry {
+    // Oriented integration patch. Internal facets are derived on demand, not stored.
+    // Positive normal points from minus to plus along the positive coordinate axis.
+    struct Facet {
+        CellId minus = core::invalid_id, plus = core::invalid_id;
         Axis axis = Axis::X;
         double coordinate = 0.0;
         std::array<double, 4> bounds {};
 
+        bool exterior() const { return minus == core::invalid_id || plus == core::invalid_id; }
+        CellId owner() const { return minus != core::invalid_id ? minus : plus; }
+        int outward_sign() const { return minus != core::invalid_id ? 1 : -1; }
         double area() const { return (bounds[1] - bounds[0]) * (bounds[3] - bounds[2]); }
         Vec3 center() const
         {
@@ -50,14 +55,18 @@ namespace mhs::model {
         }
     };
 
-    struct BoundaryFacet : FaceGeometry {
-        CellId cell = core::invalid_id;
-        int side = 1;
-    };
-
     struct Connection {
         CellId a, b;
     };
+
+    inline Facet boundary_facet(CellId owner, const CellGeometry& cell, Axis axis, int side)
+    {
+        const int a = static_cast<int>(axis);
+        const int u = a == 0 ? 1 : 0, v = a == 2 ? 1 : 2;
+        return {side > 0 ? owner : core::invalid_id, side < 0 ? owner : core::invalid_id, axis,
+            side > 0 ? cell.max[a] : cell.min[a],
+            {cell.min[u], cell.max[u], cell.min[v], cell.max[v]}};
+    }
 
     struct ConformalMesh {
         core::Vector<double> x_vertices, y_vertices, z_vertices;
@@ -133,18 +142,21 @@ namespace mhs::model {
     }
 
     // A valid contact has positive tangential overlap and opposite coplanar faces.
-    inline FaceGeometry connection_geometry(const CellGeometry& a, const CellGeometry& b)
+    inline Facet connection_facet(Connection connection, const CellGeometry& a, const CellGeometry& b)
     {
         for (int axis = 0; axis < 3; ++axis) {
-            if (std::abs(a.max[axis] - b.min[axis]) > geometry_eps
-                && std::abs(b.max[axis] - a.min[axis]) > geometry_eps)
+            const bool forward = std::abs(a.max[axis] - b.min[axis]) <= geometry_eps;
+            const bool reverse = std::abs(b.max[axis] - a.min[axis]) <= geometry_eps;
+            if (!forward && !reverse)
                 continue;
             const int u = axis == 0 ? 1 : 0, v = axis == 2 ? 1 : 2;
-            FaceGeometry result;
+            Facet result;
+            result.minus = forward ? connection.a : connection.b;
+            result.plus = forward ? connection.b : connection.a;
             result.axis = static_cast<Axis>(axis);
-            result.coordinate = std::abs(a.max[axis] - b.min[axis]) <= geometry_eps ? a.max[axis] : a.min[axis];
-            result.bounds = {std::max(a.min[u], b.min[u]), std::min(a.max[u], b.max[u]), std::max(a.min[v], b.min[v]),
-                std::min(a.max[v], b.max[v])};
+            result.coordinate = forward ? a.max[axis] : a.min[axis];
+            result.bounds = {std::max(a.min[u], b.min[u]), std::min(a.max[u], b.max[u]),
+                std::max(a.min[v], b.min[v]), std::min(a.max[v], b.max[v])};
             if (result.bounds[1] > result.bounds[0] && result.bounds[3] > result.bounds[2])
                 return result;
         }

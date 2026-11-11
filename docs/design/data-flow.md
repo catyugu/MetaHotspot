@@ -22,7 +22,7 @@
 
 `Mesh` 是两类网格的 variant。`cell_count`、`cell_geometry` 和 `for_each_connection` 提供共同访问方式。热装配在网格级分派，采用相同的 TPFA 数值逻辑。Connection 不保存面积、法向、中心或半距离，装配时由两侧包围盒计算，工作区也不缓存这些几何。
 
-`Model::cells` 保存 `Cell {material}`；流体身份由材料类别确定。外部 `BoundaryFacet` 独立保存 owner、axis、side（外法向符号）、coordinate 和切向矩形 bounds。边界片段按 owner 排序。内部没有 FacetId、Cell–Facet 关联或持久邻接 CSR。稀疏矩阵的 CSR 是求解算子的结构。
+`Model::cells` 保存 `Cell {material}`；流体身份由材料类别确定。`Facet` 表示包含 minus/plus、法向轴、平面坐标和切向矩形范围的有向积分片。内部 Facet 由 Connection 临时推导；`Model::boundary_facets` 仅存外边界片，owner 和外法向符号由缺失的一侧推导。边界片段按 owner 排序。不保留内部 Facet 列表、Cell–Facet 关联或持久邻接 CSR。稀疏矩阵的 CSR 是求解算子的结构。
 
 ## 编译与装配
 
@@ -36,7 +36,7 @@
 | 流体预处理 | 流体 Cell、Connection、压力/质量流边界 | 临时压力系统；输出紧凑的流体连接流量、边界输运与膜阻力因子 |
 | 容量与源装配 | 单元几何、状态和时间 | `rho c V` 和源项积分 |
 | 热连接装配 | 两侧单元、按需接触几何 | 每条连接计算一次，对两侧写入守恒的 TPFA 贡献 |
-| 边界装配 | BoundaryFacet、物理条件、当前状态 | 求解表面迹并凝聚到单元方程 |
+| 边界装配 | 外边界 Facet、物理条件、当前状态 | 求解表面迹并凝聚到单元方程 |
 | 流体输运装配 | 冻结流量、当前 rho/cp | 上风能量通量与边界焓流 |
 
 每个 Cell 必须完整属于活动物理域且具有唯一材料；跨越真实材料界面或活动域边界时明确报错。编译器按几何盒切割形成临时子体积，检查最终覆盖关系，因此被后续区域覆盖的无效盒边界不要求与网格对齐。热源可以在同材料 Cell 内分区，各子体积独立投影；未对齐材料界面不会被中心采样静默忽略。非共形输入中的每个显式 Cell 都必须有效，不会静默删除输入编号。

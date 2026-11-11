@@ -10,7 +10,7 @@ Large control-volume models require compact storage and predictable iteration wi
 
 ## Decision
 
-Store conformal geometry as three coordinate axes and derive internal contacts from indices. Store nonconformal geometry as contiguous cell boxes plus CellId connection pairs. Keep explicit boundary pieces and Cell physical attributes at model level. See `include/metahotspot/model/mesh.hpp` and `include/metahotspot/model/model.hpp`. No internal Facet layer, persistent reverse adjacency, or cached connection geometry is retained. `ModelDefinition` describes physical regions independently of mesh specifications; conversion happens once in the compiler.
+Store conformal geometry as three coordinate axes and derive internal contacts from indices. Store nonconformal geometry as contiguous cell boxes plus CellId connection pairs. Keep explicit boundary pieces and Cell physical attributes at model level. See `include/metahotspot/model/mesh.hpp` and `include/metahotspot/model/model.hpp`. Interior Facets are derived on demand; no internal Facet array, persistent reverse adjacency, or cached connection geometry is retained. `ModelDefinition` describes physical regions independently of mesh specifications; conversion happens once in the compiler.
 
 ## Rationale
 
