@@ -82,6 +82,10 @@ namespace mhs::compiler {
         if (!std::isfinite(definition.reference_temperature))
             throw std::invalid_argument("reference temperature must be finite");
         validate_surface_regions(definition);
+        for (const auto& boundary : definition.fluid_boundaries)
+            if (const auto* inlet = std::get_if<mhs::model::PressureInlet>(&boundary.condition);
+                inlet && (!std::isfinite(inlet->pump_resistance) || inlet->pump_resistance < 0))
+                throw std::invalid_argument("pump resistance must be finite and nonnegative");
 
         mhs::model::Model model;
         model.reference_temperature = definition.reference_temperature;

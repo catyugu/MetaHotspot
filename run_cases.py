@@ -51,10 +51,15 @@ def _run_one(input_path, vtu_path, xml_path):
 
 def _run_group(case_dir, results_subdir, _kind=""):
     if not os.path.isdir(case_dir):
-        return True
+        print(f"Missing regression case directory: {case_dir}", file=sys.stderr)
+        return False
+    case_files = sorted(f for f in os.listdir(case_dir) if f.endswith(".xml"))
+    if not case_files:
+        print(f"No regression XML files in: {case_dir}", file=sys.stderr)
+        return False
     os.makedirs(os.path.join("results", results_subdir), exist_ok=True)
     all_ok = True
-    for case_file in sorted(f for f in os.listdir(case_dir) if f.endswith(".xml")):
+    for case_file in case_files:
         case_name = case_file[:-4]
         all_ok &= _run_one(
             os.path.join(case_dir, case_file),

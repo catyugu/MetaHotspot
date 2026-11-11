@@ -136,6 +136,8 @@ namespace mhs::model {
     struct PressureInlet {
         double pressure = 0.0;
         std::optional<double> temperature;
+        // Shared series hydraulic resistance (Pa s/m^3), across all inlet patches.
+        double pump_resistance = 0.0;
     };
     struct MassFlowInlet {
         double mass_flow_rate = 0.0;

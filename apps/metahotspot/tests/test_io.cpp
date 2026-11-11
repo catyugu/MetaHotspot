@@ -340,3 +340,34 @@ TEST(IoTest, RejectsXmlWithoutCartesianSamplingShape)
     EXPECT_THROW(mhs::app::pta::write_xml("unused.xml", "unused-output.xml", model.output.cartesian_shape, {}, {}),
         std::invalid_argument);
 }
+
+TEST(IoTest, ReadXmlPreservesPressureInletPumpResistance)
+{
+    const std::string boundaries = R"(
+<Boundaries>
+    <Boundary>
+        <FaceKeys><a:string>X|E|0|0|1|0|1</a:string></FaceKeys>
+        <ThermalBoundary i:type="a:PressureInletBoundary">
+            <a:InletTemperature>280</a:InletTemperature>
+            <a:Pressure>200</a:Pressure>
+            <a:PumpResistance>42.5</a:PumpResistance>
+        </ThermalBoundary>
+    </Boundary>
+    <Boundary>
+        <FaceKeys><a:string>X|E|1|0|1|0|1</a:string></FaceKeys>
+        <ThermalBoundary i:type="a:OutletBoundary"><a:Pressure>0</a:Pressure></ThermalBoundary>
+    </Boundary>
+</Boundaries>)";
+    const auto path = write_tmp_xml("io_pump_resistance.xml", make_xml_with_observe_points(boundaries));
+    const auto definition = mhs::app::pta::read_xml(path.string());
+    std::filesystem::remove(path);
+    ASSERT_EQ(definition.model.fluid_boundaries.size(), 2u);
+    const auto* inlet = std::get_if<mhs::model::PressureInlet>(&definition.model.fluid_boundaries[0].condition);
+    ASSERT_NE(inlet, nullptr);
+    EXPECT_DOUBLE_EQ(inlet->pressure, 200);
+    ASSERT_TRUE(inlet->temperature.has_value());
+    EXPECT_DOUBLE_EQ(*inlet->temperature, 280);
+    EXPECT_DOUBLE_EQ(inlet->pump_resistance, 42.5);
+    EXPECT_TRUE(
+        std::holds_alternative<mhs::model::PressureOutlet>(definition.model.fluid_boundaries[1].condition));
+}

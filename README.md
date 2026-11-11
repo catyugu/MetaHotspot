@@ -110,7 +110,7 @@ solution = compiled.solve(opts=SolveOptions(
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
 - 单元测试：`tests/*.cpp` 由 CMake 自动收集，统一链接到单个 `mhs_tests` 可执行文件，用例由 CTest 发现并运行；新增测试文件无需修改 `tests/CMakeLists.txt`。
-- 案例回归：`python run_cases.py` 运行 `simple_steady_cases`、`nonlinear_steady_cases` 和 `simple_transient_cases` 三组案例，通过 `scripts/compare_lib.py` 与 `cases/` 中的参考输出比较。该脚本使用默认单配置构建目录 `build/apps/metahotspot/` 中的 CLI。
+- 案例回归：`python run_cases.py` 运行 `simple_steady_cases`、`nonlinear_steady_cases` 和 `simple_transient_cases` 四组案例：前三组通过 `scripts/compare_lib.py` 与 `cases/` 中的参考输出比较，`microfluid_cases` 两个案例只检查执行及输出文件生成（暂无参考场）。该脚本使用默认单配置构建目录 `build/apps/metahotspot/` 中的 CLI。
 - 要求完整工作流：从 XML 到 XML（写出结果）。但允许将结果导出为 VTU/VTK 等格式以进行验证。
 - 日志：`mhs_logging` 封装 spdlog，SDK 默认 `WARN`，CLI 默认 `INFO`；`MHS_LOG_LEVEL` 环境变量或 `mhs::logger::set_log_level()` 可覆盖运行时级别。编译期由 `MHS_LOG_COMPILED_LEVEL` 裁剪低级别调用及其参数计算。热循环诊断使用 `DEBUG`。
 - 错误处理：模块通过标准异常报告错误；CLI 的仿真流程捕获 `std::exception`，打印失败原因并返回 1。
