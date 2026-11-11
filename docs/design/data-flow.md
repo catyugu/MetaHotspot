@@ -14,13 +14,15 @@
 
 ## 网格与单元
 
-`ConformalMesh` 保存 `x_vertices`、`y_vertices`、`z_vertices` 三个一维坐标数组。Z 索引变化最快。完整网格不保存单元几何、内部 Connection 或索引映射；Cell 的包围盒、中心、体积与相邻编号按索引计算。存在非活动位置时，才保存 `logical_to_cell` 和 `cell_to_logical`，使活动 CellId 保持连续。空洞暴露的表面也生成外边界。
+`ConformalMesh` 保存 `x_vertices`、`y_vertices`、`z_vertices` 三个一维坐标数组。Z 索引变化最快。完整网格不保存单元几何、内部 Connection 或索引映射；Cell 的包围盒、中心、体积与相邻编号按索引计算。存在非活动位置时，才保存 `logical_to_cell` 和 `cell_to_logical`，使活动 CellId 保持连续。两个映射的元素均为 32 位 `CellId`。空洞暴露的表面也生成外边界。
 
-`NonConformalMesh` 保存轴对齐六面体的 `CellGeometry` 和一份无向 `Connection {a,b}` 列表。连接方向可任意，每对面接触单元必须且只能出现一次。编译器验证有限且递增的包围盒、体积重叠、非法/重复编号、零面积接触和遗漏的面接触。临时 BVH 用于空间查询，临时反向索引用于边界裁剪；编译结束后均释放。
+无内部几何切分的单元直接在中心分类并生成源项，不分配切分数组；有内部几何边界时才切分以验证材料与活动域一致性，并计算源项子体积积分。
+
+`NonConformalMesh` 保存轴对齐六面体的 `CellGeometry` 和一份无向 `Connection {a,b}` 列表。连接方向可任意，每对面接触单元必须且只能出现一次。编译器验证有限且递增的包围盒、体积重叠、非法/重复编号、零面积接触和遗漏的面接触。临时 BVH 用于空间查询，编译期一次构造的紧凑 CSR 邻接表用于边界裁剪；编译结束后均释放。
 
 `Mesh` 是两类网格的 variant。`cell_count`、`cell_geometry` 和 `for_each_connection` 提供共同访问方式。热装配在网格级分派，采用相同的 TPFA 数值逻辑。Connection 不保存面积、法向、中心或半距离，装配时由两侧包围盒计算，工作区也不缓存这些几何。
 
-`Model::cells` 保存 `Cell {material, is_fluid}`；流体身份在编译时确定。外部 `BoundaryFacet` 独立保存 owner、axis、side（外法向符号）、coordinate 和切向矩形 bounds。边界片段按 owner 排序。内部没有 FacetId、Cell–Facet 关联或持久邻接 CSR。稀疏矩阵的 CSR 是求解算子的结构。
+`Model::cells` 保存 `Cell {material}`；流体身份由材料类别确定。外部 `BoundaryFacet` 独立保存 owner、axis、side（外法向符号）、coordinate 和切向矩形 bounds。边界片段按 owner 排序。内部没有 FacetId、Cell–Facet 关联或持久邻接 CSR。稀疏矩阵的 CSR 是求解算子的结构。
 
 ## 编译与装配
 

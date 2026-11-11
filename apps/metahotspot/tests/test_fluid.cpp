@@ -71,8 +71,8 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     bool nonzero = false;
     for (const auto& flow : model.fluid.connections) {
         const auto [a, b] = flow.cells;
-        EXPECT_TRUE(model.cells[a].is_fluid);
-        EXPECT_TRUE(model.cells[b].is_fluid);
+        EXPECT_EQ(model.material_table[model.cells[a].material].kind, mhs::model::MaterialKind::Fluid);
+        EXPECT_EQ(model.material_table[model.cells[b].material].kind, mhs::model::MaterialKind::Fluid);
         const double mass = flow.volume_flux * (density(a) + density(b)) / 2;
         nonzero = nonzero || std::abs(mass) > 1e-20;
         balance[a] += mass;

@@ -44,8 +44,6 @@ namespace mhs::compiler {
         using namespace mhs::core;
         using namespace mhs::model;
         std::array<Vector<double>, 3> cuts;
-        for (int a = 0; a < 3; ++a)
-            cuts[a] = {cell.min[a], cell.max[a]};
         for (const auto& volume : volumes)
             for (const auto& box : volume.geometry) {
                 bool intersects = true;
@@ -55,9 +53,27 @@ namespace mhs::compiler {
                     continue;
                 for (int a = 0; a < 3; ++a)
                     for (double p : {box.min[a], box.max[a]})
-                        if (p > cell.min[a] + geometry_eps && p < cell.max[a] - geometry_eps)
+                        if (p > cell.min[a] + geometry_eps && p < cell.max[a] - geometry_eps) {
+                            if (cuts[0].empty())
+                                for (int axis = 0; axis < 3; ++axis)
+                                    cuts[axis] = {cell.min[axis], cell.max[axis]};
                             cuts[a].push_back(p);
+                        }
             }
+        // Aligned cells need no partition or temporary source buffer. Geometry
+        // cuts are still detected for arbitrary inputs and source-only subvolumes.
+        if (cuts[0].empty()) {
+            const auto point = cell.center();
+            const auto owner = classify_point(volumes, point);
+            if (!owner)
+                return false;
+            const auto& volume = volumes[*owner];
+            const auto id = static_cast<CellId>(model.cells.size());
+            model.cells.push_back({volume.material});
+            if (volume.source != invalid_id)
+                model.source_terms.push_back({id, volume.source, cell.volume(), point});
+            return true;
+        }
         for (auto& axis : cuts) {
             std::sort(axis.begin(), axis.end());
             axis.erase(std::unique(axis.begin(), axis.end()), axis.end());
@@ -89,7 +105,7 @@ namespace mhs::compiler {
             throw std::invalid_argument("mesh cell crosses an effective active-domain boundary");
         if (!active)
             return false;
-        model.cells.push_back({material, model.material_table[material].kind == MaterialKind::Fluid});
+        model.cells.push_back({material});
         model.source_terms.insert(model.source_terms.end(), sources.begin(), sources.end());
         return true;
     }

@@ -108,16 +108,26 @@ namespace mhs::compiler {
                 throw std::invalid_argument("NonConformalMesh cell lies outside the active physical geometry");
         }
         std::unordered_set<std::uint64_t> connections;
-        Vector<Vector<std::size_t>> incident(input.cells.size()); // compile-only reverse lookup
-        for (std::size_t i = 0; i < input.connections.size(); ++i) {
-            const auto [a, b] = input.connections[i];
+        Vector<std::size_t> offsets(input.cells.size() + 1, 0);
+        for (const auto [a, b] : input.connections) {
             if (a >= input.cells.size() || b >= input.cells.size() || a == b)
                 throw std::invalid_argument("NonConformalMesh Connection has invalid CellIds");
             (void)connection_geometry(input.cells[a], input.cells[b]);
             if (!connections.insert(key(a, b)).second)
                 throw std::invalid_argument("duplicate NonConformalMesh Connection");
-            incident[a].push_back(i);
-            incident[b].push_back(i);
+            ++offsets[a + 1];
+            ++offsets[b + 1];
+        }
+        // Compile-only CSR adjacency for boundary clipping. Offsets address two
+        // entries per connection and may exceed CellId capacity; neighbors cannot.
+        std::partial_sum(offsets.begin(), offsets.end(), offsets.begin());
+        Vector<CellId> neighbors(offsets.back());
+        {
+            auto next = offsets;
+            for (const auto [a, b] : input.connections) {
+                neighbors[next[a]++] = b;
+                neighbors[next[b]++] = a;
+            }
         }
         const CellTree tree(input.cells);
         for (std::size_t i = 0; i < input.cells.size(); ++i)
@@ -150,10 +160,9 @@ namespace mhs::compiler {
                     const int u = a == 0 ? 1 : 0, v = a == 2 ? 1 : 2;
                     f.bounds = {cell.min[u], cell.max[u], cell.min[v], cell.max[v]};
                     Vector<BoundaryFacet> remaining {f};
-                    for (const auto id : incident[i]) {
-                        const auto [ca, cb] = input.connections[id];
-                        const auto g = connection_geometry(input.cells[ca], input.cells[cb]);
-                        const auto other = ca == i ? cb : ca;
+                    for (auto j = offsets[i]; j < offsets[i + 1]; ++j) {
+                        const auto other = neighbors[j];
+                        const auto g = connection_geometry(cell, input.cells[other]);
                         const int side = input.cells[other].center()[a] > cell.center()[a] ? 1 : -1;
                         if (g.axis == f.axis && side == sign && std::abs(g.coordinate - f.coordinate) <= geometry_eps)
                             subtract(remaining, g);
