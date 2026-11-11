@@ -408,6 +408,10 @@ namespace mhs::app::pta {
                         if (const XMLElement* rects_elem = block_elem->FirstChildElement("AllRects")) {
                             for (const XMLElement* rect_elem = rects_elem->FirstChildElement("Rect"); rect_elem;
                                 rect_elem = rect_elem->NextSiblingElement("Rect")) {
+                                // PTA array placeholders are not physical rectangles.
+                                const XMLElement* disguise = rect_elem->FirstChildElement("ArrayDisguise");
+                                if (disguise && get_text(disguise) == "true")
+                                    continue;
                                 RectOperation rect;
                                 if (const XMLElement* adds = rect_elem->FirstChildElement("Add_sub")) {
                                     rect.operation = get_text(adds) == "true" ? mhs::model::GeometryOperation::Add
