@@ -1,4 +1,4 @@
-"""Explicit cell geometry and canonical facet topology, independent of mesh origin."""
+"""Cell geometry and exterior boundary facets, independent of mesh origin."""
 
 from __future__ import annotations
 

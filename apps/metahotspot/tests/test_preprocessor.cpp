@@ -16,7 +16,7 @@ static BoundaryFacetId find_boundary_facet(const Model& model, std::size_t cell_
     for (std::size_t id = 0; id < model.boundary_facets.size(); ++id) {
         const auto& facet = model.boundary_facets[id];
         if (facet.cell == cell_idx && static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
-            && facet.outward_sign() == (static_cast<int>(dir) % 2 ? 1 : -1))
+            && facet.side == (static_cast<int>(dir) % 2 ? 1 : -1))
             return id;
     }
     return mhs::core::invalid_id;
@@ -28,7 +28,7 @@ static const Condition* find_condition(const Model& model, std::size_t cell_idx,
     for (std::size_t id = 0; id < model.boundary_facets.size(); ++id) {
         const auto& facet = model.boundary_facets[id];
         if (facet.cell == cell_idx && static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
-            && facet.outward_sign() == (static_cast<int>(dir) % 2 ? 1 : -1))
+            && facet.side == (static_cast<int>(dir) % 2 ? 1 : -1))
             if (auto* condition
                 = std::get_if<Condition>(&model.boundary_conditions[model.boundary_thermal_condition[id]]))
                 return condition;

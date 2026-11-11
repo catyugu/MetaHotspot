@@ -80,7 +80,7 @@ TEST(Mesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             const auto& facet = model.boundary_facets[id];
             const auto& condition = model.boundary_conditions[model.boundary_thermal_condition[id]];
             const auto center = facet.center();
-            const double d = cell_geometry(model.mesh, facet.owner()).size()[static_cast<std::size_t>(facet.axis)] / 2;
+            const double d = cell_geometry(model.mesh, facet.cell).size()[static_cast<std::size_t>(facet.axis)] / 2;
             const mhs::expression::FieldContext cell_context {center[0], center[1], center[2], state[0], 0};
             const auto trace = mhs::solver::evaluate_boundary(condition, cell_context, facet.area(), facet.area() / d);
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], trace.temperature, 0};

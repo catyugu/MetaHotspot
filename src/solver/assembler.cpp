@@ -80,11 +80,12 @@ namespace mhs::solver {
             [&](const auto& mesh) {
                 for (std::size_t c = 0; c < model.cells.size(); ++c) {
                     const auto row = static_cast<SparseIndex>(c);
-                    const auto center = cell_geometry(mesh, static_cast<CellId>(c)).center();
+                    const auto geometry = cell_geometry(mesh, static_cast<CellId>(c));
+                    const auto center = geometry.center();
                     const FieldContext ctx {center[0], center[1], center[2], temperature[row], time};
                     const auto& mat = model.material_table[model.cells[c].material];
                     conductivity_[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
-                    const auto volume = cell_geometry(mesh, static_cast<CellId>(c)).volume();
+                    const auto volume = geometry.volume();
                     const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
                     operators_.C.values()[c] = rho * cp * volume;
                     if (!density_.empty()) {
@@ -103,22 +104,19 @@ namespace mhs::solver {
             rhs[row]
                 += term.weight * model.heat_source_table[term.source].eval({p[0], p[1], p[2], temperature[row], time});
         }
-        auto add_conduction
-            = [&](Connection c, const FaceGeometry& geometry, const CellGeometry& a, const CellGeometry& b) {
-                  const auto axis = static_cast<std::size_t>(geometry.axis);
-                  const auto [ra, rb] = connection_resistances(
-                      model, c, a, b, geometry.axis, conductivity_[c.a][axis], conductivity_[c.b][axis]);
-                  const double g = geometry.area() / (ra + rb);
-                  values[diagonal_positions_[c.a]] += g;
-                  values[slot(static_cast<SparseIndex>(c.a), static_cast<SparseIndex>(c.b))] -= g;
-                  values[diagonal_positions_[c.b]] += g;
-                  values[slot(static_cast<SparseIndex>(c.b), static_cast<SparseIndex>(c.a))] -= g;
-              };
         std::visit(
             [&](const auto& mesh) {
                 for_each_connection(mesh, [&](Connection c) {
                     const auto a = cell_geometry(mesh, c.a), b = cell_geometry(mesh, c.b);
-                    add_conduction(c, connection_geometry(a, b), a, b);
+                    const auto geometry = connection_geometry(a, b);
+                    const auto axis = static_cast<std::size_t>(geometry.axis);
+                    const auto [ra, rb] = connection_resistances(
+                        model, c, a, b, geometry.axis, conductivity_[c.a][axis], conductivity_[c.b][axis]);
+                    const double g = geometry.area() / (ra + rb);
+                    values[diagonal_positions_[c.a]] += g;
+                    values[slot(static_cast<SparseIndex>(c.a), static_cast<SparseIndex>(c.b))] -= g;
+                    values[diagonal_positions_[c.b]] += g;
+                    values[slot(static_cast<SparseIndex>(c.b), static_cast<SparseIndex>(c.a))] -= g;
                 });
             },
             model.mesh);
@@ -138,7 +136,7 @@ namespace mhs::solver {
             const auto& facet = model.boundary_facets[id];
             if (model.boundary_thermal_condition[id] == invalid_id)
                 continue;
-            const auto cell = facet.owner();
+            const auto cell = facet.cell;
             const auto axis = static_cast<std::size_t>(facet.axis);
             const auto row = static_cast<SparseIndex>(cell);
             const auto center = facet.center();
@@ -151,7 +149,7 @@ namespace mhs::solver {
             values[diagonal_positions_[row]] += trace.conductance;
         }
         for (const auto& term : model.fluid.boundary_terms) {
-            const auto cell = model.boundary_facets[term.facet].owner();
+            const auto cell = model.boundary_facets[term.facet].cell;
             const auto row = static_cast<SparseIndex>(cell);
             const auto cp = specific_heat_[model.fluid.global_to_fluid[cell]];
             std::visit(

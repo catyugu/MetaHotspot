@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <limits>
 #include <stdexcept>
 #include <variant>
 
@@ -54,8 +53,6 @@ namespace mhs::model {
     struct BoundaryFacet : FaceGeometry {
         CellId cell = core::invalid_id;
         int side = 1;
-        CellId owner() const { return cell; }
-        int outward_sign() const { return side; }
     };
 
     struct Connection {

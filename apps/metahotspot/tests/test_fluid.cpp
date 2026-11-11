@@ -90,7 +90,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
                     return flow.mass_flow_rate;
             },
             term.condition);
-        balance[model.boundary_facets[term.facet].owner()] += mass;
+        balance[model.boundary_facets[term.facet].cell] += mass;
         boundary_sum += mass;
     }
     for (auto cell : model.fluid.fluid_to_global)
@@ -158,7 +158,7 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     double side_area = 0.0;
     bool has_cross_cut = false;
     for (const auto& facet : refined.boundary_facets) {
-        if (facet.cell != 0 || facet.axis != Axis::X || facet.outward_sign() != -1)
+        if (facet.cell != 0 || facet.axis != Axis::X || facet.side != -1)
             continue;
         ++side_facets;
         side_area += facet.area();

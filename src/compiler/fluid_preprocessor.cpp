@@ -53,11 +53,11 @@ namespace mhs::compiler::fluid {
                         return i;
                     };
                     for_each_connection(mesh, [&](Connection c) {
-                        const auto f = connection_geometry(cell_geometry(mesh, c.a), cell_geometry(mesh, c.b));
-                        if (static_cast<int>(f.axis) != axis)
-                            return;
                         const auto i = fluid.global_to_fluid[c.a], j = fluid.global_to_fluid[c.b];
-                        if (i != invalid_id && j != invalid_id)
+                        if (i == invalid_id || j == invalid_id)
+                            return;
+                        const auto f = connection_geometry(cell_geometry(mesh, c.a), cell_geometry(mesh, c.b));
+                        if (static_cast<int>(f.axis) == axis)
                             parent[root(i)] = root(j);
                     });
                     mhs::core::Vector<double> lo(n, std::numeric_limits<double>::infinity()),
@@ -90,7 +90,7 @@ namespace mhs::compiler::fluid {
                 for (std::size_t id = 0; id < model.boundary_facets.size(); ++id) {
                     if (boundary_tags[id] >= boundaries.size())
                         continue;
-                    const auto cell = model.boundary_facets[id].owner();
+                    const auto cell = model.boundary_facets[id].cell;
                     if (fluid.global_to_fluid[cell] == invalid_id)
                         continue;
                     projected.push_back(static_cast<BoundaryFacetId>(id));
@@ -135,7 +135,7 @@ namespace mhs::compiler::fluid {
                     const auto facet_id = projected[t];
                     const auto& facet = model.boundary_facets[facet_id];
                     const auto tag = boundary_tags[facet_id];
-                    const auto i = fluid.global_to_fluid[facet.owner()];
+                    const auto i = fluid.global_to_fluid[facet.cell];
                     std::visit(
                         [&](const auto& bc) {
                             using T = std::decay_t<decltype(bc)>;
@@ -144,7 +144,7 @@ namespace mhs::compiler::fluid {
                             else {
                                 reference = true;
                                 const auto axis = static_cast<std::size_t>(facet.axis);
-                                const double distance = cell_geometry(mesh, facet.owner()).size()[axis] / 2;
+                                const double distance = cell_geometry(mesh, facet.cell).size()[axis] / 2;
                                 const double g = facet.area() * mobility[i] / distance;
                                 boundary_conductance[t] = g;
                                 diagonal[i] += g;
@@ -192,7 +192,7 @@ namespace mhs::compiler::fluid {
                     const auto facet_id = projected[t];
                     const auto& facet = model.boundary_facets[facet_id];
                     const auto tag = boundary_tags[facet_id];
-                    const auto i = fluid.global_to_fluid[facet.owner()];
+                    const auto i = fluid.global_to_fluid[facet.cell];
                     const auto& condition = boundaries[tag].condition;
                     const double mass = std::visit(
                         [&](const auto& bc) {
