@@ -113,6 +113,8 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 
     mhs::model::MaterialSpec mat;
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "400";
+    mat.density = "8920";
+    mat.specific_heat = "385";
     io.materials.push_back({"copper", mat});
 
     io.default_thermal_boundary = mhs::model::NeumannBoundary {};

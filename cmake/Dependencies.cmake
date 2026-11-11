@@ -16,8 +16,7 @@ set(MHS_MUPARSER_VERSION 2.3.5)
 set(MHS_TBB_VERSION 2023.0.0)
 set(MHS_AMGCL_VERSION 1.5.0)
 set(MHS_GTEST_VERSION 1.18.0)
-set(MHS_ATSTEP_VERSION 2.1.1)
-
+set(MHS_ATSTEP_VERSION 3.0.3)
 find_package(OpenMP REQUIRED COMPONENTS CXX)
 
 # ----------------------------------------------------------------------------
