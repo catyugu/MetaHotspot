@@ -99,10 +99,19 @@ successes that never exercise the AMG solver.
 
 ## Formatting and lint
 
-The independent lint job runs clang-format in check mode for `src`, `include` and
-`tests`, plus ruff lint and format checks for `python` and `.github/scripts`,
-using the pinned development tools from `pyproject.toml`. These checks run once
-per workflow and never rewrite sources or the Git index.
+The independent lint job checks clang-format across `src`, `include`, `tests`,
+and `apps`, plus Ruff lint and formatting for `python` and `.github/scripts`,
+using the pinned tools in `pyproject.toml`. This job remains read-only and
+blocks merging if any violations remain.
+
+On pull requests, the separate `autofix.ci` workflow applies clang-format,
+Ruff's safe automatic fixes (`ruff check --fix-only`), and Ruff formatting.
+The `autofix-ci/action` step hands changes to the autofix.ci GitHub App,
+which must be installed and authorized for this repository to commit changes
+back to PR branches. Its GitHub Actions job only needs `contents: read`.
+Commits from the App trigger a fresh run of the strict CI checks; lint issues
+that cannot be safely fixed still require manual changes. This workflow does
+not rewrite `main` or `dev` on direct pushes.
 
 All CI-specific scripts and acceptance policy live under `.github/` and are
 excluded from the sdist. GitHub Actions runs artifact acceptance; contributors
