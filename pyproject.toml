@@ -15,7 +15,7 @@ dynamic = ["version"]
 [project.urls]
 Homepage = "https://github.com/catyugu/MetaHotspot"
 
-# Pinned development tools, also used by the CI formatting and lint check.
+# Pinned development tools, also used by the PR autofix workflow.
 [dependency-groups]
 dev = ["clang-format==21.1.8", "ruff==0.17.1", "pytest==8.4.2"]
 
