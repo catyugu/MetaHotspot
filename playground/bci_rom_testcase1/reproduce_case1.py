@@ -30,14 +30,17 @@ from metahotspot.macromodel.utils import (  # noqa: E402
 )
 
 AMB = 308.15
-H_CROWN = 5.0e1
-H_FR4 = 1.0e3
-H_VEC_MODEL = (H_CROWN, H_FR4)
-SOURCES = np.array([0.1, 0.2, 0.3, 0.4])
+H_SIDES = 1.0e2
+H_BOTTOM = 1.0e3
+H_CROWNS = 3.0e1
+# model group order, which is the FloTHERM export order Ambient:2/1/0
+# (MATRICES/rom_parameters.m `in.h` = 1e2, 1e3, 3e1)
+H_VEC_MODEL = (H_SIDES, H_BOTTOM, H_CROWNS)
+SOURCES = np.array([5.0, 5.0, 5.0, 5.0])
 DIE_NAMES = ["S0", "S1", "S2", "S3"]
 
-DURATION_S = 2000.0
-DT_S = 50.0
+DURATION_S = 1000.0
+DT_S = 20.0
 
 PROBE_ROUNDS = 10
 ROM_TOLERANCE = 1.0e-3
@@ -58,7 +61,8 @@ def load_flotherm():
     g = np.asarray(load("g_bci_hat.mtx").todense())
     dH0 = load("delta_H_bci_hat[0].mtx").tocsc()
     dH1 = load("delta_H_bci_hat[1].mtx").tocsc()
-    return K, mass, g, dH0, dH1
+    dH2 = load("delta_H_bci_hat[2].mtx").tocsc()
+    return K, mass, g, dH0, dH1, dH2
 
 
 def flotherm_steady(K_eff, g):
@@ -82,8 +86,7 @@ def run():
     OUT.mkdir(parents=True, exist_ok=True)
     model = Case1Model(
         Case1Config(
-            max_xy_cell_mm=1.0,
-            max_z_cell_mm=1.0,
+            max_cell_mm=0.5,
             dt_s=DT_S,
             duration_s=DURATION_S,
         )
@@ -143,8 +146,8 @@ def run():
     junc_rom_hist = AMB + theta_hist @ F_hat
     rec_hist = AMB + theta_hist @ basis.T
 
-    Kf, Mf, g, dH0, dH1 = load_flotherm()
-    K_eff_fl = Kf + H_FR4 * dH0 + H_CROWN * dH1
+    Kf, Mf, g, dH0, dH1, dH2 = load_flotherm()
+    K_eff_fl = Kf + H_SIDES * dH0 + H_BOTTOM * dH1 + H_CROWNS * dH2
     junc_fl_ss = flotherm_steady(K_eff_fl, g)
     fl_times, junc_fl_hist = flotherm_transient(
         Mf,
@@ -238,8 +241,8 @@ def run():
 
     with open(OUT / "summary.txt", "w") as f:
         f.write(
-            f"ambient={AMB}  h_crown={H_CROWN}  h_fr4={H_FR4}  "
-            f"dt={DT_S}  duration={DURATION_S}\n"
+            f"ambient={AMB}  h_sides={H_SIDES}  h_bottom={H_BOTTOM}  "
+            f"h_crowns={H_CROWNS}  dt={DT_S}  duration={DURATION_S}\n"
         )
         f.write(f"sources={SOURCES.tolist()}\n")
         f.write(

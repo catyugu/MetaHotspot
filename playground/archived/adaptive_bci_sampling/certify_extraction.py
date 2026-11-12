@@ -25,8 +25,9 @@ HERE = Path(__file__).resolve().parent
 sys.path[:0] = [str(HERE), str(HERE.parent / "bci_rom_testcase1")]
 
 from certified_box import BoxCertificate, logarithmic_edges  # noqa: E402
-from sparse_solve import AmgSolver  # noqa: E402
 from model_case1 import Case1Config, Case1Model  # noqa: E402
+from sparse_solve import AmgSolver  # noqa: E402
+
 from metahotspot.macromodel.utils import build_parametric_basis  # noqa: E402
 
 
@@ -76,10 +77,8 @@ def main():
     )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    model = Case1Model(
-        Case1Config(max_xy_cell_mm=args.mesh_mm, max_z_cell_mm=args.mesh_mm)
-    )
-    kernel, mass = model.core.K.tocsc(), model.core.C.tocsc()
+    model = Case1Model(Case1Config(max_cell_mm=args.mesh_mm))
+    kernel, _mass = model.core.K.tocsc(), model.core.C.tocsc()
     source = np.asarray(model.source_shape, dtype=float)
     terms = [term.tocsc() for term in model.boundary_terms]
     ranges = np.asarray(
@@ -154,7 +153,7 @@ def main():
                 phase = "reference"
                 for parameter in points:
                     operator = kernel.copy()
-                    for value, term in zip(parameter, terms):
+                    for value, term in zip(parameter, terms, strict=False):
                         operator = operator + value * term
                     metrics = field_errors(operator, source, basis)
                     if metrics["squared_relative_energy_error"] > bound + 1e-9:

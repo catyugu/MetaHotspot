@@ -1,89 +1,98 @@
 #!/usr/bin/env python3
-"""Case-1 thermal model: 3-layer stack + 4 silicon dies (FloTHERM BCI ROM case).
+"""Case-1 thermal model: heat-sink stack + 4 silicon dies (FloTHERM BCI ROM case).
 
-Geometry mirrors ``playground/bci_rom_testcase1/case1.ecxml``:
+Geometry mirrors ``playground/bci_rom_testcase1/case1.ecxml`` (FloTHERM
+solution domain 50 x 50 x 8 mm, origin at (-25, -25, 0) mm):
 
-    layer        material    thickness (mm)   lateral (mm)            power
-    ----------   ----------  --------------   --------------------    ----
-    FR4          FR4         10.0             60 x 100                -
-    E-10         E-10        5.0              60 x  60                -
-    interconnect Interconnect 3.0             40 x  40                -
-    dies         Silicon     2.0              4 x (10 x 10)           4 sources
+    block        material   z (mm)          lateral         power
+    ----------   --------   --------------  -------------   -----
+    Heat Sink    Aluminum   0.00 - 6.00     50 x 50         -
+    TIM2         TIM        6.00 - 6.05     38 x 38         -
+    IHS          Copper     6.05 - 7.55     38 x 38         -
+    TIM          TIM        7.55 - 7.60     24 x 24         -
+    dies         Silicon    7.60 - 8.00     see DIES        4 x 5 W
 
-Four 10x10x2 mm silicon dies sit on top (z 18..20 mm) at:
-    S0  x[ 5,15]  y[ 5,15]  0.1 W
-    S1  x[-15,-5] y[ 5,15]  0.2 W
-    S2  x[ 5,15]  y[-15,-5] 0.3 W
-    S3  x[-15,-5] y[-15,-5] 0.4 W
+Four 0.4 mm silicon dies sit on the 24 x 24 mm TIM (all at z 7.6 .. 8.0 mm):
 
-Boundary: two ambient groups, side faces adiabatic —
+    S0  x[  6,  9]  y[-5, 10]  5 W
+    S1  x[-10,  5]  y[-5, 10]  5 W
+    S2  x[  6,  9]  y[-9, -6]  5 W
+    S3  x[-10,  5]  y[-9, -6]  5 W
 
-    die-crown faces  (z = 20 mm, 4 dies, area 4e-4 m2)  h = 5e1   (Ambient:0)
-    FR4 bottom face  (z =  0 mm, area 6e-3 m2)          h = 1e3   (Ambient:1)
+Boundary: three ambient groups, every other exterior facet adiabatic.  The
+groups are named and ordered exactly as the FloTHERM export
+(``MATRICES/report.rom``, ``MATRICES/xData.txt``), so index ``k`` of the ``h``
+vector is index ``k`` of ``delta_H_bci_hat[k]`` and ``Areas[k]``:
 
-``h_ranges`` keeps the model group order [ZP crowns, ZM FR4]; both are the
-*physical* HTC range [1, 1e4] (FloTHERM extraction range).  The public
-boundary-parameter space is the physical HTC ``h`` (W/m²·K): callers pass
-physical values to :meth:`~AffineParametricModel.full_reference`;
-the model maps them internally through
-:meth:`~AffineParametricModel.physical_to_effective` to the
+    heat-sink sides   (4 x 50 x 6 mm = 1200 mm2)   h = 1.0e2   (Ambient:2)
+    heat-sink bottom  (50 x 50 mm    = 2500 mm2)   h = 1.0e3   (Ambient:1)
+    die crowns        (4 die tops    =  324 mm2)   h = 3.0e1   (Ambient:0)
+
+Those areas are exactly the exported ``Areas[k].mtx`` values
+(1.2e-3 / 2.5e-3 / 3.24e-4 m2) and the reference HTCs are ``in.h`` of
+``MATRICES/rom_parameters.m``.  Only solid blocks carry cells; the unfilled
+volume of the FloTHERM solution domain (around the TIM/IHS/dies) is void, as in
+the extracted ROM, so the ambient groups see only real solid surface.
+
+Mesh: every block edge is a vertex and every axis is subdivided so that no cell
+exceeds ``max_cell_mm`` (0.5 mm).  The 0.05 mm TIM films therefore stay one cell
+thick while the dies, the IHS and the heat sink are resolved laterally and
+vertically.
+
+``h_ranges`` keeps the group order and gives every group the *physical* HTC
+range [1, 1e4] W/m2.K reported by ``report.rom``.  The public
+boundary-parameter space is the physical HTC ``h``: callers pass physical values
+to :meth:`~AffineParametricModel.full_reference`; the model maps them internally
+through :meth:`~AffineParametricModel.physical_to_effective` to the
 surface-consistent effective coefficient ``p`` before assembling the affine
 ``K``.  The ROM is trained over the same effective ``p``
-(:func:`~metahotspot.macromodel.utils.assemble_reduced_k` fed ``model.physical_to_effective(h)``;
-:meth:`~AffineParametricModel.h_ranges` returns the effective training
-ranges).  In FloTHERM's own z-orientation the die side is its "bottom"
-(Ambient:0, small area) and the FR4 side is its "top" (Ambient:1, large
-area).
+(:func:`~metahotspot.macromodel.utils.assemble_reduced_k` fed
+``model.physical_to_effective(h)``; :meth:`~AffineParametricModel.h_ranges`
+returns the effective training ranges).
 """
 
 from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
+from itertools import pairwise
 
 import numpy as np
 
 import metahotspot
 from metahotspot.enums import Face
-
-from metahotspot.macromodel.affine import (  # noqa: E402
+from metahotspot.macromodel.affine import (
     AffineParametricModel,
     BoundaryGroup,
     SourcePort,
 )
+from metahotspot.macromodel.geometry import BoundarySurface
 
 # (kx, ky, kz, rho, c) SI — the four solids present in this model
 MATERIALS = {
-    "FR4": (".3", ".3", ".3", "1200", "880"),
-    "Interconnect(equivalent)": ("2", "2", "201", "2710", "913"),
-    "E-10": (".56", ".56", ".56", "1140", "3330"),
+    "Aluminum": ("200", "200", "200", "2700", "900"),
+    "TIM": ("8", "8", "8", "3000", "900"),
+    "Copper": ("400", "400", "400", "8960", "385"),
     "Silicon": ("130", "130", "130", "2330", "700"),
 }
 
-AIR_MATERIAL = "air"
-AIR_K = "0.02643"
-AIR_RHO = "1.149"
-AIR_C = "1007"
-
-A2_MIN_X = -30.0
-A2_MAX_X = 30.0
-A2_MIN_Y = -50.0
-A2_MAX_Y = 50.0
-
-# bottom-up (thickness_mm, material, size_x_mm, size_y_mm, center_x_mm, center_y_mm, power_W)
-LAYERS = (
-    (10.0, "FR4", 60.0, 100.0, 0.0, 0.0, 0.0),
-    (5.0, "E-10", 60.0, 60.0, 0.0, 0.0, 0.0),
-    (3.0, "Interconnect(equivalent)", 40.0, 40.0, 0.0, 0.0, 0.0),
+# bottom-up (name, material, thickness_mm, size_x_mm, size_y_mm, center_x, center_y)
+STACK = (
+    ("Heat Sink", "Aluminum", 6.0, 50.0, 50.0, 0.0, 0.0),
+    ("TIM2", "TIM", 0.05, 38.0, 38.0, 0.0, 0.0),
+    ("IHS", "Copper", 1.5, 38.0, 38.0, 0.0, 0.0),
+    ("TIM", "TIM", 0.05, 24.0, 24.0, 0.0, 0.0),
 )
 
+# (name, (xlo, xhi), (ylo, yhi)) in mm — the assembly "Core" blocks of case1.ecxml
 DIES = (
-    (0.1, (5.0, 15.0), (5.0, 15.0)),  # S0
-    (0.2, (-15.0, -5.0), (5.0, 15.0)),  # S1
-    (0.3, (5.0, 15.0), (-15.0, -5.0)),  # S2
-    (0.4, (-15.0, -5.0), (-15.0, -5.0)),  # S3
+    ("S0", (6.0, 9.0), (-5.0, 10.0)),
+    ("S1", (-10.0, 5.0), (-5.0, 10.0)),
+    ("S2", (6.0, 9.0), (-9.0, -6.0)),
+    ("S3", (-10.0, 5.0), (-9.0, -6.0)),
 )
-DIE_THICKNESS_MM = 2.0
+DIE_POWER_W = (5.0, 5.0, 5.0, 5.0)
+DIE_THICKNESS_MM = 0.4
 DIE_MATERIAL = "Silicon"
 
 DEFAULT_H_RANGE = (1.0, 1.0e4)
@@ -91,92 +100,57 @@ DEFAULT_H_RANGE = (1.0, 1.0e4)
 
 @dataclass(frozen=True)
 class Case1Config:
-    ambient_K: float = 308.15  # 35 C = Tambient (rom_parameters.m)
-    duration_s: float = 100.0
-    dt_s: float = 5.0
-    max_xy_cell_mm: float = 2.5
-    max_z_cell_mm: float = 2.5
-    # group 0 = die crowns (Ambient:0), group 1 = FR4 bottom (Ambient:1),
-    # both physical [1, 1e4] (FloTHERM extraction range); see module docstring
-    h_ranges: tuple = (DEFAULT_H_RANGE, DEFAULT_H_RANGE)
+    ambient_K: float = 308.15  # 35 C = in.Tamb / in.Tinitial (rom_parameters.m)
+    duration_s: float = 1000.0  # in.tscan = [0, 1e3]
+    dt_s: float = 20.0
+    max_cell_mm: float = 0.5  # every axis is subdivided to at most this cell
+    # group order = FloTHERM export order (Ambient:2, Ambient:1, Ambient:0);
+    # every group is trained over the reported physical range [1, 1e4]
+    h_ranges: tuple = (DEFAULT_H_RANGE, DEFAULT_H_RANGE, DEFAULT_H_RANGE)
 
     @property
-    def nz(self) -> int:
-        return 4  # 3 layers + dies
+    def layer_count(self) -> int:
+        return len(STACK) + 1  # four stacked blocks + the die slab
 
     @property
     def total_height_mm(self) -> float:
-        return 20.0
+        stack_mm = sum(thickness for _, _, thickness, _, _, _, _ in STACK)
+        return stack_mm + DIE_THICKNESS_MM
 
-    def _all_cuts_mm(self) -> np.ndarray:
-        """Every lateral cut (block edges + package/domain extents), unique.
-
-        FR4/E-10 x-edges at +-30, FR4 y-edges at +-50, interconnect at +-20, die edges at
-        +-15/+-5.  This is the *superset* of cuts; the x and y meshes each keep
-        only the cuts inside their own solution-domain extent so no empty cells
-        stretch beyond the domain (case1.ecxml solutionDomain 60x100 mm).
-        """
-        pts = [
-            -30.0,
-            30.0,  # FR4 / aluminum x edges
-            -50.0,
-            50.0,  # FR4 y edges
-            -20.0,
-            20.0,  # E-10 edges
-            -15.0,
-            -5.0,
-            5.0,
-            15.0,  # die edges (x & y)
-        ]
-        return np.unique(np.asarray(pts, dtype=np.float64))
+    @staticmethod
+    def _cuts_mm(axis: int) -> np.ndarray:
+        """Every lateral block edge on ``axis`` (0 = x, 1 = y), unique."""
+        edges = []
+        for _, _, _, size_x, size_y, center_x, center_y in STACK:
+            size, center = (size_x, center_x) if axis == 0 else (size_y, center_y)
+            edges.extend((center - size / 2, center + size / 2))
+        for _, (xlo, xhi), (ylo, yhi) in DIES:
+            edges.extend((xlo, xhi) if axis == 0 else (ylo, yhi))
+        return np.unique(np.asarray(edges, dtype=np.float64))
 
     def _subdivide(self, fixed) -> np.ndarray:
         vertices = [float(fixed[0])]
-        for left, right in zip(fixed[:-1], fixed[1:]):
-            pieces = max(1, math.ceil((right - left) / self.max_xy_cell_mm))
+        for left, right in pairwise(fixed):
+            pieces = max(1, math.ceil((right - left) / self.max_cell_mm))
             vertices.extend(np.linspace(left, right, pieces + 1)[1:])
         return np.asarray(vertices)
 
     @property
     def x_vertices_mm(self) -> np.ndarray:
-        """x mesh: solution-domain cuts inside [-30, 30] mm (60 mm wide)."""
-        full = self._all_cuts_mm()
-        return self._subdivide(
-            np.unique(full[(full >= A2_MIN_X - 1e-12) & (full <= A2_MAX_X + 1e-12)])
-        )
+        return self._subdivide(self._cuts_mm(0))
 
     @property
     def y_vertices_mm(self) -> np.ndarray:
-        """y mesh mirroring the FloTHERM base-grid export.
-
-        Central span [-30, 30] mm (E-10/interconnect/dies extent; same cut set
-        as x, incl. the E-10 y-edges at +-30) is subdivided to
-        ``max_xy_cell_mm``.  The FR4-only overhang [30, 50] / [-50, -30]
-        (20 mm per side) is split into ``ceil(20 / max_xy_cell_mm) + 1``
-        equal cells — the FloTHERM auto-mesh rule, which at the 1 mm
-        nominal gives 21 x (20/21) mm cells per side, exactly reproducing
-        the reference ``Root Assembly_Temperature_Base Grid.csv``
-        (60 x 1mm central + 21 x (20/21) mm per side = 102 y rows).
-        """
-        full = self._all_cuts_mm()
-        central = np.unique(
-            full[(full >= A2_MIN_X - 1e-12) & (full <= A2_MAX_X + 1e-12)]
-        )
-        inner = self._subdivide(central)
-        overhang = A2_MAX_Y - A2_MAX_X  # 20 mm of FR4 beyond the aluminum span
-        pieces = max(1, math.ceil(overhang / self.max_xy_cell_mm) + 1)
-        outer = np.linspace(A2_MAX_X, A2_MAX_Y, pieces + 1)[1:]  # (30, 50]
-        return np.concatenate([-outer[::-1], inner, outer])
+        return self._subdivide(self._cuts_mm(1))
 
     @property
     def z_vertices_mm(self) -> np.ndarray:
-        """Cumulative z breakpoints (mm): 0,10,15,18,20, subdivided."""
-        fixed = [0.0, 10.0, 15.0, 18.0, 20.0]
-        vertices = [0.0]
-        for left, right in zip(fixed[:-1], fixed[1:]):
-            pieces = max(1, math.ceil((right - left) / self.max_z_cell_mm))
-            vertices.extend(np.linspace(left, right, pieces + 1)[1:])
-        return np.asarray(vertices)
+        """Cumulative z breakpoints of the stack: 0, 6, 6.05, 7.55, 7.6, 8."""
+        fixed = [0.0]
+        for _, _, thickness, _, _, _, _ in STACK:
+            fixed.append(fixed[-1] + thickness)
+        fixed.append(fixed[-1] + DIE_THICKNESS_MM)
+        return self._subdivide(np.asarray(fixed))
 
     @property
     def nx(self) -> int:
@@ -186,22 +160,29 @@ class Case1Config:
     def ny(self) -> int:
         return self.y_vertices_mm.size - 1
 
+    @property
+    def nz(self) -> int:
+        return self.z_vertices_mm.size - 1
+
     def report_dict(self) -> dict:
         return {
             **asdict(self),
             "nx": self.nx,
             "ny": self.ny,
             "nz": self.nz,
-            "source_power_W": [d[0] for d in DIES],
-            "solid_domain_mm": [
-                self.x_vertices_mm.min(),
-                self.x_vertices_mm.max(),
-            ],
+            "source_power_W": list(DIE_POWER_W),
+            "domain_mm": (
+                float(self.x_vertices_mm.min()),
+                float(self.x_vertices_mm.max()),
+                float(self.y_vertices_mm.min()),
+                float(self.y_vertices_mm.max()),
+                self.total_height_mm,
+            ),
         }
 
 
 def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
-    """Assemble the Case-1 geometry (no boundary conditions; default Neumman)."""
+    """Assemble the Case-1 geometry (no boundary conditions; default Neumann)."""
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
     model = metahotspot.Model()
@@ -212,9 +193,8 @@ def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
     materials = {
         name: model.add_material(name, *props) for name, props in MATERIALS.items()
     }
-    air = model.add_material(AIR_MATERIAL, AIR_K, AIR_K, AIR_K, AIR_RHO, AIR_C)
 
-    def add_box(material, lo, hi, power=0):
+    def add_box(material, lo, hi, power=0.0):
         source = (
             model.add_source(f"{power / (np.prod(np.array(hi) - lo) * 1e-9):.17g}")
             if power > 0
@@ -224,17 +204,14 @@ def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
         model.add_box(volume, np.array(lo) * 1e-3, np.array(hi) * 1e-3)
 
     z = 0.0
-    for thickness, material, sx, sy, cx, cy, power in LAYERS:
-        add_box(air, [A2_MIN_X, A2_MIN_Y, z], [A2_MAX_X, A2_MAX_Y, z + thickness])
+    for _, material, thickness, sx, sy, cx, cy in STACK:
         add_box(
             materials[material],
             [cx - sx / 2, cy - sy / 2, z],
             [cx + sx / 2, cy + sy / 2, z + thickness],
-            power,
         )
         z += thickness
-    add_box(air, [A2_MIN_X, A2_MIN_Y, z], [A2_MAX_X, A2_MAX_Y, z + DIE_THICKNESS_MM])
-    for power, (xlo, xhi), (ylo, yhi) in DIES:
+    for (_, (xlo, xhi), (ylo, yhi)), power in zip(DIES, DIE_POWER_W, strict=True):
         add_box(
             materials[DIE_MATERIAL],
             [xlo, ylo, z],
@@ -243,6 +220,15 @@ def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
         )
     model.set_default_neumann("0")
     return model
+
+
+def merge_surfaces(*surfaces: BoundarySurface) -> BoundarySurface:
+    """One boundary surface from several face selections of the same group."""
+    return BoundarySurface(
+        cell_ids=np.concatenate([s.cell_ids for s in surfaces]),
+        areas=np.concatenate([s.areas for s in surfaces]),
+        facet_ids=np.concatenate([s.facet_ids for s in surfaces]),
+    )
 
 
 class Case1Model(AffineParametricModel):
@@ -268,53 +254,48 @@ class Case1Model(AffineParametricModel):
         return self._gate_by_geometry(source_cells)
 
     def _gate_by_geometry(self, source_cells) -> list[SourcePort]:
-        cell_x = self.cell_layout.centers[:, 0]
-        cell_y = self.cell_layout.centers[:, 1]
+        centers = self.cell_layout.centers
         ports = []
-        for power, (xlo, xhi), (ylo, yhi) in DIES:
-            mask = (
-                (cell_x >= xlo * 1.0e-3 - 1.0e-12)
-                & (cell_x <= xhi * 1.0e-3 + 1.0e-12)
-                & (cell_y >= ylo * 1.0e-3 - 1.0e-12)
-                & (cell_y <= yhi * 1.0e-3 + 1.0e-12)
-            )
+        for (name, (xlo, xhi), (ylo, yhi)), power in zip(
+            DIES, DIE_POWER_W, strict=True
+        ):
+            mask = self._footprint(centers, xlo, xhi, ylo, yhi)
             cells = source_cells[mask[source_cells]]
+            if not cells.size:
+                raise ValueError(f"no source cells inside die {name}")
             ports.append(
                 SourcePort(cells=np.asarray(cells, dtype=np.int64), power_W=power)
             )
         return ports
 
     def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
-        top = self.geometry.surface(Face.ZP)
-        top_cells, top_areas = top.cell_ids, top.areas
-        # The top convective BC applies only to cells carrying real silicon fill
-        # (the die crowns); air-only cells on the top layer are dropped so no h
-        # is applied to the air domain around the dies.
-        cell_x = self.cell_layout.centers[:, 0]
-        cell_y = self.cell_layout.centers[:, 1]
-        silicon = self._silicon_footprint(cell_x, cell_y)[top_cells]
-        top_cells, top_areas = top_cells[silicon], top_areas[silicon]
-        bottom = self.geometry.surface(Face.ZM, coordinate=0.0)
-
+        """Sides, bottom, crowns — the FloTHERM export (Ambient:2/1/0) order."""
         return (
             BoundaryGroup(
-                surface=type(top)(top_cells, top_areas, top.facet_ids[silicon]),
+                surface=merge_surfaces(
+                    self.geometry.surface(Face.XM),
+                    self.geometry.surface(Face.XP),
+                    self.geometry.surface(Face.YM),
+                    self.geometry.surface(Face.YP),
+                ),
                 h_range=self.config.h_ranges[0],
             ),
             BoundaryGroup(
-                surface=bottom,
+                surface=self.geometry.surface(Face.ZM, coordinate=0.0),
                 h_range=self.config.h_ranges[1],
+            ),
+            BoundaryGroup(
+                surface=self.geometry.surface(Face.ZP),
+                h_range=self.config.h_ranges[2],
             ),
         )
 
-    def _silicon_footprint(self, cell_x, cell_y) -> np.ndarray:
+    @staticmethod
+    def _footprint(centers, xlo, xhi, ylo, yhi) -> np.ndarray:
         """Boolean mask over cells whose x/y centre sits inside a die footprint."""
-        mask = np.zeros(cell_x.shape, dtype=bool)
-        for _, (xlo, xhi), (ylo, yhi) in DIES:
-            mask |= (
-                (cell_x >= xlo * 1.0e-3 - 1.0e-12)
-                & (cell_x <= xhi * 1.0e-3 + 1.0e-12)
-                & (cell_y >= ylo * 1.0e-3 - 1.0e-12)
-                & (cell_y <= yhi * 1.0e-3 + 1.0e-12)
-            )
-        return mask
+        return (
+            (centers[:, 0] >= xlo * 1.0e-3 - 1.0e-12)
+            & (centers[:, 0] <= xhi * 1.0e-3 + 1.0e-12)
+            & (centers[:, 1] >= ylo * 1.0e-3 - 1.0e-12)
+            & (centers[:, 1] <= yhi * 1.0e-3 + 1.0e-12)
+        )

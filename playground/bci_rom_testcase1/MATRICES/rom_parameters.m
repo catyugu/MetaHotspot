@@ -5,32 +5,35 @@ in.tscan = [0, 1.00000e+03];
  in.ode_reltol = 1.0e-7;
  in.ode_abstol = 1.0e-5;
 % htcs - number should match ROM
- in.h = [ 1, 1.00000e+03        % Ambient:1
-          2, 5.00000e+01 ];     % Ambient:0
- in.Tamb = [ 1, 3.50000e+01        % Ambient:1
-          2, 3.50000e+01 ];     % Ambient:0
+ in.h = [ 1, 1.00000e+02        % Ambient:2
+          2, 1.00000e+03        % Ambient:1
+          3, 3.00000e+01 ];     % Ambient:0
+ in.Tamb = [ 1, 3.50000e+01        % Ambient:2
+          2, 3.50000e+01        % Ambient:1
+          3, 3.50000e+01 ];     % Ambient:0
 % set the required uniform Tinit
 in.Tinitial = 3.50000e+01;
 % htcs names
- in.h_name = [ "Ambient:1"    % htc range 1.00000e+00 1.00000e+04
+ in.h_name = [ "Ambient:2"    % htc range 1.00000e+00 1.00000e+04
+               "Ambient:1"    % htc range 1.00000e+00 1.00000e+04
                "Ambient:0" ]; % htc range 1.00000e+00 1.00000e+04
  % sources... 
 % source name: S0
  in.source{1}.name = "S0";
  in.source{1}.steps_type = 'constant';
- in.source{1}.val = 1.00000e-01;
+ in.source{1}.val = 5.00000e+00;
 % source name: S1
  in.source{2}.name = "S1";
  in.source{2}.steps_type = 'constant';
- in.source{2}.val = 2.00000e-01;
+ in.source{2}.val = 5.00005e+00;
 % source name: S2
  in.source{3}.name = "S2";
  in.source{3}.steps_type = 'constant';
- in.source{3}.val = 3.00000e-01;
+ in.source{3}.val = 4.99999e+00;
 % source name: S3
  in.source{4}.name = "S3";
  in.source{4}.steps_type = 'constant';
- in.source{4}.val = 4.00001e-01;
+ in.source{4}.val = 5.00000e+00;
  % COG source probes... 
 in.probe{1}.name = "S0";
 in.probe{2}.name = "S1";
