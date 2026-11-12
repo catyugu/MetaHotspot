@@ -31,7 +31,7 @@ python -m pip install dist/*.whl
 python -m pytest python/tests
 ```
 
-- **Formatting and lint**: GitHub Actions checks clang-format for `src`, `include` and `tests`, and ruff for `python` and `.github/scripts`. Local formatting and tests are optional development tools; no commit hook or local CI acceptance is required.
+- **Formatting and lint**: Apply formatting before committing. The PR `autofix.ci` workflow runs clang-format for `src`, `include`, `tests`, and `apps`, plus Ruff safe lint fixes and formatting for `python` and `.github/scripts`. CI has no separate format/lint gate.
 
 - **Versions**: the library version is defined once, as `MHS_VERSION_*` macros in `include/metahotspot/metahotspot_c_api.h`; CMake and the Python package derive from it.
 
