@@ -99,20 +99,19 @@ successes that never exercise the AMG solver.
 
 ## Formatting and lint
 
-The independent lint job checks clang-format across `src`, `include`, `tests`,
-and `apps`, plus Ruff lint and formatting for `python` and `.github/scripts`,
-using the pinned tools in `pyproject.toml`. This job remains read-only and
-blocks merging if any violations remain.
+The `autofix.ci` workflow runs on pull requests targeting `main` or `dev`.
+It applies clang-format to `src`, `include`, `tests`, and `apps`, plus Ruff
+safe lint fixes (`ruff check --fix-only`) and Ruff formatting to `python`
+and `.github/scripts`. Versions are pinned in `pyproject.toml`.
 
-On pull requests, the separate `autofix.ci` workflow applies clang-format,
-Ruff's safe automatic fixes (`ruff check --fix-only`), and Ruff formatting.
-The `autofix-ci/action` step hands changes to the autofix.ci GitHub App,
-which must be installed and authorized for this repository to commit changes
-back to PR branches. Its GitHub Actions job only needs `contents: read`.
-Commits from the App trigger a fresh run of the strict CI checks; lint issues
-that cannot be safely fixed still require manual changes. This workflow does
-not rewrite `main` or `dev` on direct pushes.
+The `autofix-ci/action` step delegates committing fixes back to PR branches
+to the autofix.ci GitHub App, which must be installed and authorized for this
+repository. Workflow permissions remain read-only. There is no separate
+CI formatting/lint check job: formatting is handled by contributors' local
+pre-commit workflow and PR autofix, while build, test, and packaging checks
+remain independent. Ruff diagnostics without safe automatic fixes do not
+cause the autofix job to fail. Direct pushes to `main` or `dev` are not
+automatically rewritten.
 
 All CI-specific scripts and acceptance policy live under `.github/` and are
-excluded from the sdist. GitHub Actions runs artifact acceptance; contributors
-are not required to reproduce it locally or install a commit hook.
+excluded from the sdist. GitHub Actions runs artifact acceptance.
