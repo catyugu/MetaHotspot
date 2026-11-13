@@ -100,11 +100,10 @@ def _snapshot_svd_basis(snapshot_matrix, tolerance, metric=None):
     one /= np.sqrt(one @ metric_one)
     metric_one = metric @ one
 
-    # Tempered energy normalization balances junction and internal responses.
+    # Normalize each response exclusively by its thermal energy norm.
     metric_snapshots = metric @ snapshots
     energy_norms = np.sqrt(np.einsum("ij,ij->j", snapshots, metric_snapshots))
-    scales = energy_norms ** (2.0 / 3.0) * norms ** (1.0 / 3.0)
-    weighted = snapshots / scales
+    weighted = snapshots / energy_norms
     weighted -= np.outer(one, metric_one @ weighted)
 
     energy_image = metric @ weighted
