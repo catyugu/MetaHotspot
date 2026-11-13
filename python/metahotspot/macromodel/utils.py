@@ -175,7 +175,6 @@ def normalized_operators(K, C, f) -> Operators:
 # per-port spectral bounds
 # ---------------------------------------------------------------------------
 
-
 EIGENBOUND_RTOL = 1.0e-8
 
 
@@ -234,7 +233,6 @@ def parameter_box_eigenvalue_bounds(K_min, K_max, C) -> tuple[float, float]:
     return lambda_min, lambda_max
 
 
-# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # BCI Galerkin projection
 # ---------------------------------------------------------------------------
