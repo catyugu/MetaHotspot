@@ -136,52 +136,58 @@ EIGENBOUND_RTOL = 1.0e-8
 
 
 def port_eigenvalue_bounds(
-    K,
+    K_min,
+    K_max,
     C,
     g,
     *,
-    shift=1.0e-6,
     cap=EIGENBOUND_SUBSPACE_CAP,
 ) -> tuple[float, float]:
-    """Estimate the generalized spectral interval used for one source port."""
-    K = K.tocsc()
+    """Estimate one port's spectrum over the admissible HTC parameter box."""
     C = C.tocsc()
     c_diag = np.asarray(C.diagonal()).ravel()
     if np.any(c_diag <= 0.0):
         raise ValueError("port_eigenvalue_bounds: C must have a positive diagonal")
     g = np.asarray(g, dtype=np.float64).ravel()
-    n = K.shape[0]
-    g0 = g / np.linalg.norm(g)
-    scale = float(np.median(c_diag))
-    s0 = max(float(shift), scale * 1.0e-6)
+    n = K_min.shape[0]
+    D = sp.diags(1.0 / np.sqrt(c_diag))
+    A_min = (D @ K_min @ D).tocsr()
+    A_max = (D @ K_max @ D).tocsr()
+    # The impulse initial state C^-1 g becomes C^-1/2 g in these coordinates.
+    seed = g / np.sqrt(c_diag)
+    seed /= np.linalg.norm(seed)
+
+    # LOBPCG uses an absolute tolerance; check the relative residual below.
+    low, vectors = spla.lobpcg(
+        A_min,
+        seed[:, None],
+        M=_rs_preconditioner(A_min),
+        largest=False,
+        tol=1.0e-12,
+        maxiter=cap,
+    )
+    lambda_min = float(low[0])
+    image = A_min @ vectors[:, 0]
+    residual = np.linalg.norm(image - lambda_min * vectors[:, 0])
+    if (
+        not np.isfinite(lambda_min)
+        or lambda_min <= 0.0
+        or not np.isfinite(residual)
+        or residual > 1.0e-6 * np.linalg.norm(image)
+    ):
+        raise RuntimeError("port_eigenvalue_bounds: low-end LOBPCG did not converge")
 
     high = spla.eigsh(
-        K,
+        A_max,
         k=2,
-        M=C,
         which="LM",
         tol=EIGENBOUND_RTOL,
         ncv=min(cap, n - 1),
-        v0=g0,
+        v0=seed,
         return_eigenvectors=False,
     )
     lambda_max = float(np.max(high))
-
-    A_shift = (K + s0 * C).tocsc()
-    low, _ = spla.lobpcg(
-        A_shift,
-        np.column_stack((g0, np.ones(n) / np.sqrt(n))),
-        B=C,
-        M=_rs_preconditioner(A_shift.tocsr()),
-        largest=False,
-        tol=EIGENBOUND_RTOL,
-        maxiter=cap,
-    )
-    positive = np.asarray(low) - s0
-    positive = positive[positive > 1.0e-9]
-    if not positive.size:
-        raise RuntimeError("port_eigenvalue_bounds resolved no positive eigenvalue")
-    return float(positive.min()), lambda_max
+    return lambda_min, lambda_max
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +395,11 @@ def build_parametric_basis(
     h_ranges = np.asarray(h_ranges, dtype=np.float64)
     rng = np.random.default_rng(seed)
 
+    K_min, K_max = K.copy(), K.copy()
+    for H, (h_min, h_max) in zip(boundary_terms, h_ranges, strict=True):
+        K_min = K_min + h_min * H
+        K_max = K_max + h_max * H
+
     snapshots = []
     plans = []
     history = []
@@ -406,7 +417,7 @@ def build_parametric_basis(
         g_norm = np.linalg.norm(g)
         local_basis = np.empty((K.shape[0], 0), dtype=np.float64)
         projection = _AffineGalerkinProjection((K, C, *boundary_terms), g)
-        lambda_min, lambda_max = port_eigenvalue_bounds(K, C, g)
+        lambda_min, lambda_max = port_eigenvalue_bounds(K_min, K_max, C, g)
         kappa = lambda_max / lambda_min
         shift_count = mpmm_elliptic_shift_count(
             tolerance,
