@@ -18,38 +18,7 @@ env:
   CPM_SOURCE_CACHE: ${{ github.workspace }}/.cache/cpm
 
 jobs:
-  autofix:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      sha: ${{ steps.revision.outputs.sha }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        run: python -m pip install --group dev
-      - name: Apply formatting to same-repository PRs
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          PR_BRANCH: ${{ github.head_ref }}
-        run: |
-          find src include tests apps -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print0 | xargs -0 clang-format -i
-          ruff check --fix-only python .github/scripts
-          ruff format python .github/scripts
-          git add -u -- src include tests apps python .github/scripts
-          if ! git diff --cached --quiet; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -m "style: apply automatic formatting"
-            git push origin "HEAD:refs/heads/$PR_BRANCH"
-          fi
-      - id: revision
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
   lint:
-    needs: autofix
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/catyugu/metahotspot-ci:ubuntu24.04-18975036af24574f
@@ -57,7 +26,7 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
     permissions:
-      contents: read
+      contents: write
       packages: read
     defaults:
       run:
@@ -65,8 +34,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.autofix.outputs.sha }}
+          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
       - run: python -m pip install --group dev
+      - name: Auto-format same-repository PRs
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          find src include tests apps -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print0 | xargs -0 clang-format -i
+          ruff check --fix-only python .github/scripts
+          ruff format python .github/scripts
+          git add -u -- src include tests apps python .github/scripts
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "style: apply automatic formatting"
+            git push origin "HEAD:refs/heads/$BRANCH"
+          fi
       - name: Check formatting and lint
         run: |
           find src include tests apps -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print0 | xargs -0 clang-format --dry-run --Werror
@@ -74,7 +56,7 @@ jobs:
           ruff format --check python .github/scripts
 
   linux:
-    needs: autofix
+    needs: lint
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/catyugu/metahotspot-ci:ubuntu24.04-18975036af24574f
@@ -118,7 +100,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.autofix.outputs.sha }}
+          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
       - uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
@@ -141,7 +123,7 @@ jobs:
           if-no-files-found: ignore
 
   windows:
-    needs: autofix
+    needs: lint
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -155,7 +137,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.autofix.outputs.sha }}
+          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -188,7 +170,7 @@ jobs:
           if-no-files-found: ignore
 
   macos:
-    needs: autofix
+    needs: lint
     runs-on: macos-latest
     env:
       CC: clang
@@ -196,7 +178,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.autofix.outputs.sha }}
+          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -226,7 +208,7 @@ jobs:
 
   # One repaired wheel per platform, retaining the manylinux 2.28 baseline.
   wheel:
-    needs: autofix
+    needs: lint
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
     strategy:
@@ -246,7 +228,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.autofix.outputs.sha }}
+          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
       - uses: actions/setup-python@v7
         if: runner.os != 'Linux'
         with:
@@ -283,7 +265,7 @@ jobs:
 
   # Test the same wheel on Python 3.10 and 3.14 without a compiler environment.
   python:
-    needs: [autofix, wheel]
+    needs: [lint, wheel]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -295,7 +277,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.autofix.outputs.sha }}
+          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
@@ -305,25 +287,3 @@ jobs:
       - run: python -m pip install pytest
       - shell: bash
         run: python .github/scripts/check_python.py --wheel wheelhouse/*.whl
-
-  ci-status:
-    if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
-    needs: [autofix, lint, linux, windows, macos, wheel, python]
-    runs-on: ubuntu-latest
-    permissions:
-      statuses: write
-    steps:
-      - name: Report CI result on the final PR commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SHA: ${{ needs.autofix.outputs.sha || github.event.pull_request.head.sha }}
-          RESULTS: ${{ join(needs.*.result, ' ') }}
-        run: |
-          state=success
-          for result in $RESULTS; do
-            if [[ "$result" != success ]]; then state=failure; break; fi
-          done
-          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
-            -f state="$state" -f context="MetaHotspot CI" \
-            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-          [[ "$state" == success ]]
