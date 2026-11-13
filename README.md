@@ -55,6 +55,8 @@ cpack --config build/CPackConfig.cmake -C Release -B build
 
 ZIP 包包含本库及 CPM 构建的依赖的安装产物：头文件、静态库、C API 动态库、TBB 运行库、
 CMake 配置和可选命令行应用。包对应构建时的平台、架构、编译器及配置。
+依赖自带的 muparser、tinyxml2 头文件分别位于 `include/third_party/muparser/` 和
+`include/third_party/tinyxml2/`，由各自的 CMake target 提供头文件搜索路径。
 Windows 预构建 SDK 提供 MSVC 和 clang-cl Release 版本，随包携带 TBB 和对应的 OpenMP 运行库；目标机器需安装兼容的 Visual C++ Redistributable。对于启用 MKL 的构建，需要使用者自行处理对应 MKL 运行环境。
 
 实验项目通过 `add_subdirectory(path/to/MetaHotspot)` 引入源码，或把安装目录加入
