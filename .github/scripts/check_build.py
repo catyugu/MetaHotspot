@@ -13,6 +13,9 @@ def run(*args):
 
 
 def check_sdk(prefix, build, config, generator):
+    for pattern in ("muParser*.h", "tinyxml2.h"):
+        for leaked in (prefix / "include").glob(pattern):
+            raise RuntimeError(f"Private dependency header installed at SDK root: {leaked}")
     headers = prefix / "include/metahotspot"
     for header in headers.rglob("*.hpp"):
         if "Eigen" in header.read_text(encoding="utf-8"):
