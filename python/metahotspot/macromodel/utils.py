@@ -131,65 +131,66 @@ def normalized_operators(K, C, f) -> Operators:
 # per-port spectral bounds
 # ---------------------------------------------------------------------------
 
-EIGENBOUND_SUBSPACE_CAP = 64
+
 EIGENBOUND_RTOL = 1.0e-8
 
 
-def port_eigenvalue_bounds(
-    K_min,
-    K_max,
-    C,
-    g,
-    *,
-    cap=EIGENBOUND_SUBSPACE_CAP,
-) -> tuple[float, float]:
-    """Estimate one port's spectrum over the admissible HTC parameter box."""
-    C = C.tocsc()
-    c_diag = np.asarray(C.diagonal()).ravel()
+def parameter_box_eigenvalue_bounds(K_min, K_max, C) -> tuple[float, float]:
+    """Bound the spectrum across the complete admissible HTC parameter box.
+
+    For a symmetric thermal diffusion M-matrix, K_min is the operator at the
+    weakest HTC corner. Its lowest eigenvalue is the slowest *positive-HTC*
+    relaxation rate, including the nearly constant mode lifted from the
+    adiabatic nullspace. A port-seeded extremal eigensolve can miss that mode.
+
+    Positive inverse iteration gives an elementwise lower bound through
+    min_i (K_min v)_i / (C v)_i. The maximum absolute row sum of the
+    C^-1/2-scaled K_max bounds the opposite end without an eigensolve.
+    """
+    c_diag = np.asarray(C.diagonal(), dtype=np.float64).ravel()
     if np.any(c_diag <= 0.0):
-        raise ValueError("port_eigenvalue_bounds: C must have a positive diagonal")
-    g = np.asarray(g, dtype=np.float64).ravel()
-    n = K_min.shape[0]
-    D = sp.diags(1.0 / np.sqrt(c_diag))
-    A_min = (D @ K_min @ D).tocsr()
-    A_max = (D @ K_max @ D).tocsr()
-    # The impulse initial state C^-1 g becomes C^-1/2 g in these coordinates.
-    seed = g / np.sqrt(c_diag)
-    seed /= np.linalg.norm(seed)
+        raise ValueError("parameter_box_eigenvalue_bounds: C must be positive diagonal")
 
-    # LOBPCG uses an absolute tolerance; check the relative residual below.
-    low, vectors = spla.lobpcg(
-        A_min,
-        seed[:, None],
-        M=_rs_preconditioner(A_min),
-        largest=False,
-        tol=1.0e-12,
-        maxiter=cap,
-    )
-    lambda_min = float(low[0])
-    image = A_min @ vectors[:, 0]
-    residual = np.linalg.norm(image - lambda_min * vectors[:, 0])
-    if (
-        not np.isfinite(lambda_min)
-        or lambda_min <= 0.0
-        or not np.isfinite(residual)
-        or residual > 1.0e-6 * np.linalg.norm(image)
-    ):
-        raise RuntimeError("port_eigenvalue_bounds: low-end LOBPCG did not converge")
+    A_min = K_min.tocsr()
+    preconditioner = _rs_preconditioner(A_min)
+    v = np.ones(A_min.shape[0], dtype=np.float64)
+    v /= np.sqrt(np.dot(v, c_diag * v))
+    lower = 0.0
 
-    high = spla.eigsh(
-        A_max,
-        k=2,
-        which="LM",
-        tol=EIGENBOUND_RTOL,
-        ncv=min(cap, n - 1),
-        v0=seed,
-        return_eigenvectors=False,
-    )
-    lambda_max = float(np.max(high))
+    for _ in range(12):
+        next_v, info = spla.cg(
+            A_min,
+            c_diag * v,
+            rtol=EIGENBOUND_RTOL,
+            atol=0.0,
+            maxiter=2000,
+            M=preconditioner,
+        )
+        if info != 0:
+            raise RuntimeError(f"parameter-box inverse iteration failed: info={info}")
+        next_v /= np.sqrt(np.dot(next_v, c_diag * next_v))
+        if np.any(next_v <= 0.0):
+            raise RuntimeError("parameter-box inverse iteration lost positivity")
+        v = next_v
+        quotients = (A_min @ v) / (c_diag * v)
+        lower = float(np.min(quotients))
+        upper = float(np.max(quotients))
+        if lower > 0.0 and upper / lower - 1.0 <= 1.0e-4:
+            break
+
+    if lower <= 0.0 or not np.isfinite(lower):
+        raise RuntimeError("cannot establish a positive HTC-box spectral lower bound")
+
+    inv_sqrt_c = sp.diags(1.0 / np.sqrt(c_diag))
+    scaled_max = (inv_sqrt_c @ K_max @ inv_sqrt_c).tocsr()
+    lambda_max = float(np.max(np.asarray(abs(scaled_max).sum(axis=1)).ravel()))
+    lambda_min = lower * (1.0 - 1.0e-5)  # floating-point margin
+    if not np.isfinite(lambda_max) or lambda_max <= lambda_min:
+        raise RuntimeError("invalid HTC-box spectral upper bound")
     return lambda_min, lambda_max
 
 
+# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # BCI Galerkin projection
 # ---------------------------------------------------------------------------
@@ -400,6 +401,11 @@ def build_parametric_basis(
         K_min = K_min + h_min * H
         K_max = K_max + h_max * H
 
+    lambda_min, lambda_max = parameter_box_eigenvalue_bounds(K_min, K_max, C)
+    kappa = lambda_max / lambda_min
+    shift_count = mpmm_elliptic_shift_count(tolerance, lambda_min, lambda_max)
+    shifts = mpmm_elliptic_shifts(shift_count, lambda_max, kappa)
+
     snapshots = []
     plans = []
     history = []
@@ -417,14 +423,6 @@ def build_parametric_basis(
         g_norm = np.linalg.norm(g)
         local_basis = np.empty((K.shape[0], 0), dtype=np.float64)
         projection = _AffineGalerkinProjection((K, C, *boundary_terms), g)
-        lambda_min, lambda_max = port_eigenvalue_bounds(K_min, K_max, C, g)
-        kappa = lambda_max / lambda_min
-        shift_count = mpmm_elliptic_shift_count(
-            tolerance,
-            lambda_min,
-            lambda_max,
-        )
-        shifts = mpmm_elliptic_shifts(shift_count, lambda_max, kappa)
         plans.append(
             {
                 "port": int(port),
