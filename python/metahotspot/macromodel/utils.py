@@ -67,9 +67,9 @@ def orthonormalize_block(basis, vectors):
 
 
 def _snapshot_svd_basis(snapshot_matrix, tolerance):
-    """Compress full responses by direction using the FANTASTIC SVD cutoff."""
+    """Compress physical responses after removing the preserved constant mode."""
     snapshots = np.asarray(snapshot_matrix, dtype=np.float64)
-    snapshots = snapshots / np.linalg.norm(snapshots, axis=0)
+    snapshots = snapshots - snapshots.mean(axis=0, keepdims=True)
     U, singular_values, _ = scipy.linalg.svd(
         snapshots,
         full_matrices=False,
