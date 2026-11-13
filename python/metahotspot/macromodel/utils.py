@@ -66,17 +66,62 @@ def orthonormalize_block(basis, vectors):
     return np.ascontiguousarray(q[:, keep])
 
 
-def _snapshot_svd_basis(snapshot_matrix, tolerance):
-    """Compress full responses by direction using the FANTASTIC SVD cutoff."""
+def _snapshot_svd_basis(snapshot_matrix, tolerance, metric=None):
+    """Fixed-order response compression, with a thermal-energy POD option.
+
+    The original Euclidean singular-value cutoff determines the state count.
+    With an SPD energy metric, the same number of modes is selected using
+    energy-normalized response snapshots. No post-compression error test or
+    adjustment of the requested extraction tolerance is performed.
+    """
     snapshots = np.asarray(snapshot_matrix, dtype=np.float64)
-    snapshots = snapshots / np.linalg.norm(snapshots, axis=0)
-    U, singular_values, _ = scipy.linalg.svd(
-        snapshots,
-        full_matrices=False,
+    norms = np.linalg.norm(snapshots, axis=0)
+    normalized = snapshots / norms
+    if metric is None:
+        U, singular_values, _ = scipy.linalg.svd(
+            normalized,
+            full_matrices=False,
+            check_finite=False,
+        )
+        keep = singular_values >= tolerance * singular_values[0]
+        return np.ascontiguousarray(U[:, keep]), singular_values
+
+    gram = normalized.T @ normalized
+    eigvals = scipy.linalg.eigvalsh(gram, check_finite=False)[::-1]
+    singular_values = np.sqrt(np.maximum(eigvals, 0.0))
+    order = int(np.count_nonzero(singular_values >= tolerance * singular_values[0]))
+    if order == 0:
+        raise RuntimeError("energy POD retained no modes")
+
+    # Preserve the constant mode exactly; reserve its additional direction.
+    n = snapshots.shape[0]
+    one = np.ones(n)
+    metric_one = metric @ one
+    one /= np.sqrt(one @ metric_one)
+    metric_one = metric @ one
+
+    # Tempered energy normalization balances junction and internal responses.
+    metric_snapshots = metric @ snapshots
+    energy_norms = np.sqrt(np.einsum("ij,ij->j", snapshots, metric_snapshots))
+    scales = energy_norms ** (2.0 / 3.0) * norms ** (1.0 / 3.0)
+    weighted = snapshots / scales
+    weighted -= np.outer(one, metric_one @ weighted)
+
+    energy_image = metric @ weighted
+    energy_gram = weighted.T @ energy_image
+    energy_gram = 0.5 * (energy_gram + energy_gram.T)
+    values, vectors = scipy.linalg.eigh(energy_gram, check_finite=False)
+    selected = np.argsort(values)[::-1][:order]
+    if np.any(values[selected] <= 0.0):
+        raise RuntimeError("energy POD has insufficient positive directions")
+    modes = weighted @ (vectors[:, selected] / np.sqrt(values[selected]))
+    modes = scipy.linalg.qr(
+        np.column_stack((np.ones(n) / np.sqrt(n), modes)),
+        mode="economic",
         check_finite=False,
-    )
-    keep = singular_values >= tolerance * singular_values[0]
-    return np.ascontiguousarray(U[:, keep]), singular_values
+    )[0]
+    # Constant mode is already included in the returned basis.
+    return np.ascontiguousarray(modes), singular_values
 
 
 # ---------------------------------------------------------------------------
@@ -493,16 +538,10 @@ def build_parametric_basis(
             )
 
     snapshot_matrix = np.column_stack(snapshots)
-    basis, singular_values = _snapshot_svd_basis(snapshot_matrix, tolerance)
-    svd_order = basis.shape[1]
-
-    # The h-free BCI operator has the uniform-temperature null mode;
-    # preserve it exactly.
-    constant = np.ones((K.shape[0], 1), dtype=np.float64)
-    constant /= np.linalg.norm(constant)
-    constant = orthonormalize_block(basis, constant)
-    if constant.shape[1]:
-        basis = np.column_stack((basis, constant))
+    basis, singular_values = _snapshot_svd_basis(
+        snapshot_matrix, tolerance, metric=K_min
+    )
+    svd_order = basis.shape[1] - 1  # constant mode included by energy POD
 
     orthogonality_error = float(
         np.max(np.abs(basis.T @ basis - np.eye(basis.shape[1])))
