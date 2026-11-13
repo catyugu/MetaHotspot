@@ -44,6 +44,7 @@ jobs:
           find src include tests apps -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print0 | xargs -0 clang-format -i
           ruff check --fix-only python .github/scripts
           ruff format python .github/scripts
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git add -u -- src include tests apps python .github/scripts
           if ! git diff --cached --quiet; then
             git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "style: apply automatic formatting"
