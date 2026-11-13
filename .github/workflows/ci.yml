@@ -32,29 +32,11 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v7
+      - &checkout
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
-      - run: python -m pip install --group dev
-      - name: Auto-format same-repository PRs
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          BRANCH: ${{ github.head_ref }}
-        run: |
-          find src include tests apps -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print0 | xargs -0 clang-format -i
-          ruff check --fix-only python .github/scripts
-          ruff format python .github/scripts
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git add -u -- src include tests apps python .github/scripts
-          if ! git diff --cached --quiet; then
-            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "style: apply automatic formatting"
-            git push origin "HEAD:refs/heads/$BRANCH"
-          fi
-      - name: Check formatting and lint
-        run: |
-          find src include tests apps -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print0 | xargs -0 clang-format --dry-run --Werror
-          ruff check python .github/scripts
-          ruff format --check python .github/scripts
+      - uses: ./.github/actions/autofix-lint
 
   linux:
     needs: lint
@@ -99,9 +81,7 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
+      - *checkout
       - uses: actions/cache@v6
         with:
           path: ${{ env.CPM_SOURCE_CACHE }}
@@ -136,9 +116,7 @@ jobs:
       CC: ${{ matrix.compiler }}
       CXX: ${{ matrix.compiler }}
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
+      - *checkout
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -177,9 +155,7 @@ jobs:
       CC: clang
       CXX: clang++
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
+      - *checkout
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -227,9 +203,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "11.0"
       CMAKE_BUILD_PARALLEL_LEVEL: "4"
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
+      - *checkout
       - uses: actions/setup-python@v7
         if: runner.os != 'Linux'
         with:
@@ -276,9 +250,7 @@ jobs:
     env:
       OMP_NUM_THREADS: "2"
     steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.head_ref || github.sha }}
+      - *checkout
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
