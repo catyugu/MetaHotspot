@@ -69,8 +69,6 @@ def orthonormalize_block(basis, vectors):
 def _snapshot_svd_basis(snapshot_matrix, tolerance):
     """Compress physical responses after removing the preserved constant mode."""
     snapshots = np.asarray(snapshot_matrix, dtype=np.float64)
-    # The null mode is added exactly after the SVD. Preserve the relative
-    # amplitudes of the remaining responses across frequencies and HTCs.
     snapshots = snapshots - snapshots.mean(axis=0, keepdims=True)
     U, singular_values, _ = scipy.linalg.svd(
         snapshots,
