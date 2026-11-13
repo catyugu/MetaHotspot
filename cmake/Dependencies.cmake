@@ -56,6 +56,10 @@ endif()
 # tinyxml2 - PTA XML compatibility layer used only by the CLI app.
 # ----------------------------------------------------------------------------
 if(MHS_BUILD_APPS AND NOT TARGET tinyxml2::tinyxml2)
+    # Upstream honors CMAKE_INSTALL_INCLUDEDIR for both its header and CMake
+    # export; keep its private header out of the SDK's top-level include/.
+    set(_mhs_original_include_dir "${CMAKE_INSTALL_INCLUDEDIR}")
+    set(CMAKE_INSTALL_INCLUDEDIR "${_mhs_original_include_dir}/third_party/tinyxml2")
     CPMFindPackage(
         NAME tinyxml2
         VERSION ${MHS_TINYXML2_VERSION}
@@ -64,6 +68,8 @@ if(MHS_BUILD_APPS AND NOT TARGET tinyxml2::tinyxml2)
         GIT_TAG ${MHS_TINYXML2_VERSION}
         SYSTEM YES
     )
+    set(CMAKE_INSTALL_INCLUDEDIR "${_mhs_original_include_dir}")
+    unset(_mhs_original_include_dir)
 endif()
 
 # ----------------------------------------------------------------------------
@@ -83,6 +89,27 @@ if(NOT TARGET muparser::muparser)
         "BUILD_TESTING OFF"
         "BUILD_SHARED_LIBS OFF"
     )
+endif()
+
+# muparser 2.3.5 hardcodes "include" in its installed target and header
+# installation. Keep its exported target consistent with the relocation in
+# Install.cmake, without changing a system-provided imported target.
+if(TARGET muparser)
+    get_target_property(_mhs_muparser_imported muparser IMPORTED)
+    if(NOT _mhs_muparser_imported)
+        get_target_property(_mhs_muparser_includes muparser INTERFACE_INCLUDE_DIRECTORIES)
+        string(FIND "${_mhs_muparser_includes}" "$<INSTALL_INTERFACE:include>" _mhs_muparser_pos)
+        if(_mhs_muparser_pos EQUAL -1)
+            message(FATAL_ERROR "muparser install include interface changed; update SDK packaging")
+        endif()
+        string(REPLACE "$<INSTALL_INTERFACE:include>"
+            "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/third_party/muparser>"
+            _mhs_muparser_includes "${_mhs_muparser_includes}")
+        set_target_properties(muparser PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${_mhs_muparser_includes}")
+        unset(_mhs_muparser_includes)
+        unset(_mhs_muparser_pos)
+    endif()
 endif()
 
 # ----------------------------------------------------------------------------
