@@ -94,12 +94,13 @@ def _rs_preconditioner(A):
     return ml.aspreconditioner(cycle="V")
 
 
-def spd_solve(A, b, x0=None, rtol=ENRICH_RTOL):
-    """Solve ``A x = b`` by Ruge-Stuben AMG-preconditioned CG."""
+def spd_solve(A, b, x0=None, rtol=ENRICH_RTOL, *, M=None):
+    """Solve ``A x = b`` by CG, building AMG unless ``M`` is supplied."""
     b = np.asarray(b, dtype=np.float64).ravel()
     if x0 is None:
         x0 = np.zeros_like(b)
-    M = _rs_preconditioner(A.tocsr())
+    if M is None:
+        M = _rs_preconditioner(A.tocsr())
     x, info = spla.cg(
         A,
         b,
@@ -129,34 +130,30 @@ def normalized_operators(K, C, f) -> Operators:
 
 
 # ---------------------------------------------------------------------------
-# per-port spectral bounds
+# global spectral bounds
 # ---------------------------------------------------------------------------
 
 EIGENBOUND_SUBSPACE_CAP = 64
 EIGENBOUND_RTOL = 1.0e-8
 
 
-def port_eigenvalue_bounds(
+def eigenvalue_bounds(
     K_min,
     K_max,
     C,
-    g,
     *,
     cap=EIGENBOUND_SUBSPACE_CAP,
 ) -> tuple[float, float]:
-    """Estimate one port's spectrum over the admissible HTC parameter box."""
+    """Estimate the global spectrum over the admissible HTC parameter box."""
     C = C.tocsc()
     c_diag = np.asarray(C.diagonal()).ravel()
     if np.any(c_diag <= 0.0):
-        raise ValueError("port_eigenvalue_bounds: C must have a positive diagonal")
-    g = np.asarray(g, dtype=np.float64).ravel()
+        raise ValueError("eigenvalue_bounds: C must have a positive diagonal")
     n = K_min.shape[0]
     D = sp.diags(1.0 / np.sqrt(c_diag))
     A_min = (D @ K_min @ D).tocsr()
     A_max = (D @ K_max @ D).tocsr()
-    # The impulse initial state C^-1 g becomes C^-1/2 g in these coordinates.
-    seed = g / np.sqrt(c_diag)
-    seed /= np.linalg.norm(seed)
+    seed = np.full(n, 1.0 / np.sqrt(n))
 
     # LOBPCG uses an absolute tolerance; check the relative residual below.
     low, vectors = spla.lobpcg(
@@ -176,7 +173,7 @@ def port_eigenvalue_bounds(
         or not np.isfinite(residual)
         or residual > 1.0e-6 * np.linalg.norm(image)
     ):
-        raise RuntimeError("port_eigenvalue_bounds: low-end LOBPCG did not converge")
+        raise RuntimeError("eigenvalue_bounds: low-end LOBPCG did not converge")
 
     high = spla.eigsh(
         A_max,
@@ -184,7 +181,7 @@ def port_eigenvalue_bounds(
         which="LM",
         tol=EIGENBOUND_RTOL,
         ncv=min(cap, n - 1),
-        v0=seed,
+        v0=np.random.default_rng(0).standard_normal(n),
         return_eigenvectors=False,
     )
     lambda_max = float(np.max(high))
@@ -379,15 +376,11 @@ def build_parametric_basis(
 ):
     """Extract an Extended-FANTASTIC basis for an affine HTC family.
 
-    Following Algorithm 1, each source owns one response space throughout its
-    matching-point loop.  At every matching point the current DCTM is tested at
-    random boundary parameters; a failed residual test is solved exactly at
-    that same parameter value, warm-started by the rejected DCTM response.
-    All exact responses are collected in one snapshot matrix for the closing
-    SVD.  ``probe_rounds`` repeats the paper's random acceptance test before
-    advancing to the next matching point.  Only the affine Galerkin matrices
-    and projected source persist.  Each probe reconstructs the response and
-    evaluates its full-dimensional residual directly.
+    Each source owns a response space over shared global matching points.
+    At each point, one AMG hierarchy built at the HTC lower bounds serves all
+    sources and HTC samples. Failed residual probes enrich the source's space,
+    warm-started by its Galerkin response. ``probe_rounds`` successful random
+    probes precede advancement. All exact responses enter the closing SVD.
     """
     started = time.perf_counter()
     K = operators.K.tocsc()
@@ -402,7 +395,6 @@ def build_parametric_basis(
         K_max = K_max + h_max * H
 
     snapshots = []
-    plans = []
     history = []
     validation_count = 0
     max_accepted_residual = 0.0
@@ -413,31 +405,34 @@ def build_parametric_basis(
             A = A + h * H
         return A.tocsc()
 
-    for port in range(G.shape[1]):
-        g = G[:, port].copy()
-        g_norm = np.linalg.norm(g)
-        local_basis = np.empty((K.shape[0], 0), dtype=np.float64)
-        projection = _AffineGalerkinProjection((K, C, *boundary_terms), g)
-        lambda_min, lambda_max = port_eigenvalue_bounds(K_min, K_max, C, g)
-        kappa = lambda_max / lambda_min
-        shift_count = mpmm_elliptic_shift_count(
-            tolerance,
-            lambda_min,
-            lambda_max,
-        )
-        shifts = mpmm_elliptic_shifts(shift_count, lambda_max, kappa)
-        plans.append(
-            {
-                "port": int(port),
-                "lambda_min": float(lambda_min),
-                "lambda_max": float(lambda_max),
-                "kappa": float(kappa),
-                "shift_count": int(shift_count),
-                "shifts_per_s": shifts.tolist(),
-            }
-        )
+    lambda_min, lambda_max = eigenvalue_bounds(K_min, K_max, C)
+    kappa = lambda_max / lambda_min
+    shift_count = mpmm_elliptic_shift_count(tolerance, lambda_min, lambda_max)
+    shifts = mpmm_elliptic_shifts(shift_count, lambda_max, kappa)
+    local_bases = [np.empty((K.shape[0], 0)) for _ in range(G.shape[1])]
+    projections = [
+        _AffineGalerkinProjection((K, C, *boundary_terms), G[:, port])
+        for port in range(G.shape[1])
+    ]
+    plans = [
+        {
+            "port": int(port),
+            "lambda_min": float(lambda_min),
+            "lambda_max": float(lambda_max),
+            "kappa": float(kappa),
+            "shift_count": int(shift_count),
+            "shifts_per_s": shifts.tolist(),
+        }
+        for port in range(G.shape[1])
+    ]
 
-        for shift in shifts:
+    for shift in shifts:
+        M = None
+        for port in range(G.shape[1]):
+            g = G[:, port]
+            g_norm = np.linalg.norm(g)
+            local_basis = local_bases[port]
+            projection = projections[port]
             full_solves = 0
             trials = 0
             accepted_residual = 0.0
@@ -467,8 +462,10 @@ def build_parametric_basis(
                     raise RuntimeError("FANTASTIC extraction reached max_order")
 
                 A = full_operator(h_vec, shift)
+                if M is None:
+                    M = _rs_preconditioner((K_min + shift * C).tocsr())
                 response = np.asarray(
-                    spd_solve(A, g, x0=initial_guess, rtol=tolerance / 10.0),
+                    spd_solve(A, g, x0=initial_guess, rtol=tolerance / 10.0, M=M),
                     dtype=np.float64,
                 ).ravel()
                 snapshots.append(response)
@@ -494,6 +491,8 @@ def build_parametric_basis(
                     "accepted_residual": float(accepted_residual),
                 }
             )
+            local_bases[port] = local_basis
+        del M
 
     snapshot_matrix = np.column_stack(snapshots)
     basis, singular_values = _snapshot_svd_basis(snapshot_matrix, tolerance)
