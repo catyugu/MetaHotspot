@@ -1,0 +1,21 @@
+repository_revision: deb981297d1353d9005e0a042657e1d8eef0e595
+ci_workflow: 43612616388
+ci_linux_wheel_artifact: 14121435121
+case: playground/bci_rom_testcase1/model_case1.py
+max_cell_mm: 0.5
+expected_cells: 146704
+physical_htc_range: [1, 10000]
+seeds: [20260805, 20260806, 20260807]
+methods: [fresh, port_cache, shift_cache]
+rom_tolerance: 0.001
+full_response_rtol: 0.0001
+probe_rounds: 10
+maximum_snapshots: 1024
+threads: 1
+reference_cg_rtol: 1.0e-10
+transient_dt_s: 20
+transient_duration_s: 1000
+validation_seed: 74021
+
+loop_order: frequency_major
+maximum_cached_amg_hierarchies: 1

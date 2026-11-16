@@ -1,0 +1,9 @@
+results.json
+validation.json
+*.npy
+*.npz
+figures/*.pdf
+figures/*.svg
+figures/*.png
+figures/manifest.json
+experiment_report.md
