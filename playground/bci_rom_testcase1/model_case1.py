@@ -34,10 +34,9 @@ Those areas are exactly the exported ``Areas[k].mtx`` values
 volume of the FloTHERM solution domain (around the TIM/IHS/dies) is void, as in
 the extracted ROM, so the ambient groups see only real solid surface.
 
-Mesh: every block edge is a vertex and every axis is subdivided so that no cell
-exceeds ``max_cell_mm`` (0.5 mm).  The 0.05 mm TIM films therefore stay one cell
-thick while the dies, the IHS and the heat sink are resolved laterally and
-vertically.
+Only cells covered by a solid volume enter the FVM: 157728 of the 194688 grid
+cells.  The other 36960 are FloTHERM void cells with no material, which the
+FloTHERM solve excludes as well.
 
 ``h_ranges`` keeps the group order and gives every group the *physical* HTC
 range [1, 1e4] W/m2.K reported by ``report.rom``.  The public
@@ -53,9 +52,7 @@ returns the effective training ranges).
 
 from __future__ import annotations
 
-import math
 from dataclasses import asdict, dataclass
-from itertools import pairwise
 
 import numpy as np
 
@@ -95,6 +92,12 @@ DIE_POWER_W = (5.0, 5.0, 5.0, 5.0)
 DIE_THICKNESS_MM = 0.4
 DIE_MATERIAL = "Silicon"
 
+# Cell counts of the FloTHERM reference grid per band between
+# consecutive keypoints.
+FLOTHERM_X_BAND_CELLS = (13, 15, 4, 30, 2, 6, 6, 15, 13)
+FLOTHERM_Y_BAND_CELLS = (13, 15, 6, 6, 2, 30, 4, 15, 13)
+FLOTHERM_Z_BAND_CELLS = (12, 1, 3, 1, 1)
+
 DEFAULT_H_RANGE = (1.0, 1.0e4)
 
 
@@ -103,7 +106,10 @@ class Case1Config:
     ambient_K: float = 308.15  # 35 C = in.Tamb / in.Tinitial (rom_parameters.m)
     duration_s: float = 1000.0  # in.tscan = [0, 1e3]
     dt_s: float = 20.0
-    max_cell_mm: float = 0.5  # every axis is subdivided to at most this cell
+    # FloTHERM reference mesh: cells per band between consecutive block edges.
+    x_band_cells: tuple = FLOTHERM_X_BAND_CELLS
+    y_band_cells: tuple = FLOTHERM_Y_BAND_CELLS
+    z_band_cells: tuple = FLOTHERM_Z_BAND_CELLS
     # group order = FloTHERM export order (Ambient:2, Ambient:1, Ambient:0);
     # every group is trained over the reported physical range [1, 1e4]
     h_ranges: tuple = (DEFAULT_H_RANGE, DEFAULT_H_RANGE, DEFAULT_H_RANGE)
@@ -128,29 +134,33 @@ class Case1Config:
             edges.extend((xlo, xhi) if axis == 0 else (ylo, yhi))
         return np.unique(np.asarray(edges, dtype=np.float64))
 
-    def _subdivide(self, fixed) -> np.ndarray:
-        vertices = [float(fixed[0])]
-        for left, right in pairwise(fixed):
-            pieces = max(1, math.ceil((right - left) / self.max_cell_mm))
-            vertices.extend(np.linspace(left, right, pieces + 1)[1:])
+    def _band_vertices(self, cuts: np.ndarray, counts: tuple) -> np.ndarray:
+        """Subdivide each band between ``cuts`` into its fixed cell count."""
+        if len(counts) != cuts.size - 1:
+            raise ValueError(f"expected {cuts.size - 1} band counts, got {len(counts)}")
+        vertices = [float(cuts[0])]
+        for left, right, count in zip(cuts[:-1], cuts[1:], counts, strict=True):
+            if count < 1:
+                raise ValueError("every band needs at least one cell")
+            vertices.extend(np.linspace(left, right, count + 1)[1:])
         return np.asarray(vertices)
 
     @property
     def x_vertices_mm(self) -> np.ndarray:
-        return self._subdivide(self._cuts_mm(0))
+        return self._band_vertices(self._cuts_mm(0), self.x_band_cells)
 
     @property
     def y_vertices_mm(self) -> np.ndarray:
-        return self._subdivide(self._cuts_mm(1))
+        return self._band_vertices(self._cuts_mm(1), self.y_band_cells)
 
     @property
     def z_vertices_mm(self) -> np.ndarray:
         """Cumulative z breakpoints of the stack: 0, 6, 6.05, 7.55, 7.6, 8."""
-        fixed = [0.0]
+        cuts = [0.0]
         for _, _, thickness, _, _, _, _ in STACK:
-            fixed.append(fixed[-1] + thickness)
-        fixed.append(fixed[-1] + DIE_THICKNESS_MM)
-        return self._subdivide(np.asarray(fixed))
+            cuts.append(cuts[-1] + thickness)
+        cuts.append(cuts[-1] + DIE_THICKNESS_MM)
+        return self._band_vertices(np.asarray(cuts), self.z_band_cells)
 
     @property
     def nx(self) -> int:
@@ -164,12 +174,18 @@ class Case1Config:
     def nz(self) -> int:
         return self.z_vertices_mm.size - 1
 
+    @property
+    def grid_cell_count(self) -> int:
+        """Cells of the whole Cartesian grid, including FloTHERM void cells."""
+        return self.nx * self.ny * self.nz
+
     def report_dict(self) -> dict:
         return {
             **asdict(self),
             "nx": self.nx,
             "ny": self.ny,
             "nz": self.nz,
+            "grid_cell_count": self.grid_cell_count,
             "source_power_W": list(DIE_POWER_W),
             "domain_mm": (
                 float(self.x_vertices_mm.min()),

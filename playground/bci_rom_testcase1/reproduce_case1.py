@@ -86,13 +86,13 @@ def run():
     OUT.mkdir(parents=True, exist_ok=True)
     model = Case1Model(
         Case1Config(
-            max_cell_mm=0.5,
             dt_s=DT_S,
             duration_s=DURATION_S,
         )
     )
     print(
-        f"model: {model.name}  full cells={model.full_cell_count}  "
+        f"model: {model.name}  grid cells={model.config.grid_cell_count}  "
+        f"solid cells={model.full_cell_count}  "
         f"ports={len(model.source_ports())}  groups={len(model.boundary_groups())}"
     )
 
@@ -246,7 +246,9 @@ def run():
         )
         f.write(f"sources={SOURCES.tolist()}\n")
         f.write(
-            f"full cells={model.full_cell_count}  our basis order={basis.shape[1]}  "
+            f"grid cells={model.config.grid_cell_count}  "
+            f"solid cells={model.full_cell_count}  "
+            f"our basis order={basis.shape[1]}  "
             f"snapshots={summary['pre_svd_order']}  "
             f"svd modes={summary['svd_kept_order']}\n"
         )

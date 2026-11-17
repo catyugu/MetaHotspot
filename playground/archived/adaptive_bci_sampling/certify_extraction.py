@@ -77,7 +77,7 @@ def main():
     )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    model = Case1Model(Case1Config(max_cell_mm=args.mesh_mm))
+    model = Case1Model(Case1Config())
     kernel, _mass = model.core.K.tocsc(), model.core.C.tocsc()
     source = np.asarray(model.source_shape, dtype=float)
     terms = [term.tocsc() for term in model.boundary_terms]
