@@ -76,10 +76,10 @@ def test_extracted_modal_rom_preserves_projected_operators(extract):
     clone = clone_embeddable_rom(rom)
     clone.F_hat[:] = 0
     clone.ports[0].areas[:] = 3
-    clone.summary["per_port_plans"][0]["shifts_per_s"].append(-1)
+    clone.summary["spectral_plan"]["shifts_per_s"].append(-1)
     assert_allclose(rom.F_hat, V.T @ source, atol=1e-12)
     assert_allclose(rom.ports[0].areas, 1)
-    assert rom.summary["per_port_plans"][0]["shifts_per_s"][-1] > 0
+    assert rom.summary["spectral_plan"]["shifts_per_s"][-1] > 0
 
 
 def test_boundary_projection_accumulates_patches_in_cell_order():

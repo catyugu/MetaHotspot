@@ -309,7 +309,7 @@ class _AffineGalerkinProjection:
     def __init__(self, operators, g):
         self.operators = tuple(operators)
         self.reduced = np.empty((len(self.operators), 0, 0))
-        self.g_hat = np.empty(0)
+        self.g_hat = np.empty((0, g.shape[1]))
         self.g = g
 
     def append(self, basis, block):
@@ -325,7 +325,7 @@ class _AffineGalerkinProjection:
             reduced[i, :r, r:] = edge
             reduced[i, r:, :r] = edge.T
             reduced[i, r:, r:] = block.T @ image
-        self.g_hat = np.concatenate((self.g_hat, block.T @ self.g))
+        self.g_hat = np.vstack((self.g_hat, block.T @ self.g))
         self.reduced = reduced
 
     def solve(self, h_vec, shift):
@@ -353,18 +353,18 @@ def build_parametric_basis(
 ):
     """Extract an Extended-FANTASTIC basis for an affine HTC family.
 
-    Each source owns a response space over shared global matching points.
-    At each point, one AMG hierarchy built at the HTC lower bounds serves all
-    sources and HTC samples. Failed residual probes enrich the source's space,
-    warm-started by its Galerkin response. ``probe_rounds`` successful random
-    probes precede advancement. All exact responses enter the closing SVD.
+    All sources share one response space over global matching points. At each
+    HTC sample, enrich with the source having the largest relative residual,
+    warm-started by its Galerkin response. One AMG hierarchy per matching point,
+    built at the HTC lower bounds, serves all sources and samples. Advance after
+    ``probe_rounds`` consecutive samples pass for every source. All full responses
+    enter the closing SVD.
     """
     started = time.perf_counter()
     K = operators.K.tocsc()
     C = operators.C.tocsc()
     G = np.asarray(source_shape, dtype=np.float64)
     h_ranges = np.asarray(h_ranges, dtype=np.float64)
-    rng = np.random.default_rng(seed)
 
     K_min, K_max = K.copy(), K.copy()
     for H, (h_min, h_max) in zip(boundary_terms, h_ranges, strict=True):
@@ -386,89 +386,81 @@ def build_parametric_basis(
     kappa = lambda_max / lambda_min
     shift_count = mpmm_elliptic_shift_count(tolerance, lambda_min, lambda_max)
     shifts = mpmm_elliptic_shifts(shift_count, lambda_max, kappa)
-    local_bases = [np.empty((K.shape[0], 0)) for _ in range(G.shape[1])]
-    projections = [
-        _AffineGalerkinProjection((K, C, *boundary_terms), G[:, port])
-        for port in range(G.shape[1])
-    ]
-    plans = [
-        {
-            "port": int(port),
-            "lambda_min": float(lambda_min),
-            "lambda_max": float(lambda_max),
-            "kappa": float(kappa),
-            "shift_count": int(shift_count),
-            "shifts_per_s": shifts.tolist(),
-        }
-        for port in range(G.shape[1])
-    ]
+    basis = np.empty((K.shape[0], 0))
+    projection = _AffineGalerkinProjection((K, C, *boundary_terms), G)
+    g_norms = np.linalg.norm(G, axis=0)
+    plan = {
+        "lambda_min": float(lambda_min),
+        "lambda_max": float(lambda_max),
+        "kappa": float(kappa),
+        "shift_count": int(shift_count),
+        "shifts_per_s": shifts.tolist(),
+    }
 
-    for shift in shifts:
+    for shift_index, shift in enumerate(shifts):
+        rng = np.random.default_rng(np.random.SeedSequence([seed, shift_index]))
         M = None
-        for port in range(G.shape[1]):
-            g = G[:, port]
-            g_norm = np.linalg.norm(g)
-            local_basis = local_bases[port]
-            projection = projections[port]
-            full_solves = 0
-            trials = 0
+        full_solves = 0
+        trials = 0
+        accepted_residual = 0.0
+        accepted_rounds = 0
+
+        while accepted_rounds < probe_rounds:
+            h_vec = _draw_h(h_ranges, rng)
+            initial_guesses = np.zeros_like(G)
+            residual_vectors = G.copy()
+
+            if basis.shape[1]:
+                coefficients = projection.solve(h_vec, shift)
+                initial_guesses = basis @ coefficients
+                residual_vectors -= K @ initial_guesses + shift * (C @ initial_guesses)
+                for h, H in zip(h_vec, boundary_terms, strict=True):
+                    residual_vectors -= h * (H @ initial_guesses)
+            residuals = np.linalg.norm(residual_vectors, axis=0) / g_norms
+            port = int(np.argmax(residuals))
+            residual = float(residuals[port])
+            validation_count += 1
+            trials += 1
+            if residual <= tolerance:
+                accepted_residual = max(accepted_residual, residual)
+                accepted_rounds += 1
+                continue
+
+            if len(snapshots) >= max_order:
+                raise RuntimeError("FANTASTIC extraction reached max_order")
+
+            A = full_operator(h_vec, shift)
+            if M is None:
+                M = _rs_preconditioner((K_min + shift * C).tocsr())
+            response = np.asarray(
+                spd_solve(
+                    A,
+                    G[:, port],
+                    x0=initial_guesses[:, port],
+                    rtol=tolerance / 10.0,
+                    M=M,
+                ),
+                dtype=np.float64,
+            ).ravel()
+            snapshots.append(response)
+            full_solves += 1
+
+            block = orthonormalize_block(basis, response[:, None])
+            if block.shape[1]:
+                projection.append(basis, block)
+                basis = np.column_stack((basis, block))
             accepted_residual = 0.0
             accepted_rounds = 0
 
-            while accepted_rounds < probe_rounds:
-                h_vec = _draw_h(h_ranges, rng)
-                initial_guess = np.zeros(K.shape[0], dtype=np.float64)
-
-                if local_basis.shape[1]:
-                    coefficients = projection.solve(h_vec, shift)
-                    initial_guess = local_basis @ coefficients
-                    residual_vector = (
-                        K @ initial_guess + shift * (C @ initial_guess) - g
-                    )
-                    for h, H in zip(h_vec, boundary_terms, strict=True):
-                        residual_vector += h * (H @ initial_guess)
-                    residual = np.linalg.norm(residual_vector) / g_norm
-                    validation_count += 1
-                    trials += 1
-                    if residual <= tolerance:
-                        accepted_residual = max(accepted_residual, float(residual))
-                        accepted_rounds += 1
-                        continue
-
-                if len(snapshots) >= max_order:
-                    raise RuntimeError("FANTASTIC extraction reached max_order")
-
-                A = full_operator(h_vec, shift)
-                if M is None:
-                    M = _rs_preconditioner((K_min + shift * C).tocsr())
-                response = np.asarray(
-                    spd_solve(A, g, x0=initial_guess, rtol=tolerance / 10.0, M=M),
-                    dtype=np.float64,
-                ).ravel()
-                snapshots.append(response)
-                full_solves += 1
-
-                block = orthonormalize_block(local_basis, response[:, None])
-                if block.shape[1]:
-                    projection.append(local_basis, block)
-                    local_basis = np.column_stack((local_basis, block))
-                accepted_residual = 0.0
-                accepted_rounds = 0
-
-            max_accepted_residual = max(
-                max_accepted_residual,
-                accepted_residual,
-            )
-            history.append(
-                {
-                    "port": int(port),
-                    "shift": float(shift),
-                    "full_solves": int(full_solves),
-                    "validation_count": int(trials),
-                    "accepted_residual": float(accepted_residual),
-                }
-            )
-            local_bases[port] = local_basis
+        max_accepted_residual = max(max_accepted_residual, accepted_residual)
+        history.append(
+            {
+                "shift": float(shift),
+                "full_solves": int(full_solves),
+                "validation_count": int(trials),
+                "accepted_residual": float(accepted_residual),
+            }
+        )
 
     snapshot_matrix = np.column_stack(snapshots)
     basis, singular_values = _snapshot_svd_basis(snapshot_matrix, tolerance)
@@ -487,10 +479,10 @@ def build_parametric_basis(
     )
 
     return np.ascontiguousarray(basis), {
-        "per_port_plans": plans,
+        "spectral_plan": plan,
         "tolerance": float(tolerance),
         "probe_rounds": int(probe_rounds),
-        "candidate_count": int(len(snapshots) + validation_count),
+        "candidate_count": int(validation_count),
         "processed_candidate_count": len(snapshots),
         "validation_count": int(validation_count),
         "pre_svd_order": len(snapshots),

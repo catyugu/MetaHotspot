@@ -7,8 +7,8 @@ workflows live in the playground/ adapters that consume these algorithms.
 
 Modules:
 
-* :mod:`utils` — FANTASTIC-BCI operator-level machinery: per-port spectral
-  bounds, elliptic shift planning, residual-driven Krylov enrichment,
+* :mod:`utils` — FANTASTIC-BCI operator-level machinery: global spectral
+  bounds, elliptic shifts, shared-space worst-port enrichment,
   ``build_parametric_basis``, ``project_bci``, reduced solves, accuracy
   metrics.  Purely numeric; consumes the generic ``Operators`` interface.
 * :mod:`affine` — the affine-parametric model base contract
