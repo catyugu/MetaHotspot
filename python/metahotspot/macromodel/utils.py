@@ -198,9 +198,8 @@ def project_bci(
     source_shape: np.ndarray,
     boundary_terms,
     basis,
-    boundary_epsilon=1.0e-3,
 ):
-    """Project the full-domain operators onto ``basis``, exposing BCI ports."""
+    """Project capacity, stiffness, sources and affine boundary terms onto ``basis``."""
 
     def project(matrix):
         reduced = sp.csc_matrix(basis.T @ matrix @ basis)
@@ -211,38 +210,16 @@ def project_bci(
     K_hat0 = project(operators.K)
     F_hat = np.asarray(basis.T @ source_shape, dtype=np.float64)
 
-    n_cell = operators.K.shape[0]
-    b_diag = np.zeros(n_cell)
-    for term in boundary_terms:
-        b_diag += np.asarray(term.diagonal()).ravel()
-    b_cells = np.flatnonzero(b_diag > 0.0)
-    if b_cells.size == 0:
-        raise ValueError("no boundary cells found for BCI port extraction")
-
-    V_d = np.asarray(basis[b_cells, :])
-    U_d, s_d, Wt_d = np.linalg.svd(V_d, full_matrices=False)
-    keep = np.flatnonzero(s_d > boundary_epsilon * s_d[0])
-    if not keep.size:
-        raise RuntimeError("boundary SVD retained no modes")
-    U_t = np.ascontiguousarray(U_d[:, keep])
-    S_t = s_d[keep]
-    W_t = np.ascontiguousarray(Wt_d[keep, :].T)
-    F_bdry = W_t * S_t
-
-    A_bdry = []
-    for term in boundary_terms:
-        Hk_b = np.asarray(term.diagonal()).ravel()[b_cells]
-        A_bdry.append((U_t.T @ (Hk_b[:, None] * U_t)).astype(np.float64))
-
-    return C_hat, K_hat0, F_hat, F_bdry, A_bdry
+    H_hat = [basis.T @ term @ basis for term in boundary_terms]
+    return C_hat, K_hat0, F_hat, H_hat
 
 
-def assemble_reduced_k(K_hat0, F_bdry, A_bdry, h_vec) -> sp.csc_matrix:
-    """Assemble K_hat(h) = K_hat0 + sum h_k F_bdry A_k F_bdry^T."""
-    K = K_hat0.tocsc()
-    for h, A in zip(h_vec, A_bdry, strict=True):
-        K = K + h * sp.csc_matrix(F_bdry @ A @ F_bdry.T)
-    return K.tocsc()
+def assemble_reduced_k(K_hat0, H_hat, h_vec) -> sp.csc_matrix:
+    """Assemble K_hat(h) = K_hat0 + sum h_k V^T H_k V."""
+    K = K_hat0.toarray()
+    for h, H in zip(h_vec, H_hat, strict=True):
+        K += h * H
+    return sp.csc_matrix(K)
 
 
 def solve_rom_steady(K_hat, F_hat, power) -> np.ndarray:

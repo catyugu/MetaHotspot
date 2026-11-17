@@ -127,9 +127,9 @@ def run():
         f"accepted residual={summary['max_accepted_residual']:.2e}"
     )
 
-    C_hat, K0, F_hat, F_bdry, A_bdry = project_bci(core, G, terms, basis)
+    C_hat, K0, F_hat, H_hat = project_bci(core, G, terms, basis)
     p_vec = model.physical_to_effective(H_VEC_MODEL)
-    K_hat = assemble_reduced_k(K0, F_bdry, A_bdry, p_vec)
+    K_hat = assemble_reduced_k(K0, H_hat, p_vec)
 
     theta_ss = solve_rom_steady(K_hat, F_hat, SOURCES)
     junc_rom_ss = AMB + F_hat.T @ theta_ss
