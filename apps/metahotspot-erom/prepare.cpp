@@ -190,10 +190,14 @@ namespace {
         if (mesh.cells.empty() || !model.fluid.fluid_to_global.empty())
             throw std::invalid_argument("EROM extraction requires a nonempty solid FOM");
 
-        for (const auto& material : model.material_table)
+        const std::set<MaterialId> used_materials(model.cell_material.begin(), model.cell_material.end());
+        for (const auto id : used_materials) {
+            const auto& material = model.material_table[id];
             for (const auto* property : {&material.kx, &material.ky, &material.kz, &material.rho, &material.c})
                 if (constant(*property, "Material property") <= 0)
-                    throw std::invalid_argument("EROM extraction requires positive material properties");
+                    throw std::invalid_argument(
+                        "EROM extraction requires positive material properties on active cells");
+        }
 
         for (const auto& group : selection.htc)
             if (const auto id = group.first; id >= model.surfaces.size() || model.surfaces[id].facets.empty())

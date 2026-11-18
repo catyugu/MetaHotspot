@@ -6,6 +6,7 @@
       <Density>1</Density><SpecificHeatCapacity>4</SpecificHeatCapacity>
       <FluidMaterial>false</FluidMaterial>
     </Value></Material>
+    <Material><Key>unused</Key><Value><FluidMaterial>false</FluidMaterial></Value></Material>
   </Materials>
   <Layers><Layer>
     <ThicknessExpression>1</ThicknessExpression>
