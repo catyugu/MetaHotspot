@@ -1,0 +1,48 @@
+<Structure xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
+  <InitialTemperature>295</InitialTemperature>
+  <Materials>
+    <Material><Key>solid</Key><Value>
+      <ThermalConductivity>2</ThermalConductivity>
+      <Density>1</Density><SpecificHeatCapacity>4</SpecificHeatCapacity>
+      <FluidMaterial>false</FluidMaterial>
+    </Value></Material>
+  </Materials>
+  <Layers><Layer>
+    <ThicknessExpression>1</ThicknessExpression>
+    <Blocks>
+      <Block><Name>heater A</Name><MaterialName>solid</MaterialName><VolumetricHeatSource>5</VolumetricHeatSource>
+        <AllRects><Rect><Add_sub>true</Add_sub><XExpression>0</XExpression><YExpression>0</YExpression>
+          <WidthExpression>1</WidthExpression><HeightExpression>1</HeightExpression></Rect></AllRects>
+      </Block>
+      <Block><MaterialName>solid</MaterialName><VolumetricHeatSource>0</VolumetricHeatSource>
+        <AllRects><Rect><Add_sub>true</Add_sub><XExpression>1</XExpression><YExpression>0</YExpression>
+          <WidthExpression>1</WidthExpression><HeightExpression>1</HeightExpression></Rect></AllRects>
+      </Block>
+      <Block><Name>heater B</Name><MaterialName>solid</MaterialName><VolumetricHeatSource>8</VolumetricHeatSource>
+        <AllRects><Rect><Add_sub>true</Add_sub><XExpression>2</XExpression><YExpression>0</YExpression>
+          <WidthExpression>1</WidthExpression><HeightExpression>1</HeightExpression></Rect></AllRects>
+      </Block>
+    </Blocks>
+  </Layer></Layers>
+  <Boundaries>
+    <Boundary><Name>upstream</Name><BoundaryCategory>Thermal</BoundaryCategory><FaceKeys><string>X|E|0|0|1|0|1</string></FaceKeys>
+      <ThermalBoundary i:type="ThirdTypeThermalBoundary">
+        <ConvectionCoefficient>3</ConvectionCoefficient><EnvironmentTemperature>299</EnvironmentTemperature>
+      </ThermalBoundary>
+    </Boundary>
+    <Boundary><BoundaryCategory>Thermal</BoundaryCategory><FaceKeys><string>X|E|3|0|1|0|1</string></FaceKeys>
+      <ThermalBoundary i:type="ThirdTypeThermalBoundary">
+        <ConvectionCoefficient>4</ConvectionCoefficient><EnvironmentTemperature>302</EnvironmentTemperature>
+      </ThermalBoundary>
+    </Boundary>
+  </Boundaries>
+  <GeneratedMesh>
+    <XArray><double>0</double><double>1</double><double>2</double><double>3</double></XArray>
+    <YArray><double>0</double><double>0.5</double><double>1</double></YArray>
+    <ZArray><double>0</double><double>1</double></ZArray>
+  </GeneratedMesh>
+  <ObservePoints3D>
+    <ObservePoint3D><Name>off center</Name><X>1.2</X><Y>0.5</Y><Z>0.5</Z></ObservePoint3D>
+    <ObservePoint3D><Name>HTC trace</Name><X>3</X><Y>0.5</Y><Z>0.5</Z></ObservePoint3D>
+  </ObservePoints3D>
+</Structure>

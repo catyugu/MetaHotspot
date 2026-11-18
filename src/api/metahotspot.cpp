@@ -614,8 +614,8 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
     }
     for (size_t id = 0; id < mesh.facets.size(); ++id) {
         const auto& facet = mesh.facets[id];
-        fields->facet_minus[id] = facet.minus;
-        fields->facet_plus[id] = facet.plus;
+        fields->facet_minus[id] = model.discrete.cell_facets[id].minus;
+        fields->facet_plus[id] = model.discrete.cell_facets[id].plus;
         fields->facet_axis[id] = static_cast<mhs_axis_t>(facet.axis);
         fields->facet_coordinate[id] = facet.coordinate;
         for (size_t a = 0; a < 4; ++a)

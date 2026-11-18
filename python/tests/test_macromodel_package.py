@@ -1,16 +1,13 @@
 """Unit tests for the model-agnostic ``metahotspot.macromodel`` package.
 
-These tests exercise the generic algorithms without any named case: face-port
-conductance, explicit-face exclusion, common-patch area fractions, symmetry of
-the coupled system, identity-basis coupling agreement with the monolithic split
-reference. Extraction contracts are covered in test_macromodel_numerics.py.
+The tests cover face-port conductance, ambient-face selection and adiabatic
+subdomain cuts. Project contact is covered by the native C++ tests.
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pytest
-import scipy.sparse as sp
 
 import metahotspot
 from metahotspot import macromodel as mm
@@ -119,78 +116,16 @@ def test_enumerate_ports_excludes_declared_ambient_faces():
     assert {"x-", "x+", "y-", "y+"} <= labels
 
 
-def _rect_port(n, lo, hi, axis=2, direction=1):
-    t1, t2 = [a for a in range(3) if a != axis]
-    xs = np.linspace(lo, hi, n + 1)
-    cells = np.arange(n * n)
-    rects = np.column_stack(
-        (
-            np.repeat(xs[:-1], n),
-            np.repeat(xs[1:], n),
-            np.tile(xs[:-1], n),
-            np.tile(xs[1:], n),
-        )
-    )
-    area = ((hi - lo) / n) ** 2
-    return mm.FacePort(
-        label="z+",
-        axis=axis,
-        direction=direction,
-        cells=cells,
-        areas=np.full(n * n, area),
-        k=np.full(n * n, 1.0),
-        half=np.full(n * n, 0.5e-3),
-        t1=t1,
-        t2=t2,
-        rects=rects,
-    )
-
-
-def test_nonconforming_ports_are_split_into_area_weighted_common_patches():
-    coarse = _rect_port(1, 0.0, 1.0e-3)
-    fine = _rect_port(2, 0.0, 1.0e-3)
-    areas, E_l, E_r, xi_l, xi_r, li, ri = mm.common_patches(coarse, fine)
-
-    assert areas.size == 4
-    assert np.allclose(areas, 0.25e-6)
-    assert np.allclose(xi_l, 0.25)
-    assert np.allclose(xi_r, 1.0)
-    assert set(li.tolist()) == {0}
-    assert set(ri.tolist()) == {0, 1, 2, 3}
-    assert E_l.shape == (4, 1) and E_r.shape == (4, 4)
-    assert np.allclose(np.asarray(E_l.sum(axis=1)).ravel(), 1.0)
-    assert np.allclose(np.asarray(E_r.sum(axis=1)).ravel(), 1.0)
-
-
-def test_coupling_is_symmetric_psd_and_reproduces_monolithic_steady():
+def test_subdomain_cuts_remove_only_exterior_conductance():
     _model, compiled, ops = _build_operators(2, 2, 3)
     model = _FakePortsModel(compiled, ops)
     lower, upper = _cell_split(compiled.fields, 1.5e-3)
 
-    K = ops.K.tocsc()
-    pin = 0
-    K = K + sp.diags(np.eye(compiled.cell_count)[pin] * 1.0e3)
-    source = ops.f.ravel()
-    steady_mono = sp.linalg.spsolve(K, source)
-
-    left = mm.build_subdomain(model, lower, name="lower")
-    right = mm.build_subdomain(model, upper, name="upper")
-    assert {p.normal for p in left.ports} == {"x-", "x+", "y-", "y+", "z-", "z+"}
-    assert {p.normal for p in right.ports} == {"x-", "x+", "y-", "y+", "z-", "z+"}
-
-    Kc, Cc, rhsc, lo, _ro, npatch = mm.connect(
-        left, right, left.port("z+"), right.port("z-"), power=np.array([1.0])
-    )
-    Kd = Kc.toarray()
-    np.testing.assert_allclose(Kd, Kd.T, atol=1.0e-10)
-    assert np.linalg.eigvalsh(Kd).min() >= -1.0e-9
-    assert Cc.shape == Kc.shape
-
-    Kc = sp.csc_matrix(Kc)
-    Kc[pin, pin] += 1.0e3
-    steady_c = mm.solve_system(Kc, Cc, rhsc, dt=1.0, duration=0.0)[0]
-
-    full = np.zeros(compiled.cell_count)
-    full[left.cells] = steady_c[:lo]
-    full[right.cells] = steady_c[lo + npatch :]
-    assert np.max(np.abs(full - steady_mono)) < 1.0e-8
+    for name, cells in (("lower", lower), ("upper", upper)):
+        part = mm.build_subdomain(model, cells, name=name)
+        assert {p.normal for p in part.ports} == {"x-", "x+", "y-", "y+", "z-", "z+"}
+        expected = ops.K.tocsr()[cells][:, cells].toarray()
+        expected -= np.diag(expected.sum(axis=1))
+        np.testing.assert_allclose(part.K.toarray(), expected, atol=1e-14)
+        np.testing.assert_allclose(part.C.diagonal(), ops.C.diagonal()[cells])
+        np.testing.assert_allclose(part.source[:, 0], ops.f[cells])

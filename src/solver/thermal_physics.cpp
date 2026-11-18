@@ -10,9 +10,10 @@
 
 namespace mhs::solver {
     std::pair<double, double> interior_facet_resistances(
-        const mhs::model::Model& model, const mhs::model::Facet& facet, double k_minus, double k_plus)
+        const mhs::model::Model& model, mhs::model::FacetId id, double k_minus, double k_plus)
     {
-        const auto axis = static_cast<std::size_t>(facet.axis);
+        const auto axis = static_cast<std::size_t>(model.discrete.facets[id].axis);
+        const auto& facet = model.discrete.cell_facets[id];
         double minus = side_thermal_resistance(model.discrete.cells[facet.minus].size()[axis] / 2, k_minus);
         double plus = side_thermal_resistance(model.discrete.cells[facet.plus].size()[axis] / 2, k_plus);
         const auto& fluid = model.fluid;

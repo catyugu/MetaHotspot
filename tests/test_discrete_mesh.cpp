@@ -43,7 +43,7 @@ TEST(DiscreteMesh, CartesianTopologyHasUniqueFacesAndClosedCellIncidence)
     std::size_t internal = 0;
     for (const auto& face : mesh.facets) {
         EXPECT_GT(face.area(), 0);
-        if (!face.exterior())
+        if (face.normal == 0)
             ++internal;
     }
     EXPECT_EQ(internal, 12u);
@@ -52,7 +52,7 @@ TEST(DiscreteMesh, CartesianTopologyHasUniqueFacesAndClosedCellIncidence)
         double surface = 0;
         for (const auto id : mesh.incident_facets(static_cast<CellId>(c))) {
             const auto& face = mesh.facets[id];
-            const double sign = (face.minus == c ? 1 : -1);
+            const double sign = (mesh.cell_facets[id].minus == c ? 1 : -1);
             closure[static_cast<std::size_t>(face.axis)] += sign * face.area();
             surface += face.area();
         }
@@ -77,7 +77,9 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
             const auto& facet = model.discrete.facets[id];
             const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
             const auto center = facet.center();
-            const double d = model.discrete.cells[facet.owner()].size()[static_cast<std::size_t>(facet.axis)] / 2;
+            const double d = model.discrete.cells[model.discrete.cell_facets[id].owner()]
+                                 .size()[static_cast<std::size_t>(facet.axis)]
+                / 2;
             const mhs::expression::FieldContext cell_context {center[0], center[1], center[2], state[0], 0};
             const auto trace = mhs::solver::evaluate_boundary(condition, cell_context, facet.area(), facet.area() / d);
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], trace.temperature, 0};
@@ -127,7 +129,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     auto exterior_area = [](const auto& mesh) {
         double total = 0.0;
         for (const auto& facet : mesh.facets)
-            if (facet.exterior())
+            if (facet.normal != 0)
                 total += facet.area();
         return total;
     };
@@ -136,16 +138,16 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
     for (std::size_t c = 0; c < model.discrete.cells.size(); ++c)
         for (const auto id : model.discrete.incident_facets(static_cast<CellId>(c))) {
             ASSERT_LT(id, model.discrete.facets.size());
-            const auto& facet = model.discrete.facets[id];
+            const auto& facet = model.discrete.cell_facets[id];
             EXPECT_TRUE(facet.minus == c || facet.plus == c);
             ++incidence[id];
         }
     for (std::size_t id = 0; id < incidence.size(); ++id)
-        EXPECT_EQ(incidence[id], model.discrete.facets[id].exterior() ? 1 : 2);
+        EXPECT_EQ(incidence[id], model.discrete.cell_facets[id].exterior() ? 1 : 2);
     double assigned_area = 0;
     for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
         const auto& facet = model.discrete.facets[id];
-        if (!facet.exterior())
+        if (facet.normal == 0)
             continue;
         const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
         const auto& flux = std::get<mhs::model::Neumann>(condition).heat_flux;
@@ -209,11 +211,12 @@ TEST(DiscreteMesh, MissingFacetReferencesRemainInvalid)
 {
     DiscreteMesh mesh;
     mesh.cells.push_back({{0, 0, 0}, {1, 1, 1}});
-    Facet face;
+    CellFacet face;
     EXPECT_EQ(face.minus, invalid_id);
     EXPECT_EQ(face.plus, invalid_id);
     face.minus = 0;
-    mesh.facets.push_back(face);
+    mesh.facets.emplace_back();
+    mesh.cell_facets.push_back(face);
     mhs::compiler::build_cell_facet_incidence(mesh);
     EXPECT_EQ(mesh.incident_facets(0).size(), 1u);
 }

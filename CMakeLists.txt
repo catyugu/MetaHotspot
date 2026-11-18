@@ -67,6 +67,7 @@ endif()
 
 if(MHS_BUILD_APPS)
     add_subdirectory(apps/metahotspot)
+    add_subdirectory(apps/metahotspot-erom)
 endif()
 
 if(MHS_BUILD_TESTS)

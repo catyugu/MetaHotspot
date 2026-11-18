@@ -81,8 +81,9 @@ namespace mhs::compiler {
                                 continue;
                             const auto& cell = model.discrete.cells[c];
                             Facet f;
-                            f.minus = sign > 0 ? c : neighbor;
-                            f.plus = sign > 0 ? neighbor : c;
+                            f.normal = neighbor == invalid_id ? static_cast<std::int8_t>(sign) : 0;
+                            model.discrete.cell_facets.push_back(
+                                sign > 0 ? CellFacet {c, neighbor} : CellFacet {neighbor, c});
                             f.axis = static_cast<Axis>(a);
                             f.coordinate = sign > 0 ? cell.max[a] : cell.min[a];
                             const int t = a == 0 ? 1 : 0, u = a == 2 ? 1 : 2;

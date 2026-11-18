@@ -1,5 +1,6 @@
 add_library(mhs_solver STATIC
     assembler.cpp
+    project_assembler.cpp
     nonlinear_solver.cpp
     solve.cpp
     thermal_reconstruction.cpp
@@ -9,6 +10,7 @@ target_link_libraries(mhs_solver
     PUBLIC mhs_model
     PRIVATE
     mhs_expression
+    mhs_compiler
     mhs_linear
     $<BUILD_INTERFACE:Eigen3::Eigen>
     $<BUILD_INTERFACE:AdaptiveTimeStepper::AdaptiveTimeStepper>

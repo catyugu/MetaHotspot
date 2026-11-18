@@ -93,23 +93,32 @@ def interface_flux_training_sources(
     normalized only for numerical conditioning; response-space span is
     invariant to that scaling.
     """
-    n = subdomain.cells.size
+    ports = _selected_ports(subdomain, interface_labels)
+    return contour_training_sources(
+        subdomain.cells.size, ((p.label, p.cells, p.rects) for p in ports), degree
+    )
+
+
+def contour_training_sources(n, patches, degree) -> tuple[np.ndarray, list[dict]]:
+    """Integrate contour modes on planar patches and accumulate by owning cell."""
     columns: list[np.ndarray] = []
     metadata: list[dict] = []
-    for port in _selected_ports(subdomain, interface_labels):
-        integrals, orders = _port_contour_integrals(port.rects, degree)
-        cells = np.asarray(port.cells, dtype=np.int64)
+    for label, cells, rects in patches:
+        integrals, orders = _port_contour_integrals(rects, degree)
+        threshold = (
+            np.finfo(float).eps * max(integrals.shape) * np.linalg.norm(integrals[:, 0])
+        )
         for local_col, order in enumerate(orders):
             g = np.zeros(n, dtype=np.float64)
             np.add.at(g, cells, integrals[:, local_col])
             norm = float(np.linalg.norm(g))
-            if norm <= np.finfo(float).tiny:
+            if norm <= threshold:
                 continue
             g /= norm
             columns.append(g)
             metadata.append(
                 {
-                    "port": port.label,
+                    "port": label,
                     "polynomial_order": [int(order[0]), int(order[1])],
                 }
             )

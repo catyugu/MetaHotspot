@@ -16,7 +16,8 @@ namespace mhs::solver {
                 row.clear();
                 row.push_back(static_cast<core::SparseIndex>(i));
                 for (const auto id : mesh.incident_facets(static_cast<model::CellId>(i))) {
-                    const auto other = (mesh.facets[id].minus == i ? mesh.facets[id].plus : mesh.facets[id].minus);
+                    const auto other
+                        = (mesh.cell_facets[id].minus == i ? mesh.cell_facets[id].plus : mesh.cell_facets[id].minus);
                     if (other != core::invalid_id)
                         row.push_back(static_cast<core::SparseIndex>(other));
                 }
@@ -54,7 +55,7 @@ namespace mhs::solver {
                 - columns.begin());
     }
 
-    const Operators& ThermalAssembler::assemble(std::span<const double> temperature, double time)
+    Operators& ThermalAssembler::assemble_internal(std::span<const double> temperature, double time)
     {
         using namespace mhs::core;
         using namespace mhs::model;
@@ -100,17 +101,18 @@ namespace mhs::solver {
         };
         for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
             const auto& f = model.discrete.facets[id];
-            if (f.exterior())
+            const auto& cells = model.discrete.cell_facets[id];
+            if (cells.exterior())
                 continue;
-            const auto i = f.minus;
-            const auto row = static_cast<SparseIndex>(f.minus);
+            const auto i = cells.minus;
+            const auto row = static_cast<SparseIndex>(cells.minus);
             const auto axis = static_cast<std::size_t>(f.axis);
             const auto ki = conductivity_[i][axis];
-            const auto j = f.plus;
-            const auto col = static_cast<SparseIndex>(f.plus);
+            const auto j = cells.plus;
+            const auto col = static_cast<SparseIndex>(cells.plus);
             const auto kj = conductivity_[j][axis];
             const auto fi = fluid_index(i), fj = fluid_index(j);
-            const auto [r_minus, r_plus] = interior_facet_resistances(model, f, ki, kj);
+            const auto [r_minus, r_plus] = interior_facet_resistances(model, static_cast<FacetId>(id), ki, kj);
             const double g = f.area() / (r_minus + r_plus);
             const auto ij = slot(row, col), ji = slot(col, row);
             values[diagonal_positions_[i]] += g;
@@ -126,24 +128,8 @@ namespace mhs::solver {
                 }
             }
         }
-        for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
-            const auto& facet = model.discrete.facets[id];
-            if (!facet.exterior() || model.facet_thermal_condition[id] == invalid_id)
-                continue;
-            const auto cell = facet.owner();
-            const auto axis = static_cast<std::size_t>(facet.axis);
-            const auto row = static_cast<SparseIndex>(cell);
-            const auto center = facet.center();
-            const mhs::expression::FieldContext context {center[0], center[1], center[2], temperature[row], time};
-            const double d = model.discrete.cells[cell].size()[axis] / 2;
-            const double g = facet.area() / side_thermal_resistance(d, conductivity_[cell][axis]);
-            const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
-            const auto trace = evaluate_boundary(condition, context, facet.area(), g);
-            rhs[row] += trace.load;
-            values[diagonal_positions_[row]] += trace.conductance;
-        }
         for (const auto& term : model.fluid.boundary_terms) {
-            const auto cell = model.discrete.facets[term.facet].owner();
+            const auto cell = model.discrete.cell_facets[term.facet].owner();
             const auto row = static_cast<SparseIndex>(cell);
             const auto cp = specific_heat_[model.fluid.global_to_fluid[cell]];
             std::visit(
@@ -159,10 +145,12 @@ namespace mhs::solver {
         return operators_;
     }
 
-    Operators assemble_thermal(const model::Model& model, std::span<const double> temperature, double time)
+    double ThermalAssembler::resistance(model::FacetId id) const
     {
-        ThermalAssembler workspace(model);
-        workspace.assemble(temperature, time);
-        return std::move(workspace).take_operators();
+        const auto& facet = model_.discrete.facets[id];
+        const auto cell = model_.discrete.cell_facets[id].owner();
+        const auto axis = static_cast<std::size_t>(facet.axis);
+        return side_thermal_resistance(model_.discrete.cells[cell].size()[axis] / 2, conductivity_[cell][axis]);
     }
+
 } // namespace mhs::solver

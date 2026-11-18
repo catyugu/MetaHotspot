@@ -43,9 +43,17 @@ namespace mhs::compiler {
         using namespace mhs::model;
         mhs::core::Vector<Facet> refined;
         refined.reserve(mesh.facets.size());
-        for (const auto& facet : mesh.facets) {
-            if (!facet.exterior()) {
-                refined.push_back(facet);
+        mhs::core::Vector<CellFacet> topology;
+        topology.reserve(mesh.facets.size());
+        for (std::size_t id = 0; id < mesh.facets.size(); ++id) {
+            const auto& facet = mesh.facets[id];
+            const auto& cells = mesh.cell_facets[id];
+            auto append = [&](const Facet& piece) {
+                refined.push_back(piece);
+                topology.push_back(cells);
+            };
+            if (!cells.exterior()) {
+                append(facet);
                 continue;
             }
             mhs::core::Vector<double> a, b;
@@ -66,7 +74,7 @@ namespace mhs::compiler {
                 b.push_back(std::clamp(r.b_max, facet.bounds[2], facet.bounds[3]));
             }
             if (a.empty()) {
-                refined.push_back(facet);
+                append(facet);
                 continue;
             }
             auto unique = [](auto& cuts) {
@@ -81,10 +89,11 @@ namespace mhs::compiler {
                         continue;
                     auto piece = facet;
                     piece.bounds = {a[u - 1], a[u], b[v - 1], b[v]};
-                    refined.push_back(piece);
+                    append(piece);
                 }
         }
         mesh.facets = std::move(refined);
+        mesh.cell_facets = std::move(topology);
     }
 
     mhs::core::Vector<SurfaceTag> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
@@ -93,7 +102,7 @@ namespace mhs::compiler {
         mhs::core::Vector<SurfaceTag> assigned(mesh.facets.size(), mhs::core::invalid_id);
         for (std::size_t id = 0; id < mesh.facets.size(); ++id) {
             const auto& facet = mesh.facets[id];
-            if (!facet.exterior())
+            if (!mesh.cell_facets[id].exterior())
                 continue;
             assigned[id] = fallback;
             const auto a = (facet.bounds[0] + facet.bounds[1]) / 2;

@@ -389,6 +389,8 @@ namespace mhs::app::pta {
                     for (const XMLElement* block_elem = blocks_elem->FirstChildElement("Block"); block_elem;
                         block_elem = block_elem->NextSiblingElement("Block")) {
                         BlockSpec block;
+                        if (const XMLElement* name = block_elem->FirstChildElement("Name"))
+                            block.name = get_text(name);
 
                         if (const XMLElement* mat = block_elem->FirstChildElement("MaterialName")) {
                             block.material = get_text(mat);
@@ -449,6 +451,8 @@ namespace mhs::app::pta {
             for (const XMLElement* bound_elem = bounds_elem->FirstChildElement("Boundary"); bound_elem;
                 bound_elem = bound_elem->NextSiblingElement("Boundary")) {
                 mhs::model::ThermalBoundarySpec boundary;
+                if (const XMLElement* name = child_by_local_name(bound_elem, "Name"))
+                    boundary.name = get_text(name);
 
                 auto regions = read_face_key_regions(bound_elem);
 

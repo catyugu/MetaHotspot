@@ -1,6 +1,7 @@
 #pragma once
 
 #include "model/model.hpp"
+#include "model/project.hpp"
 #include "solver/solution.hpp"
 #include <optional>
 #include <span>
@@ -40,6 +41,8 @@ namespace mhs::solver {
     /// Internally assembles the thermal system, runs nonlinear iteration
     /// and time integration, and records probes.
     mhs::solver::Solution solve(const mhs::model::Model& model, const mhs::model::Study& study = {},
+        std::span<const double> initial_state = {}, const SolveOptions& options = {});
+    Solution solve(const model::Project& project, const model::Study& study = {},
         std::span<const double> initial_state = {}, const SolveOptions& options = {});
 
 } // namespace mhs::solver

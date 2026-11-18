@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -42,11 +43,11 @@ from metahotspot.macromodel.affine import (
 )
 from metahotspot.macromodel.embeddable import (
     build_subdomain,
-    common_patches,
-    connect,
     extract_rom,
-    solve_system,
 )
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "archived"))
+from legacy_erom_interface import common_patches, connect, solve_system
 
 # copper cube (matches simple_case1.ecxml)
 COPPER = ("385.0", "385.0", "385.0", "8930.0", "385.0")

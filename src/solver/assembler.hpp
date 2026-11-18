@@ -2,7 +2,7 @@
 
 #include "solver/linear_system.hpp"
 
-#include "model/model.hpp"
+#include "model/project.hpp"
 #include <span>
 #include <utility>
 
@@ -13,7 +13,9 @@ namespace mhs::solver {
     class ThermalAssembler {
     public:
         explicit ThermalAssembler(const mhs::model::Model& model);
-        const Operators& assemble(std::span<const double> temperature, double time);
+        Operators& assemble_internal(std::span<const double> temperature, double time);
+        const Operators& operators() const { return operators_; }
+        double resistance(model::FacetId id) const;
 
         Operators take_operators() && { return std::move(operators_); }
 
@@ -24,6 +26,22 @@ namespace mhs::solver {
         mhs::core::Vector<mhs::model::Vec3> conductivity_;
         mhs::core::Vector<double> density_, specific_heat_;
     };
+
+    class ProjectAssembler {
+    public:
+        explicit ProjectAssembler(const model::Project& project);
+        ~ProjectAssembler();
+        const Operators& assemble(std::span<const double> state, double time);
+        Operators take_operators() &&;
+        double sample_fom(
+            std::size_t component, const model::PointProbe& probe, std::span<const double> state, double time) const;
+
+    private:
+        struct Workspace;
+        std::unique_ptr<Workspace> workspace_;
+    };
+
+    model::Project single_model_project(const model::Model& model);
 
     // Owning export for the C API and standalone operator inspection.
     Operators assemble_thermal(const mhs::model::Model& model, std::span<const double> temperature, double time);
