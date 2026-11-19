@@ -132,12 +132,12 @@ namespace mhs::model {
                 "invalid exterior facet geometry");
         };
         core::Vector<bool> used(e.boundary_groups.size(), false);
-        for (const auto& interface : e.interfaces) {
-            validate_facet(interface.facet);
-            require(std::isfinite(interface.resistance) && interface.resistance > 0,
+        for (const auto& face : e.interfaces) {
+            validate_facet(face.facet);
+            require(std::isfinite(face.resistance) && face.resistance > 0,
                 "half-cell resistance must be positive and finite");
-            require(interface.surface < e.boundary_groups.size(), "invalid interface surface");
-            used[interface.surface] = true;
+            require(face.surface < e.boundary_groups.size(), "invalid interface surface");
+            used[face.surface] = true;
         }
         require(std::ranges::all_of(used, [](bool x) { return x; }), "empty surface");
         for (const auto& h : e.boundary_groups)

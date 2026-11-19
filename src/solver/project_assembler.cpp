@@ -216,17 +216,17 @@ namespace mhs::solver {
                     operators_.f[offset + j] += e.B(j, s) * power;
             }
             for (FacetId id = 0; id < e.interfaces.size(); ++id) {
-                const auto& interface = e.interfaces[id];
-                const auto& surface = e.boundary_groups[interface.surface];
-                const auto* law = boundary_override(component.boundaries, interface.surface);
+                const auto& face = e.interfaces[id];
+                const auto& surface = e.boundary_groups[face.surface];
+                const auto* law = boundary_override(component.boundaries, face.surface);
                 if (law ? is_adiabatic(*law) : surface.coefficient == 0)
                     continue;
                 const Side side {offset, e.Vb.row(id), e.reference_temperature};
                 const double temperature = law ? side.temperature(state) : 0;
-                const auto [g, load] = boundary_terms(&project_, i, id, interface.facet, [&](const Facet& patch) {
+                const auto [g, load] = boundary_terms(&project_, i, id, face.facet, [&](const Facet& patch) {
                     if (law)
-                        return evaluate_boundary(*law, patch, temperature, time, interface.resistance);
-                    const double g = convection_conductance(patch.area(), surface.coefficient, interface.resistance);
+                        return evaluate_boundary(*law, patch, temperature, time, face.resistance);
+                    const double g = convection_conductance(patch.area(), surface.coefficient, face.resistance);
                     return BoundaryEvaluation {.conductance = g, .load = g * surface.ambient};
                 });
                 if (g != 0)

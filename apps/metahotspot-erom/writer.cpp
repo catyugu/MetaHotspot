@@ -81,10 +81,10 @@ namespace mhs::app::erom {
             writer.scalar(facet.coordinate);
             writer.values(std::span<const double>(facet.bounds));
         };
-        for (const auto& interface : e.interfaces) {
-            write_facet(interface.facet);
-            writer.scalar(interface.resistance);
-            writer.count(interface.surface);
+        for (const auto& face : e.interfaces) {
+            write_facet(face.facet);
+            writer.scalar(face.resistance);
+            writer.count(face.surface);
         }
         for (const auto& surface : e.boundary_groups) {
             writer.name(surface.name);

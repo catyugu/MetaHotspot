@@ -12,9 +12,8 @@ namespace mhs::app::erom {
     void Prepared::set_conductances(Eigen::Ref<Vector> values, const Vector& h) const
     {
         for (Eigen::Index id = 0; id < values.size(); ++id) {
-            const auto& interface = interfaces[id];
-            values[id]
-                = solver::convection_conductance(interface.facet.area(), h[interface.surface], interface.resistance);
+            const auto& face = interfaces[id];
+            values[id] = solver::convection_conductance(face.facet.area(), h[face.surface], face.resistance);
         }
     }
 
