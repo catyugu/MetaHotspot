@@ -115,14 +115,14 @@ namespace mhs::app::erom {
         for (std::size_t id = 0; id < model.facet_boundary.size(); ++id)
             if (const auto surface = model.facet_boundary[id]; surface != core::invalid_id)
                 facets_by_surface[surface].push_back(static_cast<FacetId>(id));
-        for (const auto& [id, range] : ranges)
-            if (id >= facets_by_surface.size() || facets_by_surface[id].empty())
-                throw std::invalid_argument("unknown or empty HTC group " + std::to_string(id));
         for (SurfaceId id = 0; id < definition.thermal_boundaries.size(); ++id)
             if (ranges.contains(id))
                 for (const auto& region : definition.thermal_boundaries[id].regions)
                     if (!exterior_region(mesh, region))
                         throw std::invalid_argument("HTC group " + std::to_string(id) + " must lie on the exterior");
+        for (const auto& [id, range] : ranges)
+            if (id >= facets_by_surface.size() || facets_by_surface[id].empty())
+                throw std::invalid_argument("unknown or empty HTC group " + std::to_string(id));
 
         solver::ThermalAssembler assembler(model);
         core::Vector<double> state(mesh.cells.size(), model.reference_temperature);

@@ -16,7 +16,7 @@ target_link_libraries(mhs_tests PRIVATE
     GTest::gtest_main
 )
 
-if(MHS_ENABLE_PARDISO)
+if(MHS_USE_MKL)
     target_compile_definitions(mhs_tests PRIVATE MHS_ENABLE_PARDISO)
 endif()
 

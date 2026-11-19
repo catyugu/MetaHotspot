@@ -179,7 +179,8 @@ namespace mhs::solver {
         if (state.size() != project_.dof_count())
             throw std::invalid_argument("project assembly: state size differs from DOF count");
         if (thermal_.size() == 1 && thermal_.front())
-            return thermal_.front()->assemble(state, time, &project_);
+            return thermal_.front()->assemble(
+                state, time, project_.components().front().boundaries.empty() ? nullptr : &project_);
 
         const bool cached = !fixed_K_.empty();
         if (cached) {

@@ -13,7 +13,7 @@ namespace mhs::model {
 
     std::span<const std::size_t> Project::facet_patches(std::size_t component, FacetId facet) const
     {
-        const auto& partitions = facet_patches_[component];
+        const auto& partitions = facet_patches_.at(component);
         const auto it = partitions.find(facet);
         return it == partitions.end() ? std::span<const std::size_t> {} : std::span<const std::size_t> {it->second};
     }

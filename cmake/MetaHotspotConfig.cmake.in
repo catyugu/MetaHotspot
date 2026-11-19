@@ -9,7 +9,7 @@ find_dependency(spdlog @MHS_SPDLOG_VERSION@ CONFIG)
 find_dependency(muparser @MHS_MUPARSER_VERSION@ CONFIG)
 find_dependency(TBB @MHS_TBB_VERSION@ CONFIG)
 find_dependency(OpenMP COMPONENTS CXX)
-if(@MHS_ENABLE_PARDISO@)
+if(@MHS_USE_MKL@)
     find_dependency(MKL CONFIG)
 endif()
 

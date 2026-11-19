@@ -6,15 +6,14 @@ namespace mhs::solver {
     using namespace model;
 
     namespace {
-        double sample_project_fom(
-            const Project& project, std::size_t i, const PointProbe& probe, std::span<const double> state, double time)
+        BoundarySampler project_boundary(const Project& project, std::size_t i, const Fom& m,
+            std::span<const double> state, std::span<const double> local, double time)
         {
-            const auto& m = *std::get<std::shared_ptr<const Fom>>(project.components()[i].asset);
-            const auto local = state.subspan(project.dof_offset(i), project.dof_size(i));
             const auto& component = project.components()[i];
             if (project.patches().empty() && component.boundaries.empty())
-                return sample_point(m, local, time, probe.cell, probe.point);
-            BoundarySampler sample = [&](FacetId id, const Vec3* point) -> BoundaryEvaluation {
+                return {};
+            return [&project, &component, &m, i, state, local, time](
+                       FacetId id, const Vec3* point) -> BoundaryEvaluation {
                 const auto& facet = m.discrete.facets[id];
                 const double temperature = local[m.discrete.cell_facets[id].owner()];
                 const double r = boundary_resistance(m, id, temperature, time);
@@ -58,16 +57,9 @@ namespace mhs::solver {
                 }
                 return {.temperature = integral / facet.area()};
             };
-            return sample_point(m, local, time, probe.cell, probe.point, sample);
         }
 
     } // namespace
-
-    void append_fom_traces(core::Vector<OutputTrace>& traces, const Fom& fom, ComponentId component)
-    {
-        for (std::size_t p = 0; p < fom.point_probes.size(); ++p)
-            traces.push_back({fom.point_probes[p].name, {}, component, static_cast<OutputId>(p)});
-    }
 
     core::Vector<OutputTrace> project_outputs(const Project& project)
     {
@@ -76,11 +68,14 @@ namespace mhs::solver {
             std::visit(
                 [&](const auto& asset) {
                     using Asset = typename std::decay_t<decltype(asset)>::element_type;
-                    if constexpr (std::is_same_v<Asset, const Fom>)
-                        append_fom_traces(traces, *asset, c.id);
-                    else
-                        for (OutputId id = 0; id < asset->outputs.size(); ++id)
-                            traces.push_back({asset->outputs[id].name, {}, c.id, id});
+                    const auto& outputs = [&]() -> const auto& {
+                        if constexpr (std::is_same_v<Asset, const Fom>)
+                            return asset->point_probes;
+                        else
+                            return asset->outputs;
+                    }();
+                    for (OutputId id = 0; id < outputs.size(); ++id)
+                        traces.push_back({outputs[id].name, {}, c.id, id});
                 },
                 c.asset);
         return traces;
@@ -92,12 +87,16 @@ namespace mhs::solver {
         std::size_t trace = 0;
         const auto components = project.components();
         for (std::size_t i = 0; i < components.size(); ++i) {
+            const auto values = state.subspan(project.dof_offset(i), project.dof_size(i));
             if (const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&components[i].asset)) {
-                for (const auto& p : (*fom)->point_probes)
-                    traces[trace++].values.push_back(sample_project_fom(project, i, p, state, time));
+                const auto& m = **fom;
+                if (m.point_probes.empty())
+                    continue;
+                const auto boundary = project_boundary(project, i, m, state, values, time);
+                for (const auto& p : m.point_probes)
+                    traces[trace++].values.push_back(sample_point(m, values, time, p.cell, p.point, boundary));
             }
             else {
-                const auto values = state.subspan(project.dof_offset(i), project.dof_size(i));
                 const auto& erom = *std::get<std::shared_ptr<const Erom>>(components[i].asset);
                 for (std::size_t o = 0; o < erom.outputs.size(); ++o) {
                     const auto row = erom.L.row(o);

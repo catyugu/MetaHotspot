@@ -2,7 +2,7 @@ set(_linear_sources
     solver.cpp
     amg_solver.cpp
 )
-if(MHS_ENABLE_PARDISO)
+if(MHS_USE_MKL)
     list(APPEND _linear_sources pardiso_lu_solver.cpp)
 endif()
 
@@ -27,7 +27,7 @@ set_source_files_properties(amg_solver.cpp PROPERTIES
     COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/wd4701>"
 )
 
-if(MHS_ENABLE_PARDISO)
+if(MHS_USE_MKL)
     target_link_libraries(mhs_linear PRIVATE $<BUILD_INTERFACE:Eigen3::Eigen> MKL::MKL)
     target_compile_definitions(mhs_linear PRIVATE MHS_ENABLE_PARDISO)
 endif()
