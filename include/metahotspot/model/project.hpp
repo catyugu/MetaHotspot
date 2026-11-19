@@ -29,8 +29,10 @@ namespace mhs::model {
         double area, resistance;
     };
 
+    using ExposedFacets = std::map<FacetId, core::Vector<Facet>>;
+
     struct Project {
-        auto components() const { return std::span<const Component>(definition_.components); }
+        auto components() const { return std::span<const Component>(components_); }
         auto connections() const { return std::span<const Connection>(connections_); }
         auto warnings() const { return std::span<const std::string>(warnings_); }
         std::size_t dof_count() const { return dof_offsets_.back(); }
@@ -38,16 +40,16 @@ namespace mhs::model {
         std::size_t dof_size(std::size_t component) const { return dof_offset(component + 1) - dof_offset(component); }
 
         // Remaining patches, in component-local coordinates. Only contacted facets have entries.
-        const auto& exposed(std::size_t component) const { return exposed_.at(component); }
+        const ExposedFacets& exposed(std::size_t component) const { return exposed_.at(component); }
         std::optional<Vec3> output_position(ComponentId component, OutputId output) const;
 
     private:
         friend Project compile_project(ProjectDefinition definition);
-        ProjectDefinition definition_;
+        core::Vector<Component> components_;
         core::Vector<Connection> connections_;
         core::Vector<std::string> warnings_;
         core::Vector<std::size_t> dof_offsets_ {0};
-        core::Vector<std::map<FacetId, core::Vector<Facet>>> exposed_;
+        core::Vector<ExposedFacets> exposed_;
     };
 
     Project compile_project(ProjectDefinition definition);

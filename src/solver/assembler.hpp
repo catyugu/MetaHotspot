@@ -8,12 +8,32 @@
 
 namespace mhs::solver {
 
+    using BoundaryOverrides = std::map<model::SurfaceId, model::BoundaryCondition>;
+
+    inline const model::BoundaryCondition& boundary_override(
+        const BoundaryOverrides& overrides, model::SurfaceId surface, const model::BoundaryCondition& fallback)
+    {
+        const auto it = overrides.find(surface);
+        return it == overrides.end() ? fallback : it->second;
+    }
+
+    inline std::span<const model::Facet> exposed_patches(
+        const model::ExposedFacets& exposed, model::FacetId id, const model::Facet& facet)
+    {
+        const auto it = exposed.find(id);
+        if (it != exposed.end())
+            return it->second;
+        return {&facet, 1};
+    }
+
     // Binds an immutable model for the workspace lifetime. Each assembly
     // overwrites numerical buffers, including explicit zero coefficients.
     class ThermalAssembler {
     public:
         explicit ThermalAssembler(const mhs::model::Model& model);
-        Operators& assemble_internal(std::span<const double> temperature, double time);
+        const Operators& assemble(std::span<const double> temperature, double time,
+            const model::ExposedFacets& exposed = {}, const BoundaryOverrides& overrides = {});
+        const Operators& assemble_internal(std::span<const double> temperature, double time);
         const Operators& operators() const { return operators_; }
         double resistance(model::FacetId id) const;
 
@@ -32,7 +52,6 @@ namespace mhs::solver {
         explicit ProjectAssembler(const model::Project& project);
         ~ProjectAssembler();
         const Operators& assemble(std::span<const double> state, double time);
-        Operators take_operators() &&;
         double sample_fom(
             std::size_t component, const model::PointProbe& probe, std::span<const double> state, double time) const;
 
@@ -40,8 +59,6 @@ namespace mhs::solver {
         struct Workspace;
         std::unique_ptr<Workspace> workspace_;
     };
-
-    model::Project single_model_project(const model::Model& model);
 
     // Owning export for the C API and standalone operator inspection.
     Operators assemble_thermal(const mhs::model::Model& model, std::span<const double> temperature, double time);

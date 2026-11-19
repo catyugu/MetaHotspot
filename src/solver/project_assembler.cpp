@@ -82,13 +82,6 @@ namespace mhs::solver {
             for (std::size_t r = 0; r < local.rows(); ++r)
                 std::ranges::copy(local.row(r), global.values().begin() + slot(global, r + offset, offset));
         }
-
-        const BoundaryCondition& boundary_override(
-            const Component& c, SurfaceId surface, const BoundaryCondition& fallback)
-        {
-            const auto it = c.boundaries.find(surface);
-            return it == c.boundaries.end() ? fallback : it->second;
-        }
     } // namespace
 
     struct ProjectAssembler::Workspace {
@@ -193,40 +186,18 @@ namespace mhs::solver {
             return b.fom ? b.thermal->resistance(facet) : b.erom->R[facet];
         }
 
-        void environment(Operators& ops, std::size_t i, FacetId id, const Facet& facet, const BoundaryCondition& law,
-            std::span<const double> state, double time) const
+        void erom_environment(std::size_t i, FacetId id, const Facet& facet, const BoundaryCondition& law,
+            std::span<const double> state, double time)
         {
-            if (const auto* flux = std::get_if<Neumann>(&law);
-                flux && flux->heat_flux.is_constant() && flux->heat_flux.constant_value() == 0)
+            if (is_adiabatic(law))
                 return;
             const auto dofs = side(i, id);
             const auto r = resistance(i, id);
             const auto temperature = dofs.temperature(state);
-            auto apply = [&](const Facet& patch) {
-                const auto p = patch.center();
-                const double area = patch.area();
-                const auto trace = evaluate_boundary(law, {p[0], p[1], p[2], temperature, time}, area, area / r);
-                add_block(ops.K, dofs, dofs, trace.conductance);
-                add_load(ops.f, dofs, trace.load - trace.conductance * dofs.reference);
-            };
-            const auto& exposed = project.exposed(i);
-            if (const auto it = exposed.find(id); it != exposed.end()) {
-                for (const auto& patch : it->second)
-                    apply(patch);
-            }
-            else
-                apply(facet);
-        }
-
-        void fom_environment(Operators& ops, std::size_t i, std::span<const double> state, double time) const
-        {
-            const auto& model = *blocks[i].fom;
-            const auto& component = project.components()[i];
-            for (std::size_t j = 0; j < model.facet_thermal_condition.size(); ++j) {
-                const auto condition = model.facet_thermal_condition[j];
-                if (condition != core::invalid_id)
-                    environment(ops, i, static_cast<FacetId>(j), model.discrete.facets[j],
-                        boundary_override(component, condition, model.boundary_conditions[condition]), state, time);
+            for (const auto& patch : exposed_patches(project.exposed(i), id, facet)) {
+                const auto trace = evaluate_boundary(law, patch, temperature, time, r);
+                add_block(operators.K, dofs, dofs, trace.conductance);
+                add_load(operators.f, dofs, trace.load - trace.conductance * dofs.reference);
             }
         }
 
@@ -234,11 +205,9 @@ namespace mhs::solver {
         {
             if (state.size() != project.dof_count())
                 throw std::invalid_argument("project assembly: state size differs from DOF count");
-            if (single_fom) {
-                auto& local = blocks.front().thermal->assemble_internal(state, time);
-                fom_environment(local, 0, state, time);
-                return local;
-            }
+            if (single_fom)
+                return blocks.front().thermal->assemble(
+                    state, time, project.exposed(0), project.components().front().boundaries);
 
             std::ranges::fill(operators.K.values(), 0.0);
             std::ranges::fill(operators.f, 0.0);
@@ -247,11 +216,11 @@ namespace mhs::solver {
                 const auto& component = project.components()[i];
                 const auto offset = project.dof_offset(i);
                 if (b.fom) {
-                    const auto& local = b.thermal->assemble_internal(state.subspan(offset, project.dof_size(i)), time);
+                    const auto& local = b.thermal->assemble(
+                        state.subspan(offset, project.dof_size(i)), time, project.exposed(i), component.boundaries);
                     copy_sparse(local.K, operators.K, offset);
                     copy_sparse(local.C, operators.C, offset);
                     std::ranges::copy(local.f, operators.f.begin() + offset);
-                    fom_environment(operators, i, state, time);
                     continue;
                 }
 
@@ -269,9 +238,9 @@ namespace mhs::solver {
                 for (std::size_t s = 0; s < e.surfaces.size(); ++s)
                     if (e.htc[s]) {
                         const auto& surface = e.surfaces[s];
-                        const auto& law = boundary_override(component, surface.id, b.erom_defaults[s]);
+                        const auto& law = boundary_override(component.boundaries, surface.id, b.erom_defaults[s]);
                         for (const auto id : surface.facets)
-                            environment(operators, i, id, e.facets[id], law, state, time);
+                            erom_environment(i, id, e.facets[id], law, state, time);
                     }
             }
 
@@ -317,11 +286,9 @@ namespace mhs::solver {
                 const auto r = sample_r(i, id);
                 const double temperature = side(i, id).temperature(state);
                 const auto condition = m.facet_thermal_condition[id];
-                const auto& law = boundary_override(component, condition, m.boundary_conditions[condition]);
+                const auto& law = boundary_override(component.boundaries, condition, m.boundary_conditions[condition]);
                 auto ambient = [&](const Facet& patch) {
-                    const auto p = patch.center();
-                    const auto area = patch.area();
-                    const auto t = evaluate_boundary(law, {p[0], p[1], p[2], temperature, time}, area, area / r);
+                    const auto t = evaluate_boundary(law, patch, temperature, time, r);
                     return BoundarySample {t.temperature, std::holds_alternative<Dirichlet>(law)};
                 };
                 const auto exposed = project.exposed(i).find(id);
@@ -374,27 +341,5 @@ namespace mhs::solver {
         std::size_t component, const model::PointProbe& probe, std::span<const double> state, double time) const
     {
         return workspace_->sample_fom(component, probe, state, time);
-    }
-
-    Operators ProjectAssembler::take_operators() &&
-    {
-        if (workspace_->single_fom)
-            return std::move(*workspace_->blocks.front().thermal).take_operators();
-        return std::move(workspace_->operators);
-    }
-
-    model::Project single_model_project(const model::Model& model)
-    {
-        // The legacy synchronous call borrows the caller's model for its entire lifetime.
-        auto borrowed = std::shared_ptr<const model::Model>(std::shared_ptr<const model::Model> {}, &model);
-        return model::compile_project({{{0, {}, std::move(borrowed), {}, {}}}, {}});
-    }
-
-    Operators assemble_thermal(const model::Model& model, std::span<const double> temperature, double time)
-    {
-        const auto project = single_model_project(model);
-        ProjectAssembler assembler(project);
-        assembler.assemble(temperature, time);
-        return std::move(assembler).take_operators();
     }
 } // namespace mhs::solver

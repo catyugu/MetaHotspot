@@ -28,4 +28,18 @@ namespace mhs::solver {
     BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition,
         mhs::expression::FieldContext context, double area, double conductive);
 
+    inline BoundaryTrace evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
+        double temperature, double time, double resistance)
+    {
+        const auto p = patch.center();
+        const double area = patch.area();
+        return evaluate_boundary(condition, {p[0], p[1], p[2], temperature, time}, area, area / resistance);
+    }
+
+    inline bool is_adiabatic(const model::BoundaryCondition& condition)
+    {
+        const auto* flux = std::get_if<model::Neumann>(&condition);
+        return flux && flux->heat_flux.is_constant() && flux->heat_flux.constant_value() == 0;
+    }
+
 } // namespace mhs::solver

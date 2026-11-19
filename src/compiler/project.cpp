@@ -147,7 +147,7 @@ namespace mhs::model {
     Project compile_project(ProjectDefinition definition)
     {
         Project project;
-        project.definition_ = std::move(definition);
+        project.components_ = std::move(definition.components);
         const auto components = project.components();
         project.exposed_.resize(components.size());
         std::set<ComponentId> ids;
@@ -218,7 +218,7 @@ namespace mhs::model {
                 component.asset);
         }
 
-        const auto& resistances = project.definition_.contact_resistance;
+        const auto& resistances = definition.contact_resistance;
         for (const auto& [pair, r] : resistances)
             if (pair.first >= pair.second || !ids.contains(pair.first) || !ids.contains(pair.second)
                 || !std::isfinite(r) || r < 0)

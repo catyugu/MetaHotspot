@@ -21,12 +21,10 @@ namespace mhs::solver {
             const auto& facet = model.discrete.facets[id];
             const auto axis = static_cast<std::size_t>(facet.axis);
             const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
-            const auto center = facet.center();
-            const expression::FieldContext context {center[0], center[1], center[2], temperature[cell], time};
             const double d = model.discrete.cells[cell].size()[axis] / 2;
             const double k = conductivity(model, temperature, cell, time, static_cast<int>(facet.axis));
             const auto trace
-                = evaluate_boundary(condition, context, facet.area(), facet.area() / side_thermal_resistance(d, k));
+                = evaluate_boundary(condition, facet, temperature[cell], time, side_thermal_resistance(d, k));
             return {trace.temperature, std::holds_alternative<model::Dirichlet>(condition)};
         }
 
