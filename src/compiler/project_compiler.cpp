@@ -69,10 +69,10 @@ namespace mhs::compiler {
                 std::size_t right = 0;
             };
 
-            std::size_t build(std::span<Face> faces)
+            std::size_t build(std::span<Face> range)
             {
-                auto rect = faces.front().rect;
-                for (const auto& face : faces) {
+                auto rect = range.front().rect;
+                for (const auto& face : range) {
                     rect[0] = std::min(rect[0], face.rect[0]);
                     rect[1] = std::max(rect[1], face.rect[1]);
                     rect[2] = std::min(rect[2], face.rect[2]);
@@ -80,17 +80,17 @@ namespace mhs::compiler {
                 }
                 const auto index = nodes_.size();
                 nodes_.push_back({rect, {}});
-                if (faces.size() <= 8) {
-                    nodes_[index].leaf = faces;
+                if (range.size() <= 8) {
+                    nodes_[index].leaf = range;
                     return index;
                 }
                 const int t = rect[1] - rect[0] >= rect[3] - rect[2] ? 0 : 2;
-                const auto half = faces.size() / 2;
-                std::nth_element(faces.begin(), faces.begin() + half, faces.end(), [t](const auto& a, const auto& b) {
+                const auto half = range.size() / 2;
+                std::nth_element(range.begin(), range.begin() + half, range.end(), [t](const auto& a, const auto& b) {
                     return std::midpoint(a.rect[t], a.rect[t + 1]) < std::midpoint(b.rect[t], b.rect[t + 1]);
                 });
-                build(faces.first(half));
-                const auto right = build(faces.subspan(half));
+                build(range.first(half));
+                const auto right = build(range.subspan(half));
                 nodes_[index].right = right;
                 return index;
             }
