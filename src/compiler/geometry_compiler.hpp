@@ -1,5 +1,6 @@
 #pragma once
 #include <optional>
+#include <span>
 
 #include "model/fom.hpp"
 #include "model/fom_definition.hpp"
@@ -24,19 +25,10 @@ namespace mhs::compiler {
 
     // Partition exterior facets once against the union of thermal and fluid regions,
     // before building incidence and assigning physics-specific boundary conditions.
-    void refine_exterior_facets(
-        mhs::model::DiscreteMesh& mesh, const mhs::core::Vector<mhs::model::SurfaceRegion>& regions);
+    void refine_exterior_facets(mhs::model::DiscreteMesh& mesh, std::span<const TaggedSurfaceRegion> thermal,
+        std::span<const TaggedSurfaceRegion> fluid);
 
     // Later regions take precedence. Interior facets always have the invalid tag.
     mhs::core::Vector<SurfaceTag> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
         const mhs::core::Vector<TaggedSurfaceRegion>& regions, SurfaceTag fallback = mhs::core::invalid_id);
-    // Temporary traversal order for consumers that process one surface at a time.
-    inline auto group_exterior_facets(const model::Fom& fom)
-    {
-        core::Vector<core::Vector<model::FacetId>> groups(fom.surfaces.size());
-        for (std::size_t i = 0; i < fom.facet_surface.size(); ++i)
-            if (const auto id = fom.facet_surface[i]; id != core::invalid_id)
-                groups[id].push_back(static_cast<model::FacetId>(i));
-        return groups;
-    }
 } // namespace mhs::compiler

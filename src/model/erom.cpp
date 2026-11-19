@@ -135,9 +135,17 @@ namespace mhs::model {
                 "invalid exterior facet geometry");
 
         std::set<SurfaceId> surfaces;
-        core::Vector<bool> seen(e.facets.size(), false);
+        require(e.facet_surface.size() == e.facets.size(), "invalid facet-to-surface map size");
+        core::Vector<bool> used(e.surfaces.size(), false);
+        for (std::size_t i = 0; i < e.facet_surface.size(); ++i) {
+            const auto surface = e.facet_surface[i];
+            require(surface < e.surfaces.size() && (i < nf) == e.surfaces[surface].training.has_value(),
+                "invalid facet surface");
+            used[surface] = true;
+        }
+        require(std::ranges::all_of(used, [](bool x) { return x; }), "empty surface");
         for (const auto& s : e.surfaces) {
-            require(s.id != core::invalid_id && surfaces.insert(s.id).second && !s.name.empty() && !s.facets.empty(),
+            require(s.id != core::invalid_id && surfaces.insert(s.id).second && !s.name.empty(),
                 "invalid or duplicate surface");
             const auto& h = s.training;
             if (h)
@@ -145,23 +153,19 @@ namespace mhs::model {
                         && std::isfinite(h->ambient) && h->minimum >= 0 && h->maximum > 0 && h->maximum >= h->minimum
                         && h->coefficient >= 0,
                     "invalid HTC values");
-            for (auto id : s.facets) {
-                require(id < e.facets.size() && !seen[id] && (id < nf) == h.has_value(),
-                    "invalid or duplicate surface facet index");
-                seen[id] = true;
-            }
         }
-        require(std::ranges::all_of(seen, [](bool x) { return x; }), "facet missing from surfaces");
         std::set<SourceId> sources;
         for (const auto& s : e.sources)
             require(s.id != core::invalid_id && sources.insert(s.id).second && !s.name.empty()
                     && std::isfinite(s.default_power),
                 "invalid or duplicate source");
         std::set<OutputId> outputs;
-        for (const auto& o : e.outputs)
+        for (const auto& o : e.outputs) {
+            const auto* point = std::get_if<Vec3>(&o.location);
             require(o.id != core::invalid_id && outputs.insert(o.id).second && !o.name.empty()
-                    && (o.point ? finite(*o.point) && o.source == core::invalid_id : sources.contains(o.source)),
+                    && (point ? finite(*point) : sources.contains(std::get<SourceId>(o.location))),
                 "invalid or duplicate temperature output");
+        }
     }
 
     std::shared_ptr<const Erom> read_erom(const std::filesystem::path& path)
@@ -194,16 +198,21 @@ namespace mhs::model {
             e->facets.push_back(f);
         }
         reader.check_count(ng, 16);
-        for (std::size_t i = 0; i < ng; ++i) {
-            EromSurface surface {reader.u32(), reader.name(), {}, std::nullopt};
+        e->facet_surface.assign(nf, core::invalid_id);
+        for (SurfaceId i = 0; i < ng; ++i) {
+            EromSurface surface {reader.u32(), reader.name(), std::nullopt};
             const auto trained = reader.u32();
             require(trained <= 1, "invalid surface training flag");
             if (trained)
                 surface.training = EromSurfaceTraining {reader.f64(), reader.f64(), reader.f64(), reader.f64()};
             const auto count = reader.u32();
             reader.check_count(count, 4);
-            for (std::size_t f = 0; f < count; ++f)
-                surface.facets.push_back(reader.u32());
+            for (std::size_t f = 0; f < count; ++f) {
+                const auto id = reader.u32();
+                require(
+                    id < nf && e->facet_surface[id] == core::invalid_id, "invalid or duplicate surface facet index");
+                e->facet_surface[id] = i;
+            }
             e->surfaces.push_back(std::move(surface));
         }
         reader.check_count(ns, 16);
@@ -211,9 +220,9 @@ namespace mhs::model {
             e->sources.push_back({reader.u32(), reader.name(), reader.f64()});
         reader.check_count(no, 12);
         for (std::size_t i = 0; i < no; ++i) {
-            EromOutput output {reader.u32(), reader.name(), std::nullopt, reader.u32()};
-            if (output.source == core::invalid_id)
-                output.point = Vec3 {reader.f64(), reader.f64(), reader.f64()};
+            EromOutput output {reader.u32(), reader.name(), reader.u32()};
+            if (std::get<SourceId>(output.location) == core::invalid_id)
+                output.location = Vec3 {reader.f64(), reader.f64(), reader.f64()};
             e->outputs.push_back(std::move(output));
         }
         reader.finish();

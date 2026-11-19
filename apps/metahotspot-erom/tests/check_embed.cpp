@@ -56,12 +56,12 @@ namespace {
             "wrong matrix dimensions");
         check(e.surfaces.size() == 3 && e.surfaces[0].training && e.surfaces[1].training && !e.surfaces[2].training,
             "wrong HTC groups");
-        check(e.surfaces[0].id == 0 && e.surfaces[0].name == "upstream"
-                && e.surfaces[0].facets == core::Vector<FacetId> {0, 1} && e.surfaces[1].id == 1
-                && e.surfaces[1].facets == core::Vector<FacetId> {2, 3},
+        check(e.surfaces[0].id == 0 && e.surfaces[0].name == "upstream" && e.surfaces[1].id == 1
+                && e.facet_surface == core::Vector<SurfaceId> {0, 0, 1, 1, 2, 2, 2, 2},
             "wrong facet ownership");
         check(e.sources[0].id == 0 && e.sources[0].name == "heater A" && e.sources[1].id == 2 && e.outputs[0].id == 0
-                && e.outputs[0].name == "off center" && e.outputs[1].source == 0 && e.outputs[2].source == 2,
+                && e.outputs[0].name == "off center" && std::get<SourceId>(e.outputs[1].location) == 0
+                && std::get<SourceId>(e.outputs[2].location) == 2,
             "wrong source or output identity");
         near(e.sources[0].default_power, 5);
         near(e.sources[1].default_power, 8);
@@ -126,11 +126,11 @@ namespace {
         check(result.statistics.output_error <= tolerance, "sampled output error exceeds extraction tolerance");
         if (variant == "partial") {
             const auto& e = result.asset;
-            const auto& facets = e.surfaces[0].facets;
-            check(facets.size() == 2, "wrong facet partition for the partial HTC group");
-            near(e.facets[facets[0]].area() + e.facets[facets[1]].area(), 0.75);
-            near(e.R[facets[0]], 0.25);
-            near(e.R[facets[1]], 25);
+            check(e.facet_surface[0] == 0 && e.facet_surface[1] == 0 && e.facet_surface[2] == 1,
+                "wrong facet partition for the partial HTC group");
+            near(e.facets[0].area() + e.facets[1].area(), 0.75);
+            near(e.R[0], 0.25);
+            near(e.R[1], 25);
 
             const auto fom = std::make_shared<const Fom>(compiler::compile_fom(definition, mesh));
             const auto rom = std::make_shared<const Erom>(e);

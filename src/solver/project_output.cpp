@@ -1,6 +1,5 @@
 #include "project_output.hpp"
 #include "contact.hpp"
-#include "thermal_physics.hpp"
 #include "thermal_reconstruction.hpp"
 
 namespace mhs::solver {
@@ -16,14 +15,13 @@ namespace mhs::solver {
             const auto& contacts = project.facet_contacts(i);
             if (contacts.empty() && component.boundaries.empty())
                 return sample_point(m, local, time, probe.cell, probe.point);
-            BoundarySampler sample = [&](FacetId id, const Vec3* point) -> BoundarySample {
+            BoundarySampler sample = [&](FacetId id, const Vec3* point) -> BoundaryEvaluation {
                 const auto& facet = m.discrete.facets[id];
                 const double temperature = local[m.discrete.cell_facets[id].owner()];
                 const double r = boundary_resistance(m, id, temperature, time);
                 const auto surface = m.facet_surface[id];
                 const auto& law = boundary_override(component.boundaries, surface, m.surfaces[surface].condition);
-                auto ambient
-                    = [&](const Facet& patch) { return sample_boundary_temperature(law, patch, temperature, time, r); };
+                auto ambient = [&](const Facet& patch) { return evaluate_boundary(law, patch, temperature, time, r); };
                 const auto record = contacts.find(id);
                 if (record == contacts.end())
                     return ambient(facet);
@@ -44,7 +42,7 @@ namespace mhs::solver {
                         const auto a = (*point)[u] + component.offset[u], b = (*point)[v] + component.offset[v];
                         if (a >= c.overlap[0] - geometry_eps && a <= c.overlap[1] + geometry_eps
                             && b >= c.overlap[2] - geometry_eps && b <= c.overlap[3] + geometry_eps)
-                            return {t, false};
+                            return {.temperature = t};
                     }
                     integral += c.area() * t;
                 }
@@ -54,7 +52,7 @@ namespace mhs::solver {
                         return trace;
                     integral += patch.area() * trace.temperature;
                 }
-                return {integral / facet.area(), false};
+                return {.temperature = integral / facet.area()};
             };
             return sample_point(m, local, time, probe.cell, probe.point, sample);
         }

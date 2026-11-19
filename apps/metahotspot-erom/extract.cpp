@@ -11,9 +11,9 @@
 namespace mhs::app::erom {
     void Prepared::set_conductances(Eigen::Ref<Vector> values, const Vector& h) const
     {
-        for (Eigen::Index i = 0; i < h.size(); ++i)
-            for (const auto id : asset.surfaces[i].facets)
-                values[id] = solver::convection_conductance(asset.facets[id].area(), h[i], asset.R[id]);
+        for (Eigen::Index id = 0; id < values.size(); ++id)
+            values[id]
+                = solver::convection_conductance(asset.facets[id].area(), h[asset.facet_surface[id]], asset.R[id]);
     }
 
     Vector Prepared::parameters(double model::EromSurfaceTraining::* field) const
@@ -24,6 +24,14 @@ namespace mhs::app::erom {
         for (Eigen::Index i = 0; i < values.size(); ++i)
             values[i] = (*asset.surfaces[i].training).*field;
         return values;
+    }
+
+    std::ranges::iota_view<Eigen::Index, Eigen::Index> Prepared::surface_facets(model::SurfaceId surface) const
+    {
+        // prepare() appends facets in surface order.
+        const auto& owners = asset.facet_surface;
+        const auto ids = std::ranges::equal_range(owners, surface);
+        return std::views::iota(ids.begin() - owners.begin(), ids.end() - owners.begin());
     }
 
     void Prepared::add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const
@@ -116,7 +124,7 @@ namespace mhs::app::erom {
                     }
                     const auto& surface = project.asset.surfaces[i];
                     const double delta = defaults ? surface.training->ambient - project.asset.reference_temperature : 1;
-                    for (const auto id : surface.facets) {
+                    for (const auto id : project.surface_facets(static_cast<model::SurfaceId>(i))) {
                         const double power = closure[id] * delta;
                         rhs[project.boundary_cells[id]] += power;
                         load.noalias() += power * boundary.row(id).transpose();

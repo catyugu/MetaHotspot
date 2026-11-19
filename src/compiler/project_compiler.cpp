@@ -1,5 +1,4 @@
 #include "compiler/project_compiler.hpp"
-#include "compiler/geometry_compiler.hpp"
 
 #include "core/csr_matrix.hpp"
 #include "logging/logger.hpp"
@@ -199,14 +198,14 @@ namespace mhs::compiler {
                         faces.push_back({i, id, &f, surface, rect});
                     };
                     if constexpr (reduced) {
-                        for (const auto& surface : asset->surfaces)
-                            for (const auto id : surface.facets)
-                                append(id, asset->facets[id], &surface);
+                        for (std::size_t id = 0; id < asset->facets.size(); ++id)
+                            append(static_cast<FacetId>(id), asset->facets[id],
+                                &asset->surfaces[asset->facet_surface[id]]);
                     }
                     else {
-                        for (const auto& facets : group_exterior_facets(*asset))
-                            for (const auto id : facets)
-                                append(id, asset->discrete.facets[id]);
+                        for (std::size_t id = 0; id < asset->facet_surface.size(); ++id)
+                            if (asset->facet_surface[id] != core::invalid_id)
+                                append(static_cast<FacetId>(id), asset->discrete.facets[id]);
                     }
                 },
                 component.asset);

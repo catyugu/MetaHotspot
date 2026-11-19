@@ -3,6 +3,7 @@
 #include "solver/linear_system.hpp"
 
 #include "model/project.hpp"
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -36,11 +37,10 @@ namespace mhs::solver {
 
     private:
         Operators make_operators() const;
-        double resistance(std::size_t component, model::FacetId facet) const;
         void assemble_contacts();
 
         const model::Project& project_;
-        core::Vector<std::unique_ptr<ThermalAssembler>> thermal_;
+        core::Vector<std::optional<ThermalAssembler>> thermal_;
         Operators operators_;
         core::Vector<double> fixed_K_, fixed_f_;
     };

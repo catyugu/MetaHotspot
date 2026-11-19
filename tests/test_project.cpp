@@ -49,13 +49,13 @@ namespace {
         Facet left {Axis::X, -1, 0, {0, 1, 0, 1}};
         Facet right {Axis::X, 1, 1, {0, 1, 0, 1}};
         e->facets = left_open ? core::Vector<Facet> {left, right} : core::Vector<Facet> {right, left};
-        e->surfaces = {{7, "left", {left_open ? 0u : 1u},
-                           left_open ? std::optional {EromSurfaceTraining {1, 10, 2, 310}} : std::nullopt},
-            {9, "right", {left_open ? 1u : 0u}, EromSurfaceTraining {1, 10, 1, 330}}};
+        e->facet_surface = left_open ? core::Vector<SurfaceId> {0, 1} : core::Vector<SurfaceId> {1, 0};
+        e->surfaces = {{7, "left", left_open ? std::optional {EromSurfaceTraining {1, 10, 2, 310}} : std::nullopt},
+            {9, "right", EromSurfaceTraining {1, 10, 1, 330}}};
         e->reference_temperature = reference;
         e->uniform_temperature_mode = {1};
         e->sources = {{3, "first", 0}, {5, "second", 1}};
-        e->outputs = {{17, "sensor", Vec3 {0.5, 0.25, 0.5}}, {25, "source mean", std::nullopt, 3}};
+        e->outputs = {{17, "sensor", Vec3 {0.5, 0.25, 0.5}}, {25, "source mean", SourceId {3}}};
         return e;
     }
 
@@ -135,7 +135,7 @@ TEST(Project, PartialMixedContactUsesExposedBoundaryAndReferenceOffsets)
     EXPECT_DOUBLE_EQ(project.contacts()[0].area(), 0.5);
     EXPECT_EQ(project.output_position(2, 17), (Vec3 {1.5, 0.75, 0.5}));
     EXPECT_FALSE(project.output_position(2, 25));
-    EXPECT_EQ(erom->outputs[0].point, (Vec3 {0.5, 0.25, 0.5}));
+    EXPECT_EQ(std::get<Vec3>(erom->outputs[0].location), (Vec3 {0.5, 0.25, 0.5}));
 
     solver::ProjectAssembler assembler(project);
     const core::Vector<double> state {320, 40};
@@ -165,7 +165,7 @@ TEST(Project, EromContactUsesModalOuterProductsAndInstanceSchedules)
     auto split = left->facets[1];
     left->facets[1].bounds[1] = split.bounds[0] = 0.5;
     left->facets.push_back(split);
-    left->surfaces[1].facets.push_back(2);
+    left->facet_surface.push_back(1);
     left->R.push_back(0.25);
     left->Vb = core::Matrix<double>(3, 1);
     left->Vb(0, 0) = 1;
@@ -226,6 +226,6 @@ TEST(Project, RejectsDuplicateIdentityAndOverlappingContacts)
                      {{instance(1, fom), instance(2, fom, {1, 0, 0}), instance(3, fom, {1, 0.2, 0})}, {}}),
         std::invalid_argument);
     auto e = modal();
-    e->surfaces[1].facets = {0};
+    e->facet_surface[1] = 0;
     EXPECT_THROW(mhs::compiler::compile_project({{instance(1, e)}, {}}), std::invalid_argument);
 }

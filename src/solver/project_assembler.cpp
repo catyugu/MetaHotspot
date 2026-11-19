@@ -1,9 +1,9 @@
 #include "solver/assembler.hpp"
 
 #include "contact.hpp"
+#include "core/csr_ops.hpp"
 #include "thermal_physics.hpp"
 #include <cmath>
-#include <set>
 #include <stdexcept>
 
 namespace mhs::solver {
@@ -57,12 +57,12 @@ namespace mhs::solver {
         }
     } // namespace
 
-    ProjectAssembler::ProjectAssembler(const Project& project) : project_(project)
+    ProjectAssembler::ProjectAssembler(const Project& project)
+        : project_(project), thermal_(project.components().size())
     {
-        for (const auto& component : project_.components()) {
-            const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&component.asset);
-            thermal_.push_back(fom ? std::make_unique<ThermalAssembler>(**fom) : nullptr);
-        }
+        for (std::size_t i = 0; i < thermal_.size(); ++i)
+            if (const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&project_.components()[i].asset))
+                thermal_[i].emplace(**fom);
         if (thermal_.size() == 1 && thermal_.front())
             return;
         operators_ = make_operators();
@@ -109,59 +109,61 @@ namespace mhs::solver {
     {
         using core::SparseIndex;
         const auto size = project_.dof_count();
-        // Each contact joins disjoint component ranges. Deduplicate the directed blocks before expanding them.
-        std::set<std::array<std::size_t, 4>> contacts;
+        // Build adjacency over contact blocks before expanding dense modal columns.
+        Vector<core::Triplet<double>> edges;
+        edges.reserve(2 * project_.contacts().size());
         for (const auto& c : project_.contacts()) {
-            const auto l = contact_side(project_, c.left, c.left_facet);
-            const auto r = contact_side(project_, c.right, c.right_facet);
-            contacts.insert({l.first, r.first, l.count(), r.count()});
-            contacts.insert({r.first, l.first, r.count(), l.count()});
+            const auto left = static_cast<SparseIndex>(contact_side(project_, c.left, c.left_facet).first);
+            const auto right = static_cast<SparseIndex>(contact_side(project_, c.right, c.right_facet).first);
+            edges.push_back({left, right, 0});
+            edges.push_back({right, left, 0});
         }
-
-        std::size_t conductance_nnz = 0, capacity_nnz = 0;
-        for (const auto& [row, col, rows, cols] : contacts)
-            conductance_nnz = core::detail::checked_sparse_size(conductance_nnz + rows * cols);
+        const auto adjacency = core::build_csr(size, size, std::move(edges));
+        const auto contact_offsets = adjacency.row_ptr(), contact_blocks = adjacency.col_idx();
+        Vector<SparseIndex> block_width(size, 1);
+        std::size_t stiffness_nnz = 0, capacity_nnz = 0;
         for (std::size_t i = 0; i < thermal_.size(); ++i) {
-            const auto count = project_.dof_size(i);
-            const auto& local = thermal_[i];
-            conductance_nnz = core::detail::checked_sparse_size(
-                conductance_nnz + (local ? local->operators().K.nnz() : count * count));
-            capacity_nnz = core::detail::checked_sparse_size(capacity_nnz + (local ? count : count * count));
+            const auto order = project_.dof_size(i);
+            if (!thermal_[i])
+                block_width[project_.dof_offset(i)] = static_cast<SparseIndex>(order);
+            stiffness_nnz += thermal_[i] ? thermal_[i]->operators().K.nnz() : order * order;
+            capacity_nnz += thermal_[i] ? order : order * order;
         }
+        for (std::size_t i = 0; i < size; ++i)
+            for (auto j = contact_offsets[i]; j < contact_offsets[i + 1]; ++j)
+                stiffness_nnz += static_cast<std::size_t>(block_width[i]) * block_width[contact_blocks[j]];
 
-        Vector<SparseIndex> ptr(size + 1), indices, capacity_ptr(size + 1), capacity_indices;
-        indices.reserve(conductance_nnz);
-        capacity_indices.reserve(capacity_nnz);
-        auto first_contact = contacts.begin();
-        auto dense = [](Vector<SparseIndex>& columns, std::size_t first, std::size_t count) {
-            for (auto col = first; col < first + count; ++col)
-                columns.push_back(static_cast<SparseIndex>(col));
+        Vector<SparseIndex> k_offsets(size + 1), c_offsets(size + 1), k_columns, c_columns;
+        k_columns.reserve(core::detail::checked_sparse_size(stiffness_nnz));
+        c_columns.reserve(core::detail::checked_sparse_size(capacity_nnz));
+        auto dense = [](Vector<SparseIndex>& columns, SparseIndex start, SparseIndex count) {
+            for (auto c = start; c < start + count; ++c)
+                columns.push_back(c);
         };
         for (std::size_t i = 0; i < thermal_.size(); ++i) {
-            const auto offset = project_.dof_offset(i), rows = project_.dof_size(i);
-            const auto& assembler = thermal_[i];
-            const auto* local = assembler ? &assembler->operators().K : nullptr;
-            for (std::size_t r = 0; r < rows; ++r) {
-                const auto row = offset + r, contact_row = local ? row : offset;
-                while (first_contact != contacts.end() && (*first_contact)[0] < contact_row)
-                    ++first_contact;
-                auto contact = first_contact;
-                for (; contact != contacts.end() && (*contact)[0] == contact_row && (*contact)[1] < offset; ++contact)
-                    dense(indices, (*contact)[1], (*contact)[3]);
+            const auto offset = static_cast<SparseIndex>(project_.dof_offset(i));
+            const auto* local = thermal_[i] ? &thermal_[i]->operators().K : nullptr;
+            for (std::size_t r = 0; r < project_.dof_size(i); ++r) {
+                const auto row = offset + static_cast<SparseIndex>(r);
+                const auto block = local ? row : offset;
+                auto edge = contact_offsets[block];
+                const auto last = contact_offsets[block + 1];
+                for (; edge < last && contact_blocks[edge] < offset; ++edge)
+                    dense(k_columns, contact_blocks[edge], block_width[contact_blocks[edge]]);
                 if (local)
                     for (auto j = local->row_ptr()[r]; j < local->row_ptr()[r + 1]; ++j)
-                        indices.push_back(static_cast<SparseIndex>(offset) + local->col_idx()[j]);
+                        k_columns.push_back(offset + local->col_idx()[j]);
                 else
-                    dense(indices, offset, rows);
-                for (; contact != contacts.end() && (*contact)[0] == contact_row; ++contact)
-                    dense(indices, (*contact)[1], (*contact)[3]);
-                ptr[row + 1] = static_cast<SparseIndex>(indices.size());
-                dense(capacity_indices, local ? row : offset, local ? 1 : rows);
-                capacity_ptr[row + 1] = static_cast<SparseIndex>(capacity_indices.size());
+                    dense(k_columns, block, block_width[block]);
+                for (; edge < last; ++edge)
+                    dense(k_columns, contact_blocks[edge], block_width[contact_blocks[edge]]);
+                dense(c_columns, block, block_width[block]);
+                k_offsets[row + 1] = static_cast<SparseIndex>(k_columns.size());
+                c_offsets[row + 1] = static_cast<SparseIndex>(c_columns.size());
             }
         }
-        return {{size, size, std::move(ptr), std::move(indices), Vector<double>(conductance_nnz)},
-            {size, size, std::move(capacity_ptr), std::move(capacity_indices), Vector<double>(capacity_nnz)},
+        return {{size, size, std::move(k_offsets), std::move(k_columns), Vector<double>(stiffness_nnz)},
+            {size, size, std::move(c_offsets), std::move(c_columns), Vector<double>(capacity_nnz)},
             Vector<double>(size)};
     }
 
@@ -183,7 +185,7 @@ namespace mhs::solver {
         for (std::size_t i = 0; i < thermal_.size(); ++i) {
             const auto& component = project_.components()[i];
             const auto offset = project_.dof_offset(i);
-            if (const auto& assembler = thermal_[i]) {
+            if (auto& assembler = thermal_[i]) {
                 const auto& local = assembler->assemble(state.subspan(offset, project_.dof_size(i)), time,
                     project_.facet_contacts(i), component.boundaries);
                 copy_sparse(local.K, operators_.K, offset);
@@ -204,28 +206,28 @@ namespace mhs::solver {
                 for (std::size_t j = 0; j < e.K.rows(); ++j)
                     operators_.f[offset + j] += e.B(j, s) * power;
             }
-            for (const auto& surface : e.surfaces)
-                if (const auto& training = surface.training) {
-                    const auto it = component.boundaries.find(surface.id);
-                    const auto* law = it == component.boundaries.end() ? nullptr : &it->second;
-                    if (law ? is_adiabatic(*law) : training->coefficient == 0)
-                        continue;
-                    const auto& contacts = project_.facet_contacts(i);
-                    for (const auto id : surface.facets) {
-                        const Side side {offset, e.Vb.row(id), e.reference_temperature};
-                        const double temperature = law ? side.temperature(state) : 0;
-                        const auto [g, load] = boundary_terms(contacts, id, e.facets[id], [&](const Facet& patch) {
-                            if (law)
-                                return evaluate_boundary(*law, patch, temperature, time, e.R[id]);
-                            const double g = convection_conductance(patch.area(), training->coefficient, e.R[id]);
-                            return BoundaryTrace {0, g, g * training->ambient};
-                        });
-                        if (g != 0)
-                            add_block(operators_.K, side, side, g);
-                        if (const double rhs = load - g * side.reference; rhs != 0)
-                            add_load(operators_.f, side, rhs);
-                    }
-                }
+            const auto& contacts = project_.facet_contacts(i);
+            for (std::size_t f = 0; f < e.Vb.rows(); ++f) {
+                const auto id = static_cast<FacetId>(f);
+                const auto& surface = e.surfaces[e.facet_surface[id]];
+                const auto& training = *surface.training;
+                const auto it = component.boundaries.find(surface.id);
+                const auto* law = it == component.boundaries.end() ? nullptr : &it->second;
+                if (law ? is_adiabatic(*law) : training.coefficient == 0)
+                    continue;
+                const Side side {offset, e.Vb.row(id), e.reference_temperature};
+                const double temperature = law ? side.temperature(state) : 0;
+                const auto [g, load] = boundary_terms(contacts, id, e.facets[id], [&](const Facet& patch) {
+                    if (law)
+                        return evaluate_boundary(*law, patch, temperature, time, e.R[id]);
+                    const double g = convection_conductance(patch.area(), training.coefficient, e.R[id]);
+                    return BoundaryEvaluation {.conductance = g, .load = g * training.ambient};
+                });
+                if (g != 0)
+                    add_block(operators_.K, side, side, g);
+                if (const double rhs = load - g * side.reference; rhs != 0)
+                    add_load(operators_.f, side, rhs);
+            }
         }
 
         if (fixed_K_.empty())

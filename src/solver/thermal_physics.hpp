@@ -70,13 +70,14 @@ namespace mhs::solver {
         const mhs::model::Fom& model, mhs::model::FacetId id, double k_minus, double k_plus);
 
     // Algebraic elimination of an external boundary's surface temperature.
-    struct BoundaryTrace {
+    struct BoundaryEvaluation {
         double temperature = 0.0;
         double conductance = 0.0;
         double load = 0.0;
+        bool dirichlet = false;
     };
 
-    BoundaryTrace evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
+    BoundaryEvaluation evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
         double temperature, double time, double resistance);
 
     inline std::pair<double, double> boundary_terms(

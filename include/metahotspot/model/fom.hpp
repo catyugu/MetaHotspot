@@ -41,7 +41,7 @@ namespace mhs::model {
         BoundaryCondition condition;
     };
 
-    // Midpoint quadrature on the owning cell.
+    // Midpoint quadrature on the owning cell. Several terms may target the same cell.
     struct SourceTerm {
         CellId cell = mhs::core::invalid_id;
         SourceId source = mhs::core::invalid_id;

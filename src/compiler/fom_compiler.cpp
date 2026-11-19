@@ -123,27 +123,22 @@ namespace mhs::compiler {
                 throw std::out_of_range("cell has no valid material assignment");
 
         // Canonical geometric partition shared by all boundary physics.
-        mhs::core::Vector<mhs::model::SurfaceRegion> cuts;
         mhs::core::Vector<TaggedSurfaceRegion> surface_regions;
         for (std::size_t i = 0; i < definition.thermal_boundaries.size(); ++i) {
             const auto& boundary = definition.thermal_boundaries[i];
             const auto id = static_cast<mhs::model::SurfaceId>(i);
             auto name = boundary.name.empty() ? "boundary " + std::to_string(i) : boundary.name;
             model.surfaces.push_back({std::move(name), compile_thermal_boundary(boundary.condition, symbols)});
-            for (const auto& region : boundary.regions) {
-                cuts.push_back(region);
+            for (const auto& region : boundary.regions)
                 surface_regions.push_back({region, id});
-            }
         }
         const auto fallback_surface = static_cast<mhs::model::SurfaceId>(model.surfaces.size());
         model.surfaces.push_back({"default", compile_thermal_boundary(definition.default_thermal_boundary, symbols)});
         mhs::core::Vector<TaggedSurfaceRegion> fluid_regions;
         for (std::size_t id = 0; id < definition.fluid_boundaries.size(); ++id)
-            for (const auto& region : definition.fluid_boundaries[id].regions) {
-                cuts.push_back(region);
+            for (const auto& region : definition.fluid_boundaries[id].regions)
                 fluid_regions.push_back({region, static_cast<SurfaceTag>(id)});
-            }
-        refine_exterior_facets(model.discrete, cuts);
+        refine_exterior_facets(model.discrete, surface_regions, fluid_regions);
         build_cell_facet_incidence(model.discrete);
 
         model.facet_surface = assign_exterior_regions(model.discrete, surface_regions, fallback_surface);

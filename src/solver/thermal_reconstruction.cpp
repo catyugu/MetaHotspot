@@ -1,22 +1,14 @@
 #include "thermal_reconstruction.hpp"
-#include "thermal_physics.hpp"
 #include <limits>
 #include <optional>
 #include <span>
 
 namespace mhs::solver {
-    BoundarySample sample_boundary_temperature(const model::BoundaryCondition& condition, const model::Facet& patch,
-        double temperature, double time, double resistance)
-    {
-        return {evaluate_boundary(condition, patch, temperature, time, resistance).temperature,
-            std::holds_alternative<model::Dirichlet>(condition)};
-    }
-
     namespace {
-        BoundarySample exterior_sample(const model::Fom& model, double temperature, double time, model::FacetId id)
+        BoundaryEvaluation exterior_sample(const model::Fom& model, double temperature, double time, model::FacetId id)
         {
-            return sample_boundary_temperature(model.surfaces[model.facet_surface[id]].condition,
-                model.discrete.facets[id], temperature, time, boundary_resistance(model, id, temperature, time));
+            return evaluate_boundary(model.surfaces[model.facet_surface[id]].condition, model.discrete.facets[id],
+                temperature, time, boundary_resistance(model, id, temperature, time));
         }
 
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures

@@ -81,17 +81,16 @@ namespace mhs::app::erom {
 
         // Regions without power inputs train against physical ambient inputs, one per HTC group and region.
         core::Vector<std::pair<Eigen::Index, int>> passive_inputs(
-            const Prepared& project, Eigen::Index groups, const core::Vector<int>& regions)
+            const Prepared& project, const core::Vector<int>& regions)
         {
             core::Vector<bool> driven(static_cast<std::size_t>(*std::ranges::max_element(regions) + 1), false);
             for (Eigen::Index cell = 0; cell < project.B.rows(); ++cell)
                 if (project.B.row(cell).squaredNorm() > 0)
                     driven[regions[cell]] = true;
             std::set<std::pair<Eigen::Index, int>> inputs;
-            for (Eigen::Index i = 0; i < groups; ++i)
-                for (const auto id : project.asset.surfaces[i].facets)
-                    if (const auto region = regions[project.boundary_cells[id]]; !driven[region])
-                        inputs.emplace(i, region);
+            for (std::size_t id = 0; id < project.boundary_cells.size(); ++id)
+                if (const auto region = regions[project.boundary_cells[id]]; !driven[region])
+                    inputs.emplace(project.asset.facet_surface[id], region);
             return {inputs.begin(), inputs.end()};
         }
     } // namespace
@@ -117,7 +116,7 @@ namespace mhs::app::erom {
         project.add_boundary(diagonal, closure);
         const Sparse maximum = add_diagonal(K, diagonal);
         const auto shifts = matching_shifts(minimum, maximum, capacity, tolerance, statistics);
-        const auto passive = passive_inputs(project, lower.size(), regions);
+        const auto passive = passive_inputs(project, regions);
         const auto powered = static_cast<std::size_t>(project.B.cols());
         core::Vector<ResponseSpace> spaces;
         for (std::size_t port = 0; port < powered + passive.size(); ++port)
@@ -146,7 +145,7 @@ namespace mhs::app::erom {
                     if (is_passive) {
                         const auto [group, region] = passive[port - powered];
                         ambient.setZero();
-                        for (const auto id : project.asset.surfaces[group].facets)
+                        for (const auto id : project.surface_facets(static_cast<model::SurfaceId>(group)))
                             if (regions[project.boundary_cells[id]] == region)
                                 ambient[id] = closure[id];
                         g.setZero();

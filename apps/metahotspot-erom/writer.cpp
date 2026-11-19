@@ -82,7 +82,11 @@ namespace mhs::app::erom {
             writer.scalar(facet.coordinate);
             writer.values(std::span<const double>(facet.bounds));
         }
-        for (const auto& surface : e.surfaces) {
+        core::Vector<core::Vector<model::FacetId>> facets_by_surface(e.surfaces.size());
+        for (std::size_t id = 0; id < e.facet_surface.size(); ++id)
+            facets_by_surface[e.facet_surface[id]].push_back(static_cast<model::FacetId>(id));
+        for (std::size_t i = 0; i < e.surfaces.size(); ++i) {
+            const auto& surface = e.surfaces[i];
             writer.count(surface.id);
             writer.name(surface.name);
             const auto& h = surface.training;
@@ -90,8 +94,8 @@ namespace mhs::app::erom {
             if (h)
                 for (const double value : {h->minimum, h->maximum, h->coefficient, h->ambient})
                     writer.scalar(value);
-            writer.count(surface.facets.size());
-            for (const auto id : surface.facets)
+            writer.count(facets_by_surface[i].size());
+            for (const auto id : facets_by_surface[i])
                 writer.count(id);
         }
         for (const auto& source : e.sources) {
@@ -102,9 +106,12 @@ namespace mhs::app::erom {
         for (const auto& output : e.outputs) {
             writer.count(output.id);
             writer.name(output.name);
-            writer.count(output.source);
-            if (output.point)
-                writer.values(std::span<const double>(*output.point));
+            if (const auto* point = std::get_if<model::Vec3>(&output.location)) {
+                writer.count(core::invalid_id);
+                writer.values(std::span<const double>(*point));
+            }
+            else
+                writer.count(std::get<model::SourceId>(output.location));
         }
         writer.close();
 #ifdef _WIN32

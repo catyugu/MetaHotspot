@@ -1,4 +1,3 @@
-#include "compiler/geometry_compiler.hpp"
 #include "extraction.hpp"
 #include "solver/assembler.hpp"
 #include "solver/thermal_reconstruction.hpp"
@@ -48,7 +47,7 @@ namespace mhs::app::erom {
                         + " depends directly on HTC boundary temperature and cannot be represented by L");
             }
             const solver::BoundarySampler adiabatic
-                = [&](FacetId, const Vec3*) { return solver::BoundarySample {state[probe.cell], false}; };
+                = [&](FacetId, const Vec3*) { return solver::BoundaryEvaluation {.temperature = state[probe.cell]}; };
             for (const auto cell : support) {
                 state[cell] = 1;
                 weights.emplace_back(
@@ -115,7 +114,10 @@ namespace mhs::app::erom {
                         "EROM extraction requires positive material properties on active cells");
         }
 
-        const auto facets_by_surface = compiler::group_exterior_facets(model);
+        core::Vector<core::Vector<FacetId>> facets_by_surface(model.surfaces.size());
+        for (std::size_t id = 0; id < model.facet_surface.size(); ++id)
+            if (const auto surface = model.facet_surface[id]; surface != core::invalid_id)
+                facets_by_surface[surface].push_back(static_cast<FacetId>(id));
         for (const auto& [id, range] : ranges) {
             if (id >= model.surfaces.size())
                 throw std::invalid_argument("unknown or empty HTC group " + std::to_string(id));
@@ -143,7 +145,7 @@ namespace mhs::app::erom {
                 const auto range = ranges.find(surface);
                 if (facets.empty() || trained != (range != ranges.end()))
                     continue;
-                EromSurface target {surface, model.surfaces[surface].name, {}, std::nullopt};
+                EromSurface target {surface, model.surfaces[surface].name, std::nullopt};
                 const auto& condition = model.surfaces[surface].condition;
                 const auto* htc = std::get_if<Convection>(&condition);
                 const double h = htc ? constant(htc->coefficient, "HTC") : 0;
@@ -155,15 +157,11 @@ namespace mhs::app::erom {
                     throw std::invalid_argument("surface " + std::to_string(surface)
                         + " has a Dirichlet or nonzero Neumann condition unsupported by EROM extraction");
 
-                auto append = [&](const Facet& facet) {
-                    target.facets.push_back(static_cast<FacetId>(asset.facets.size()));
-                    asset.facets.push_back(facet);
-                };
                 if (trained) {
                     target.training = {range->second.minimum, range->second.maximum, h,
                         htc ? constant(htc->ambient_temperature, "Ambient temperature") : asset.reference_temperature};
                     for (const auto id : facets) {
-                        append(mesh.facets[id]);
+                        asset.facets.push_back(mesh.facets[id]);
                         result.boundary_cells.push_back(mesh.cell_facets[id].owner());
                         asset.R.push_back(assembler.resistance(id));
                     }
@@ -172,9 +170,10 @@ namespace mhs::app::erom {
                     core::Vector<Facet> geometry;
                     for (const auto id : facets)
                         geometry.push_back(mesh.facets[id]);
-                    for (const auto& facet : outline(std::move(geometry)))
-                        append(facet);
+                    const auto merged = outline(std::move(geometry));
+                    asset.facets.insert(asset.facets.end(), merged.begin(), merged.end());
                 }
+                asset.facet_surface.resize(asset.facets.size(), static_cast<SurfaceId>(asset.surfaces.size()));
                 asset.surfaces.push_back(std::move(target));
             }
 
@@ -200,8 +199,7 @@ namespace mhs::app::erom {
             if (name.empty())
                 name = "source " + std::to_string(id);
             columns[id] = static_cast<SourceId>(asset.sources.size());
-            asset.outputs.push_back(
-                {static_cast<OutputId>(asset.outputs.size()), name + " temperature", std::nullopt, id});
+            asset.outputs.push_back({static_cast<OutputId>(asset.outputs.size()), name + " temperature", id});
             asset.sources.push_back({id, std::move(name), density * volumes[id]});
         }
 
