@@ -25,7 +25,7 @@ static CubeDefinition cube_definition()
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
     mat.density = mat.specific_heat = "1";
     d.materials.push_back({"solid", mat});
-    d.sources = {"0"};
+    d.sources = {{{}, "0"}};
     d.volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
     return d;
 }
@@ -75,7 +75,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         const mhs::core::Vector<double> state {350};
         for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
             const auto& facet = model.discrete.facets[id];
-            const auto& condition = model.surfaces[model.facet_surface[id]].condition;
+            const auto& condition = model.boundary_groups[model.facet_boundary[id]].condition;
             const auto center = facet.center();
             const double d = model.discrete.cells[model.discrete.cell_facets[id].owner()]
                                  .size()[static_cast<std::size_t>(facet.axis)]
@@ -148,7 +148,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
         const auto& facet = model.discrete.facets[id];
         if (facet.normal == 0)
             continue;
-        const auto& condition = model.surfaces[model.facet_surface[id]].condition;
+        const auto& condition = model.boundary_groups[model.facet_boundary[id]].condition;
         const auto& flux = std::get<mhs::model::Neumann>(condition).heat_flux;
         const auto center = facet.center();
         if (flux.eval({center[0], center[1], center[2], 300, 0}) == 10.0)
@@ -165,10 +165,10 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossConformalCells)
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
     auto& first = d.volumes[0];
     first.geometry = {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.25, 1, 1}}};
-    d.sources[0] = "4*z";
+    d.sources[0].density = "4*z";
     auto second = first;
     second.geometry = {{mhs::model::GeometryOperation::Add, {0.25, 0, 0}, {1, 1, 1}}};
-    d.sources.push_back("8*z");
+    d.sources.push_back({{}, "8*z"});
     second.source = 1;
     d.volumes.push_back(second);
 

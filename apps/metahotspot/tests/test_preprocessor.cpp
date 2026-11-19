@@ -29,7 +29,7 @@ static const Condition* find_condition(const Fom& model, std::size_t cell_idx, F
         const auto& facet = model.discrete.facets[id];
         if (static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
             && facet.normal == (static_cast<int>(dir) % 2 ? 1 : -1))
-            if (auto* condition = std::get_if<Condition>(&model.surfaces[model.facet_surface[id]].condition))
+            if (auto* condition = std::get_if<Condition>(&model.boundary_groups[model.facet_boundary[id]].condition))
                 return condition;
     }
     return nullptr;
@@ -276,8 +276,8 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
     // mhs::model::ThermalBoundarySpec: Dirichlet 500K on Z bottom face
     mhs::model::ThermalBoundarySpec boundary;
     boundary.condition = mhs::model::DirichletBoundary {"500"};
-    for (const auto& rectangle : {mhs::model::RegionRect {0.0, 50.0, 50.0, 100.0},
-             mhs::model::RegionRect {50.0, 100.0, 0.0, 50.0}, mhs::model::RegionRect {50.0, 100.0, 50.0, 100.0}})
+    for (const auto& rectangle : {mhs::model::Rect {0.0, 50.0, 50.0, 100.0}, mhs::model::Rect {50.0, 100.0, 0.0, 50.0},
+             mhs::model::Rect {50.0, 100.0, 50.0, 100.0}})
         boundary.regions.push_back({mhs::model::Axis::Z, 0.0, rectangle});
     io.model.thermal_boundaries.push_back(boundary);
 

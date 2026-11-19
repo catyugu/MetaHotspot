@@ -22,18 +22,18 @@ namespace mhs::solver {
 
         void add_block(core::CSRMatrix<double>& matrix, const Side& rows, const Side& cols, double scale)
         {
-            for (std::size_t i = 0; i < rows.count(); ++i) {
+            for (std::size_t i = 0; i < rows.weights.size(); ++i) {
                 const auto idx = slot(matrix, rows.first + i, cols.first);
-                const auto factor = scale * rows.value(i);
-                for (std::size_t j = 0; j < cols.count(); ++j)
-                    matrix.values()[idx + j] += factor * cols.value(j);
+                const auto factor = scale * rows.weights[i];
+                for (std::size_t j = 0; j < cols.weights.size(); ++j)
+                    matrix.values()[idx + j] += factor * cols.weights[j];
             }
         }
 
         void add_load(Vector<double>& rhs, const Side& rows, double scale)
         {
-            for (std::size_t i = 0; i < rows.count(); ++i)
-                rhs[rows.first + i] += scale * rows.value(i);
+            for (std::size_t i = 0; i < rows.weights.size(); ++i)
+                rhs[rows.first + i] += scale * rows.weights[i];
         }
 
         void copy_sparse(const core::CSRMatrix<double>& local, core::CSRMatrix<double>& global, std::size_t offset)
@@ -85,19 +85,20 @@ namespace mhs::solver {
 
     void ProjectAssembler::assemble_contacts()
     {
+        auto resistance = [&](ContactSide side) {
+            const auto i = side.component;
+            if (thermal_[i])
+                return thermal_[i]->resistance(side.facet);
+            const auto& erom = *std::get<std::shared_ptr<const Erom>>(project_.components()[i].asset);
+            return erom.interfaces[side.facet].resistance;
+        };
         for (const auto& patch : project_.patches()) {
             if (!patch.contact)
                 continue;
             const auto& c = *patch.contact;
-            const auto left = contact_side(project_, c.left.component, c.left.facet);
-            const auto right = contact_side(project_, c.right.component, c.right.facet);
-            auto resistance = [&](std::size_t i, FacetId facet) {
-                return thermal_[i] ? thermal_[i]->resistance(facet)
-                                   : std::get<std::shared_ptr<const Erom>>(project_.components()[i].asset)->interfaces[facet].resistance;
-            };
-            const auto g = patch.area()
-                / contact_resistance(
-                    resistance(c.left.component, c.left.facet), resistance(c.right.component, c.right.facet), c.resistance);
+            const auto left = contact_side(project_, c.left);
+            const auto right = contact_side(project_, c.right);
+            const auto g = patch.area() / contact_resistance(resistance(c.left), resistance(c.right), c.resistance);
             add_block(operators_.K, left, left, g);
             add_block(operators_.K, right, right, g);
             add_block(operators_.K, left, right, -g);
@@ -119,8 +120,8 @@ namespace mhs::solver {
             if (!patch.contact)
                 continue;
             const auto& c = *patch.contact;
-            const auto left = static_cast<SparseIndex>(contact_side(project_, c.left.component, c.left.facet).first);
-            const auto right = static_cast<SparseIndex>(contact_side(project_, c.right.component, c.right.facet).first);
+            const auto left = static_cast<SparseIndex>(contact_side(project_, c.left).first);
+            const auto right = static_cast<SparseIndex>(contact_side(project_, c.right).first);
             edges.push_back({left, right, 0});
             edges.push_back({right, left, 0});
         }
@@ -180,20 +181,19 @@ namespace mhs::solver {
         if (thermal_.size() == 1 && thermal_.front())
             return thermal_.front()->assemble(state, time, &project_);
 
-        if (fixed_K_.empty()) {
-            std::ranges::fill(operators_.K.values(), 0.0);
-            std::ranges::fill(operators_.f, 0.0);
-        }
-        else {
+        const bool cached = !fixed_K_.empty();
+        if (cached) {
             std::ranges::copy(fixed_K_, operators_.K.values().begin());
             std::ranges::copy(fixed_f_, operators_.f.begin());
         }
+        else
+            std::ranges::fill(operators_.K.values(), 0.0);
         for (std::size_t i = 0; i < thermal_.size(); ++i) {
             const auto& component = project_.components()[i];
             const auto offset = project_.dof_offset(i);
             if (auto& assembler = thermal_[i]) {
-                const auto& local = assembler->assemble(state.subspan(offset, project_.dof_size(i)), time,
-                    &project_, i);
+                const auto& local
+                    = assembler->assemble(state.subspan(offset, project_.dof_size(i)), time, &project_, i);
                 copy_sparse(local.K, operators_.K, offset);
                 std::ranges::copy(local.C.values(), operators_.C.values().begin() + operators_.C.row_ptr()[offset]);
                 std::ranges::copy(local.f, operators_.f.begin() + offset);
@@ -201,8 +201,10 @@ namespace mhs::solver {
             }
 
             const auto& e = *std::get<std::shared_ptr<const Erom>>(component.asset);
-            if (fixed_K_.empty())
+            if (!cached) {
                 copy_dense(e.K, operators_.K, offset);
+                std::fill_n(operators_.f.begin() + offset, e.K.rows(), 0.0);
+            }
             for (SourceId s = 0; s < e.sources.size(); ++s) {
                 const auto& source = e.sources[s];
                 const auto it = component.powers.find(s);
@@ -212,12 +214,10 @@ namespace mhs::solver {
                 for (std::size_t j = 0; j < e.K.rows(); ++j)
                     operators_.f[offset + j] += e.B(j, s) * power;
             }
-            for (std::size_t f = 0; f < e.Vb.rows(); ++f) {
-                const auto id = static_cast<FacetId>(f);
+            for (FacetId id = 0; id < e.interfaces.size(); ++id) {
                 const auto& interface = e.interfaces[id];
-                const auto& surface = e.surfaces[interface.surface];
-                const auto it = component.boundaries.find(interface.surface);
-                const auto* law = it == component.boundaries.end() ? nullptr : &it->second;
+                const auto& surface = e.boundary_groups[interface.surface];
+                const auto* law = boundary_override(component.boundaries, interface.surface);
                 if (law ? is_adiabatic(*law) : surface.coefficient == 0)
                     continue;
                 const Side side {offset, e.Vb.row(id), e.reference_temperature};
@@ -235,7 +235,7 @@ namespace mhs::solver {
             }
         }
 
-        if (fixed_K_.empty())
+        if (!cached)
             assemble_contacts();
         return operators_;
     }

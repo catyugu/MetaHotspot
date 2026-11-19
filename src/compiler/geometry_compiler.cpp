@@ -9,16 +9,6 @@ namespace mhs::compiler {
 
     constexpr double EPS = mhs::model::geometry_eps;
 
-    namespace {
-
-        bool point_in_region(const mhs::model::SurfaceRegion& region, double a, double b)
-        {
-            const auto& r = region.rectangle;
-            return a >= r.a_min - EPS && a <= r.a_max + EPS && b >= r.b_min - EPS && b <= r.b_max + EPS;
-        }
-
-    } // namespace
-
     std::optional<std::size_t> classify_point(
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& p)
     {
@@ -61,18 +51,15 @@ namespace mhs::compiler {
                 for (const auto& [region, tag] : regions) {
                     if (region.axis != facet.axis || std::abs(region.coordinate - facet.coordinate) >= EPS)
                         continue;
-                    const auto& r = region.rectangle;
-                    if (r.a_max <= facet.bounds[0] || r.a_min >= facet.bounds[1] || r.b_max <= facet.bounds[2]
-                        || r.b_min >= facet.bounds[3])
+                    const auto hit = rect_intersection(region.bounds, facet.bounds);
+                    if (!hit)
                         continue;
                     if (a.empty()) {
                         a = {facet.bounds[0], facet.bounds[1]};
                         b = {facet.bounds[2], facet.bounds[3]};
                     }
-                    a.push_back(std::clamp(r.a_min, facet.bounds[0], facet.bounds[1]));
-                    a.push_back(std::clamp(r.a_max, facet.bounds[0], facet.bounds[1]));
-                    b.push_back(std::clamp(r.b_min, facet.bounds[2], facet.bounds[3]));
-                    b.push_back(std::clamp(r.b_max, facet.bounds[2], facet.bounds[3]));
+                    a.insert(a.end(), {(*hit)[0], (*hit)[1]});
+                    b.insert(b.end(), {(*hit)[2], (*hit)[3]});
                 }
             if (a.empty()) {
                 append(facet);
@@ -110,7 +97,7 @@ namespace mhs::compiler {
             const auto b = (facet.bounds[2] + facet.bounds[3]) / 2;
             for (auto it = regions.rbegin(); it != regions.rend(); ++it) {
                 if (it->region.axis == facet.axis && std::abs(it->region.coordinate - facet.coordinate) < EPS
-                    && point_in_region(it->region, a, b)) {
+                    && mhs::model::rect_contains(it->region.bounds, a, b)) {
                     assigned[id] = it->tag;
                     break;
                 }

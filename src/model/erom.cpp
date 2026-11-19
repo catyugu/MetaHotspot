@@ -127,20 +127,20 @@ namespace mhs::model {
             "invalid temperature initialization");
         auto validate_facet = [](const Facet& facet) {
             require(static_cast<unsigned>(facet.axis) < 3 && (facet.normal == -1 || facet.normal == 1)
-                    && std::isfinite(facet.coordinate) && finite(facet.bounds) && facet.bounds[0] < facet.bounds[1]
-                    && facet.bounds[2] < facet.bounds[3] && std::isfinite(facet.area()) && facet.area() > 0,
+                    && std::isfinite(facet.coordinate) && finite(facet.bounds) && positive_rect(facet.bounds)
+                    && std::isfinite(facet.area()) && facet.area() > 0,
                 "invalid exterior facet geometry");
         };
-        core::Vector<bool> used(e.surfaces.size(), false);
+        core::Vector<bool> used(e.boundary_groups.size(), false);
         for (const auto& interface : e.interfaces) {
             validate_facet(interface.facet);
             require(std::isfinite(interface.resistance) && interface.resistance > 0,
                 "half-cell resistance must be positive and finite");
-            require(interface.surface < e.surfaces.size(), "invalid interface surface");
+            require(interface.surface < e.boundary_groups.size(), "invalid interface surface");
             used[interface.surface] = true;
         }
         require(std::ranges::all_of(used, [](bool x) { return x; }), "empty surface");
-        for (const auto& h : e.surfaces)
+        for (const auto& h : e.boundary_groups)
             require(!h.name.empty() && std::isfinite(h.minimum) && std::isfinite(h.maximum)
                     && std::isfinite(h.coefficient) && std::isfinite(h.ambient) && h.minimum >= 0 && h.maximum > 0
                     && h.maximum >= h.minimum && h.coefficient >= 0,
@@ -188,7 +188,7 @@ namespace mhs::model {
             e->interfaces.push_back({facet(), reader.f64(), reader.u32()});
         reader.check_count(ng, 36);
         for (std::size_t i = 0; i < ng; ++i)
-            e->surfaces.push_back({reader.name(), reader.f64(), reader.f64(), reader.f64(), reader.f64()});
+            e->boundary_groups.push_back({reader.name(), reader.f64(), reader.f64(), reader.f64(), reader.f64()});
         reader.check_count(nl, 8);
         for (std::size_t i = 0; i < nl; ++i) {
             EromOutline group {reader.name(), {}};

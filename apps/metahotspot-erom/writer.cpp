@@ -68,8 +68,8 @@ namespace mhs::app::erom {
         const Temporary cleanup {temporary};
         Writer writer(temporary);
         writer.count(model::erom_codec::version);
-        for (const auto count :
-            {e.K.rows(), e.sources.size(), e.outputs.size(), e.interfaces.size(), e.surfaces.size(), e.outline.size()})
+        for (const auto count : {e.K.rows(), e.sources.size(), e.outputs.size(), e.interfaces.size(),
+                 e.boundary_groups.size(), e.outline.size()})
             writer.count(count);
         writer.scalar(e.reference_temperature);
         for (const auto* matrix : {&e.K, &e.C, &e.B, &e.L, &e.Vb})
@@ -86,7 +86,7 @@ namespace mhs::app::erom {
             writer.scalar(interface.resistance);
             writer.count(interface.surface);
         }
-        for (const auto& surface : e.surfaces) {
+        for (const auto& surface : e.boundary_groups) {
             writer.name(surface.name);
             for (const double value : {surface.minimum, surface.maximum, surface.coefficient, surface.ambient})
                 writer.scalar(value);

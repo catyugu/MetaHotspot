@@ -141,17 +141,17 @@ namespace mhs::solver {
         return operators_;
     }
 
-    const Operators& ThermalAssembler::assemble(std::span<const double> temperature, double time,
-        const model::Project* project, std::size_t component)
+    const Operators& ThermalAssembler::assemble(
+        std::span<const double> temperature, double time, const model::Project* project, std::size_t component)
     {
         assemble_internal(temperature, time);
-        for (std::size_t i = 0; i < model_.facet_surface.size(); ++i) {
-            const auto surface = model_.facet_surface[i];
+        const auto* overrides = project ? &project->components()[component].boundaries : nullptr;
+        for (std::size_t i = 0; i < model_.facet_boundary.size(); ++i) {
+            const auto surface = model_.facet_boundary[i];
             if (surface == core::invalid_id)
                 continue;
-            const auto& fallback = model_.surfaces[surface].condition;
-            const auto& law = project ? boundary_override(project->components()[component].boundaries, surface, fallback)
-                                      : fallback;
+            const auto& fallback = model_.boundary_groups[surface].condition;
+            const auto& law = overrides ? *boundary_override(*overrides, surface, &fallback) : fallback;
             if (is_adiabatic(law))
                 continue;
             const auto id = static_cast<model::FacetId>(i);

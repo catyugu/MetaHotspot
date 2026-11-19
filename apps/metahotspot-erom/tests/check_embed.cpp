@@ -20,8 +20,7 @@ namespace {
         FomDefinition definition;
         definition.reference_temperature = 295;
         definition.materials = {{"solid", {MaterialKind::Solid, "2", "2", "2", "1", "4", {}}}, {"unused", {}}};
-        definition.sources = {"5", "0", "8"};
-        definition.source_names = {"heater A", "", "heater B"};
+        definition.sources = {{"heater A", "5"}, {{}, "0"}, {"heater B", "8"}};
         for (SourceId i = 0; i < 3; ++i) {
             const double x = i;
             definition.volumes.push_back({0, i, {{GeometryOperation::Add, {x, 0, 0}, {x + 1, 1, 1}}}});
@@ -54,20 +53,18 @@ namespace {
     {
         check(e.K.rows() == 3 && e.C.rows() == 3 && e.Vb.rows() == 4 && e.B.cols() == 2 && e.L.rows() == 3,
             "wrong matrix dimensions");
-        check(e.surfaces.size() == 2 && e.outline.size() == 1 && e.outline[0].facets.size() == 4,
+        check(e.boundary_groups.size() == 2 && e.outline.size() == 1 && e.outline[0].facets.size() == 4,
             "wrong HTC groups or outline");
-        check(e.surfaces[0].name == "upstream" && e.interfaces.size() == 4
-                && e.interfaces[0].surface == 0 && e.interfaces[1].surface == 0
-                && e.interfaces[2].surface == 1 && e.interfaces[3].surface == 1,
+        check(e.boundary_groups[0].name == "upstream" && e.interfaces.size() == 4 && e.interfaces[0].surface == 0
+                && e.interfaces[1].surface == 0 && e.interfaces[2].surface == 1 && e.interfaces[3].surface == 1,
             "wrong facet ownership");
-        check(e.sources[0].name == "heater A" && e.sources[1].name == "heater B"
-                && e.outputs[0].name == "off center" && std::get<SourceId>(e.outputs[1].location) == 0
-                && std::get<SourceId>(e.outputs[2].location) == 1,
+        check(e.sources[0].name == "heater A" && e.sources[1].name == "heater B" && e.outputs[0].name == "off center"
+                && std::get<SourceId>(e.outputs[1].location) == 0 && std::get<SourceId>(e.outputs[2].location) == 1,
             "wrong source or output identity");
         near(e.sources[0].default_power, 5);
         near(e.sources[1].default_power, 8);
-        near(e.surfaces[0].maximum, 1e4);
-        near(e.surfaces[1].maximum, 9);
+        near(e.boundary_groups[0].maximum, 1e4);
+        near(e.boundary_groups[1].maximum, 9);
         near(e.reference_temperature, 295);
         for (const auto& facet : e.interfaces)
             near(facet.resistance, 0.25);
@@ -107,7 +104,8 @@ namespace {
         if (variant == "trace")
             definition.point_probes.push_back({"HTC trace", 3, 0.5, 0.5});
         if (variant == "passive" || variant == "flux") {
-            definition.sources = {"0", "0", "0"};
+            for (auto& source : definition.sources)
+                source.density = "0";
             definition.point_probes.clear();
         }
         if (variant == "flux")
@@ -117,8 +115,9 @@ namespace {
             ranges.emplace(2, HtcRange {1, 10});
         }
         if (variant == "partial") {
-            definition.thermal_boundaries[0].regions[0].rectangle.a_max = 0.75;
-            definition.sources = {"0", "0", "0"};
+            definition.thermal_boundaries[0].regions[0].bounds[1] = 0.75;
+            for (auto& source : definition.sources)
+                source.density = "0";
             definition.materials[1] = {"resistive", {MaterialKind::Solid, "0.02", "0.02", "0.02", "1", "4", {}}};
             definition.volumes.push_back({1, core::invalid_id, {{GeometryOperation::Add, {0, 0.5, 0}, {1, 1, 1}}}});
         }

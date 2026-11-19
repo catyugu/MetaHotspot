@@ -294,7 +294,7 @@ MHS_API mhs_status_t mhs_model_add_source(mhs_model_t* m, const char* expression
     CHECK_NULL(out_id);
     MHS_TRY({
         *out_id = static_cast<mhs_index_t>(m->def.sources.size());
-        m->def.sources.push_back(expression);
+        m->def.sources.push_back({{}, expression});
     });
 }
 MHS_API mhs_status_t mhs_model_add_volume(mhs_model_t* m, mhs_index_t material, mhs_index_t source, mhs_index_t* out_id)

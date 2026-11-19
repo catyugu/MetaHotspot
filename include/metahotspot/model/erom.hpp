@@ -18,7 +18,7 @@ namespace mhs::model {
         std::variant<Vec3, SourceId> location = core::invalid_id; // point or source-volume average
     };
 
-    struct EromSurface {
+    struct EromBoundaryGroup {
         std::string name;
         double minimum, maximum;
         double coefficient = 0; // default environment after embedding
@@ -39,7 +39,7 @@ namespace mhs::model {
     struct Erom {
         core::Matrix<double> K, C, B, L, Vb;
         core::Vector<EromInterface> interfaces; // indexed by Vb row
-        core::Vector<EromSurface> surfaces; // connectable HTC groups, indexed by SurfaceId
+        core::Vector<EromBoundaryGroup> boundary_groups; // connectable HTC groups, indexed by SurfaceId
         core::Vector<EromOutline> outline; // untrained groups used only for contact diagnostics
         core::Vector<EromSource> sources;
         core::Vector<EromOutput> outputs;

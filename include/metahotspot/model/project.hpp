@@ -45,10 +45,10 @@ namespace mhs::model {
             ContactSide left, right;
             double resistance; // m² K/W
         };
-        std::array<double, 4> bounds; // world coordinates for contact, component coordinates for exposure
+        Rect bounds; // world coordinates for contact, component coordinates for exposure
         std::optional<Contact> contact;
 
-        double area() const { return (bounds[1] - bounds[0]) * (bounds[3] - bounds[2]); }
+        double area() const { return rect_area(bounds); }
     };
 
     struct Project {

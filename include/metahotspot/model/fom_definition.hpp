@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/vector.hpp"
-#include "model/types.hpp"
+#include "model/surface.hpp"
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -47,17 +47,10 @@ namespace mhs::model {
 
     using ThermalBoundary = std::variant<DirichletBoundary, NeumannBoundary, ConvectionBoundary>;
 
-    struct RegionRect {
-        double a_min = 0.0;
-        double a_max = 0.0;
-        double b_min = 0.0;
-        double b_max = 0.0;
-    };
-
     struct SurfaceRegion {
         Axis axis = Axis::Z;
         double coordinate = 0.0;
-        RegionRect rectangle;
+        Rect bounds {};
     };
 
     template <typename Condition> struct SurfaceConditionSpec {
@@ -81,6 +74,11 @@ namespace mhs::model {
     struct NamedMaterial {
         std::string name;
         MaterialSpec value;
+    };
+
+    struct NamedSource {
+        std::string name;
+        Expression density; // W/m³
     };
 
     struct ExpressionFunctionSpec {
@@ -154,13 +152,12 @@ namespace mhs::model {
         double reference_temperature = 300.0;
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;
-        mhs::core::Vector<Expression> sources;
+        mhs::core::Vector<NamedSource> sources;
         mhs::core::Vector<VolumeSpec> volumes;
         mhs::core::Vector<ThermalBoundarySpec> thermal_boundaries;
         ThermalBoundary default_thermal_boundary = NeumannBoundary {};
         mhs::core::Vector<PointProbeSpec> point_probes;
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
-        mhs::core::Vector<std::string> source_names; // optional, by SourceId
     };
 
 } // namespace mhs::model

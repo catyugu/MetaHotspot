@@ -5,11 +5,11 @@
 
 namespace mhs::solver {
 
-    inline const model::BoundaryCondition& boundary_override(
-        const model::BoundaryOverrides& overrides, model::SurfaceId surface, const model::BoundaryCondition& fallback)
+    inline const model::BoundaryCondition* boundary_override(const model::BoundaryOverrides& overrides,
+        model::SurfaceId surface, const model::BoundaryCondition* fallback = nullptr)
     {
         const auto it = overrides.find(surface);
-        return it == overrides.end() ? fallback : it->second;
+        return it == overrides.end() ? fallback : &it->second;
     }
 
     // Unit-area Fourier conduction resistance; no fluid/interface model involved.
@@ -74,7 +74,8 @@ namespace mhs::solver {
     inline std::pair<double, double> boundary_terms(const model::Project* project, std::size_t component,
         model::FacetId id, model::Facet facet, const auto& evaluate)
     {
-        const auto indices = project ? project->facet_patches(component, id) : std::span<const std::size_t> {};
+        const auto indices = project && !project->patches().empty() ? project->facet_patches(component, id)
+                                                                    : std::span<const std::size_t> {};
         if (indices.empty()) {
             const auto trace = evaluate(facet);
             return {trace.conductance, trace.load};

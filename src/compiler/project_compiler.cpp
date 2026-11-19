@@ -12,23 +12,15 @@
 namespace mhs::compiler {
     using namespace model;
     namespace {
-        using Rect = std::array<double, 4>;
         using core::Vector;
-
-        std::optional<Rect> overlap(const Rect& a, const Rect& b)
-        {
-            Rect r {std::max(a[0], b[0]), std::min(a[1], b[1]), std::max(a[2], b[2]), std::min(a[3], b[3])};
-            if (r[1] > r[0] && r[3] > r[2])
-                return r;
-            return std::nullopt;
-        }
 
         Rect translate(Rect r, Axis axis, const Vec3& offset)
         {
-            r[0] += offset[axis == Axis::X ? 1 : 0];
-            r[1] += offset[axis == Axis::X ? 1 : 0];
-            r[2] += offset[axis == Axis::Z ? 1 : 2];
-            r[3] += offset[axis == Axis::Z ? 1 : 2];
+            const auto [u, v] = tangential_axes(axis);
+            r[0] += offset[u];
+            r[1] += offset[u];
+            r[2] += offset[v];
+            r[3] += offset[v];
             return r;
         }
 
@@ -51,7 +43,7 @@ namespace mhs::compiler {
             template <typename Match> void search(const Rect& rect, const Match& match, std::size_t index = 0) const
             {
                 const auto& node = nodes_[index];
-                if (!overlap(rect, node.rect))
+                if (!rect_intersection(rect, node.rect))
                     return;
                 if (node.right) {
                     search(rect, match, index + 1);
@@ -59,7 +51,7 @@ namespace mhs::compiler {
                     return;
                 }
                 for (const auto& face : node.leaf)
-                    if (const auto hit = overlap(rect, face.rect))
+                    if (const auto hit = rect_intersection(rect, face.rect))
                         match(face, *hit);
             }
 
@@ -108,13 +100,13 @@ namespace mhs::compiler {
                     local[i] = original.bounds[i];
             Vector<Rect> remainder;
             auto append = [&](const Rect& r) {
-                if (r[1] > r[0] && r[3] > r[2])
+                if (positive_rect(r))
                     remainder.push_back(r);
             };
             double removed = 0;
             for (const auto& r : exposed) {
-                if (const auto x = overlap(r, local)) {
-                    removed += ((*x)[1] - (*x)[0]) * ((*x)[3] - (*x)[2]);
+                if (const auto x = rect_intersection(r, local)) {
+                    removed += rect_area(*x);
                     append({r[0], (*x)[0], r[2], r[3]});
                     append({(*x)[1], r[1], r[2], r[3]});
                     append({(*x)[0], (*x)[1], r[2], (*x)[2]});
@@ -123,8 +115,7 @@ namespace mhs::compiler {
                 else
                     remainder.push_back(r);
             }
-            const double area = (local[1] - local[0]) * (local[3] - local[2]);
-            if (removed < area * (1 - 1e-8))
+            if (removed < rect_area(local) * (1 - 1e-8))
                 throw std::invalid_argument("overlapping thermal contacts on one component facet");
             exposed = std::move(remainder);
         }
@@ -168,7 +159,7 @@ namespace mhs::compiler {
                     }
                     project.dof_offsets_.push_back(core::detail::checked_sparse_size(project.dof_count() + size));
                     for (const auto& [id, law] : component.boundaries)
-                        if (id >= asset->surfaces.size())
+                        if (id >= asset->boundary_groups.size())
                             throw std::invalid_argument("unknown or non-connectable component surface ID");
                     if (components.size() <= 1)
                         return;
@@ -179,7 +170,7 @@ namespace mhs::compiler {
                         const auto rect = translate(f.bounds, f.axis, component.offset);
                         if (!std::isfinite(plane)
                             || !std::ranges::all_of(rect, [](double x) { return std::isfinite(x); })
-                            || rect[0] >= rect[1] || rect[2] >= rect[3])
+                            || !positive_rect(rect))
                             throw std::invalid_argument("component translation exceeds facet precision");
                         auto& faces = f.normal > 0 ? positive[axis][plane].faces : negative[axis];
                         faces.push_back({i, id, &f, surface, name, outline, rect});
@@ -187,16 +178,16 @@ namespace mhs::compiler {
                     if constexpr (reduced) {
                         for (FacetId id = 0; id < asset->interfaces.size(); ++id) {
                             const auto& f = asset->interfaces[id];
-                            append(id, f.facet, f.surface, asset->surfaces[f.surface].name);
+                            append(id, f.facet, f.surface, asset->boundary_groups[f.surface].name);
                         }
                         for (SurfaceId group = 0; group < asset->outline.size(); ++group)
                             for (const auto& f : asset->outline[group].facets)
                                 append(core::invalid_id, f, group, asset->outline[group].name, true);
                     }
                     else {
-                        for (FacetId id = 0; id < asset->facet_surface.size(); ++id)
-                            if (const auto surface = asset->facet_surface[id]; surface != core::invalid_id)
-                                append(id, asset->discrete.facets[id], surface, asset->surfaces[surface].name);
+                        for (FacetId id = 0; id < asset->facet_boundary.size(); ++id)
+                            if (const auto surface = asset->facet_boundary[id]; surface != core::invalid_id)
+                                append(id, asset->discrete.facets[id], surface, asset->boundary_groups[surface].name);
                     }
                 },
                 component.asset);
@@ -224,7 +215,8 @@ namespace mhs::compiler {
                             return;
                         const auto l = components[left.component].id, r = components[right.component].id;
                         if (left.outline || right.outline) {
-                            const auto key = std::tuple {l, left.outline, left.surface, r, right.outline, right.surface};
+                            const auto key
+                                = std::tuple {l, left.outline, left.surface, r, right.outline, right.surface};
                             if (warned.insert(key).second)
                                 MHS_LOG_WARN("Components {} ({}) and {} ({}): EROM surface is not connectable; thermal "
                                              "contact is ignored",
@@ -233,13 +225,16 @@ namespace mhs::compiler {
                         }
                         for (const auto* side : {&left, &right}) {
                             auto& remainders = exposed[side->component];
-                            auto it = remainders.try_emplace(side->id, Vector<Rect> {side->facet->bounds}).first;
+                            auto [it, inserted] = remainders.try_emplace(side->id);
+                            if (inserted)
+                                it->second.push_back(side->facet->bounds);
                             cover(it->second, *side, cut, components[side->component].offset);
                             project.facet_patches_[side->component][side->id].push_back(project.patches_.size());
                         }
                         const auto resistance = resistances.find(std::minmax(l, r));
-                        project.patches_.push_back({cut, SurfacePatch::Contact {{left.component, left.id},
-                            {right.component, right.id}, resistance == resistances.end() ? 0.0 : resistance->second}});
+                        project.patches_.push_back({cut,
+                            SurfacePatch::Contact {{left.component, left.id}, {right.component, right.id},
+                                resistance == resistances.end() ? 0.0 : resistance->second}});
                     });
             }
         }

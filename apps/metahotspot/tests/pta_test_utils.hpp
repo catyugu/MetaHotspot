@@ -6,8 +6,7 @@
 #include "pta/definition.hpp"
 #include "pta/io.hpp"
 namespace test_pta {
-    inline mhs::model::SurfaceRegion face_region(
-        mhs::model::Axis axis, double coordinate, mhs::model::RegionRect rectangle)
+    inline mhs::model::SurfaceRegion face_region(mhs::model::Axis axis, double coordinate, mhs::model::Rect rectangle)
     {
         return {axis, coordinate, rectangle};
     }

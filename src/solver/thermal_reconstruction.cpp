@@ -7,8 +7,8 @@ namespace mhs::solver {
     namespace {
         BoundaryEvaluation exterior_sample(const model::Fom& model, double temperature, double time, model::FacetId id)
         {
-            return evaluate_boundary(model.surfaces[model.facet_surface[id]].condition, model.discrete.facets[id],
-                temperature, time, boundary_resistance(model, id, temperature, time));
+            return evaluate_boundary(model.boundary_groups[model.facet_boundary[id]].condition,
+                model.discrete.facets[id], temperature, time, boundary_resistance(model, id, temperature, time));
         }
 
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures

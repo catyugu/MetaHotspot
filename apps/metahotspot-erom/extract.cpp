@@ -12,17 +12,10 @@ namespace mhs::app::erom {
     void Prepared::set_conductances(Eigen::Ref<Vector> values, const Vector& h) const
     {
         for (Eigen::Index id = 0; id < values.size(); ++id) {
-            const auto& interface = asset.interfaces[id];
-            values[id] = solver::convection_conductance(interface.facet.area(), h[interface.surface], interface.resistance);
+            const auto& interface = interfaces[id];
+            values[id]
+                = solver::convection_conductance(interface.facet.area(), h[interface.surface], interface.resistance);
         }
-    }
-
-    Vector Prepared::parameters(double model::EromSurface::* field) const
-    {
-        Vector values(asset.surfaces.size());
-        for (Eigen::Index i = 0; i < values.size(); ++i)
-            values[i] = asset.surfaces[i].*field;
-        return values;
     }
 
     void Prepared::add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const
@@ -65,12 +58,11 @@ namespace mhs::app::erom {
         }
 
         double validate_outputs(const Prepared& project, const Matrix& boundary, const Matrix& stiffness,
-            const Matrix& B, const Matrix& L, double tolerance, const core::Vector<int>& regions)
+            const Matrix& B, const Matrix& L, const Vector& lower, const Vector& upper, double tolerance,
+            const core::Vector<int>& regions)
         {
-            if (project.asset.outputs.empty())
+            if (project.outputs.empty())
                 return 0;
-            const Vector lower = project.parameters(&model::EromSurface::minimum);
-            const Vector upper = project.parameters(&model::EromSurface::maximum);
             const auto n = project.K.rows(), ng = lower.size();
             Vector closure(static_cast<Eigen::Index>(project.boundary_cells.size())), rhs(n);
             double worst = 0;
@@ -99,7 +91,7 @@ namespace mhs::app::erom {
                 if (defaults) {
                     Vector powers(B.cols());
                     for (Eigen::Index i = 0; i < powers.size(); ++i)
-                        powers[i] = project.asset.sources[i].default_power;
+                        powers[i] = project.sources[i].default_power;
                     rhs.noalias() = project.B * powers;
                     load.noalias() = B * powers;
                 }
@@ -113,9 +105,9 @@ namespace mhs::app::erom {
                         rhs.setZero();
                         load.setZero();
                     }
-                    const auto& surface = project.asset.surfaces[i];
-                    const double delta = defaults ? surface.ambient - project.asset.reference_temperature : 1;
-                    for (const auto id : project.training_facets[i]) {
+                    const auto& group = project.training[i];
+                    const double delta = defaults ? group.surface.ambient - project.reference_temperature : 1;
+                    for (const auto id : group.facets) {
                         const double power = closure[id] * delta;
                         rhs[project.boundary_cells[id]] += power;
                         load.noalias() += power * boundary.row(id).transpose();
@@ -136,7 +128,10 @@ namespace mhs::app::erom {
                         h[i] = (i + alternate) % 2 ? upper[i] : lower[i];
                     check(h);
                 }
-            check(project.parameters(&model::EromSurface::coefficient), true);
+            Vector defaults(ng);
+            for (Eigen::Index i = 0; i < ng; ++i)
+                defaults[i] = project.training[i].surface.coefficient;
+            check(defaults, true);
             if (worst > tolerance) {
                 std::ostringstream message;
                 message << "output validation error " << worst << " exceeds tolerance " << tolerance;
@@ -173,9 +168,14 @@ namespace mhs::app::erom {
         if (!covers_regions(project, regions, Vector::Ones(static_cast<Eigen::Index>(project.boundary_cells.size()))))
             throw std::invalid_argument("each thermally disconnected FOM region needs an HTC training surface");
 
-        Extraction result;
-        auto& e = project.asset;
-        const Matrix basis = build_basis(project, regions, tolerance, result.statistics);
+        Statistics statistics;
+        const auto ng = static_cast<Eigen::Index>(project.training.size());
+        Vector lower(ng), upper(ng);
+        for (Eigen::Index i = 0; i < ng; ++i) {
+            lower[i] = project.training[i].surface.minimum;
+            upper[i] = project.training[i].surface.maximum;
+        }
+        const Matrix basis = build_basis(project, lower, upper, regions, tolerance, statistics);
         Matrix C = basis.transpose() * (project.capacity.asDiagonal() * basis);
         Matrix K = basis.transpose() * (project.K * basis);
         C = ((C + C.transpose()) * 0.5).eval();
@@ -185,15 +185,15 @@ namespace mhs::app::erom {
         const Vector rhs = basis.transpose() * project.capacity;
         const Vector uniform = solve_positive(C, rhs);
         const Matrix boundary = basis(project.boundary_cells, Eigen::placeholders::all);
-        result.statistics.output_error = validate_outputs(project, boundary, K, B, L, tolerance, regions);
-        e.K = native(K);
-        e.C = native(C);
-        e.B = native(B);
-        e.L = native(L);
-        e.uniform_temperature_mode.assign(uniform.begin(), uniform.end());
-        e.Vb = native(boundary);
-        model::validate_erom(e);
-        result.asset = std::move(e);
-        return result;
+        statistics.output_error = validate_outputs(project, boundary, K, B, L, lower, upper, tolerance, regions);
+        core::Vector<model::EromBoundaryGroup> surfaces;
+        surfaces.reserve(project.training.size());
+        for (auto& group : project.training)
+            surfaces.push_back(std::move(group.surface));
+        model::Erom asset {native(K), native(C), native(B), native(L), native(boundary), std::move(project.interfaces),
+            std::move(surfaces), std::move(project.outline), std::move(project.sources), std::move(project.outputs),
+            project.reference_temperature, {uniform.begin(), uniform.end()}};
+        model::validate_erom(asset);
+        return {std::move(asset), statistics};
     }
 } // namespace mhs::app::erom

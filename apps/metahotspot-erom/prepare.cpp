@@ -41,7 +41,7 @@ namespace mhs::app::erom {
                     continue;
                 }
                 const auto axis = static_cast<std::size_t>(facet.axis);
-                if (ranges.contains(model.facet_surface[f])
+                if (ranges.contains(model.facet_boundary[f])
                     && (on_boundary ? facet.contains(probe.point) : probe.point[axis] != center[axis]))
                     throw std::invalid_argument("probe " + probe.name
                         + " depends directly on HTC boundary temperature and cannot be represented by L");
@@ -58,21 +58,18 @@ namespace mhs::app::erom {
 
         bool exterior_region(const DiscreteMesh& mesh, const SurfaceRegion& region)
         {
-            const auto& r = region.rectangle;
             double covered = 0;
             for (std::size_t i = 0; i < mesh.facets.size(); ++i) {
                 const auto& f = mesh.facets[i];
                 if (f.axis != region.axis || std::abs(f.coordinate - region.coordinate) >= geometry_eps)
                     continue;
-                const auto a = std::min(f.bounds[1], r.a_max) - std::max(f.bounds[0], r.a_min);
-                const auto b = std::min(f.bounds[3], r.b_max) - std::max(f.bounds[2], r.b_min);
-                if (a > 0 && b > 0) {
+                if (const auto hit = rect_intersection(f.bounds, region.bounds)) {
                     if (!mesh.cell_facets[i].exterior())
                         return false;
-                    covered += a * b;
+                    covered += rect_area(*hit);
                 }
             }
-            return covered >= (r.a_max - r.a_min) * (r.b_max - r.b_min) * (1 - 1e-8);
+            return covered >= rect_area(region.bounds) * (1 - 1e-8);
         }
 
         core::Vector<model::Facet> outline(core::Vector<model::Facet> facets)
@@ -114,57 +111,55 @@ namespace mhs::app::erom {
                         "EROM extraction requires positive material properties on active cells");
         }
 
-        core::Vector<core::Vector<FacetId>> facets_by_surface(model.surfaces.size());
-        for (std::size_t id = 0; id < model.facet_surface.size(); ++id)
-            if (const auto surface = model.facet_surface[id]; surface != core::invalid_id)
+        core::Vector<core::Vector<FacetId>> facets_by_surface(model.boundary_groups.size());
+        for (std::size_t id = 0; id < model.facet_boundary.size(); ++id)
+            if (const auto surface = model.facet_boundary[id]; surface != core::invalid_id)
                 facets_by_surface[surface].push_back(static_cast<FacetId>(id));
-        for (const auto& [id, range] : ranges) {
-            if (id >= model.surfaces.size())
+        for (const auto& [id, range] : ranges)
+            if (id >= facets_by_surface.size() || facets_by_surface[id].empty())
                 throw std::invalid_argument("unknown or empty HTC group " + std::to_string(id));
-            if (id < definition.thermal_boundaries.size())
+        for (SurfaceId id = 0; id < definition.thermal_boundaries.size(); ++id)
+            if (ranges.contains(id))
                 for (const auto& region : definition.thermal_boundaries[id].regions)
                     if (!exterior_region(mesh, region))
                         throw std::invalid_argument("HTC group " + std::to_string(id) + " must lie on the exterior");
-            if (facets_by_surface[id].empty())
-                throw std::invalid_argument("unknown or empty HTC group " + std::to_string(id));
-        }
 
         solver::ThermalAssembler assembler(model);
         core::Vector<double> state(mesh.cells.size(), model.reference_temperature);
         const auto& operators = assembler.assemble_internal(state, 0);
-        Prepared result;
+        Prepared result {};
         const auto n = static_cast<Eigen::Index>(mesh.cells.size());
         result.K = Eigen::Map<const Sparse>(n, n, static_cast<Eigen::Index>(operators.K.nnz()),
             operators.K.row_ptr().data(), operators.K.col_idx().data(), operators.K.values().data());
         result.capacity = Eigen::Map<const Vector>(operators.C.values().data(), n);
-        auto& asset = result.asset;
-        asset.reference_temperature = model.reference_temperature;
-        for (SurfaceId surface = 0; surface < model.surfaces.size(); ++surface) {
+        result.reference_temperature = model.reference_temperature;
+        for (SurfaceId surface = 0; surface < model.boundary_groups.size(); ++surface) {
             const auto& facets = facets_by_surface[surface];
             const auto range = ranges.find(surface);
             if (facets.empty())
                 continue;
             const bool trained = range != ranges.end();
-            const auto& name = model.surfaces[surface].name;
-            const auto& condition = model.surfaces[surface].condition;
+            const auto& name = model.boundary_groups[surface].name;
+            const auto& condition = model.boundary_groups[surface].condition;
             const auto* htc = std::get_if<Convection>(&condition);
             const double h = htc ? constant(htc->coefficient, "HTC") : 0;
             if (h < 0 || (h > 0 && !trained))
-                throw std::invalid_argument(
-                    "surface " + std::to_string(surface) + " has an untrained or negative HTC");
+                throw std::invalid_argument("surface " + std::to_string(surface) + " has an untrained or negative HTC");
             if (const auto* flux = std::get_if<Neumann>(&condition);
                 !htc && (!flux || constant(flux->heat_flux, "Neumann heat flux") != 0))
                 throw std::invalid_argument("surface " + std::to_string(surface)
                     + " has a Dirichlet or nonzero Neumann condition unsupported by EROM extraction");
 
             if (trained) {
-                const auto group = static_cast<SurfaceId>(asset.surfaces.size());
-                asset.surfaces.push_back({name, range->second.minimum, range->second.maximum, h,
-                    htc ? constant(htc->ambient_temperature, "Ambient temperature") : asset.reference_temperature});
-                result.training_facets.emplace_back();
+                const auto group = static_cast<SurfaceId>(result.training.size());
+                const double ambient
+                    = htc ? constant(htc->ambient_temperature, "Ambient temperature") : result.reference_temperature;
+                auto& training = result.training.emplace_back(
+                    Prepared::HtcGroup {{name, range->second.minimum, range->second.maximum, h, ambient}, {}});
+                training.facets.reserve(facets.size());
                 for (const auto id : facets) {
-                    result.training_facets.back().push_back(static_cast<Eigen::Index>(asset.interfaces.size()));
-                    asset.interfaces.push_back({mesh.facets[id], assembler.resistance(id), group});
+                    training.facets.push_back(static_cast<Eigen::Index>(result.interfaces.size()));
+                    result.interfaces.push_back({mesh.facets[id], assembler.resistance(id), group});
                     result.boundary_cells.push_back(mesh.cell_facets[id].owner());
                 }
             }
@@ -172,7 +167,7 @@ namespace mhs::app::erom {
                 core::Vector<Facet> geometry;
                 for (const auto id : facets)
                     geometry.push_back(mesh.facets[id]);
-                asset.outline.push_back({name, outline(std::move(geometry))});
+                result.outline.push_back({name, outline(std::move(geometry))});
             }
         }
 
@@ -181,7 +176,7 @@ namespace mhs::app::erom {
         for (std::size_t i = 0; i < model.point_probes.size(); ++i) {
             const auto id = static_cast<OutputId>(i);
             project_probe(model, ranges, id, state, weights);
-            asset.outputs.push_back({model.point_probes[i].name, model.point_probes[i].point});
+            result.outputs.push_back({model.point_probes[i].name, model.point_probes[i].point});
         }
 
         core::Vector<double> volumes(model.heat_source_table.size());
@@ -194,22 +189,22 @@ namespace mhs::app::erom {
             const double density = constant(model.heat_source_table[id], "Volumetric source");
             if (density == 0)
                 continue;
-            auto name = definition.source_names.empty() ? std::string {} : definition.source_names[id];
+            auto name = definition.sources[id].name;
             if (name.empty())
                 name = "source " + std::to_string(id);
-            columns[id] = static_cast<SourceId>(asset.sources.size());
-            asset.outputs.push_back({name + " temperature", columns[id]});
-            asset.sources.push_back({std::move(name), density * volumes[id]});
+            columns[id] = static_cast<SourceId>(result.sources.size());
+            result.outputs.push_back({name + " temperature", columns[id]});
+            result.sources.push_back({std::move(name), density * volumes[id]});
         }
 
-        result.B = Matrix::Zero(n, static_cast<Eigen::Index>(asset.sources.size()));
+        result.B = Matrix::Zero(n, static_cast<Eigen::Index>(result.sources.size()));
         for (const auto& term : model.source_terms)
             if (const auto col = columns[term.source]; col != core::invalid_id) {
                 const double weight = mesh.cells[term.cell].volume() / volumes[term.source];
                 result.B(term.cell, col) += weight;
                 weights.emplace_back(model.point_probes.size() + col, term.cell, weight);
             }
-        result.L.resize(static_cast<Eigen::Index>(asset.outputs.size()), n);
+        result.L.resize(static_cast<Eigen::Index>(result.outputs.size()), n);
         result.L.setFromTriplets(weights.begin(), weights.end());
         return result;
     }

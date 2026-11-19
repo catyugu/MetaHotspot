@@ -26,12 +26,11 @@ namespace mhs::model {
                     if (output < (*model)->point_probes.size())
                         return translate((*model)->point_probes[output].point, c.offset);
                 }
-                else
-                    if (const auto& outputs = std::get<std::shared_ptr<const Erom>>(c.asset)->outputs;
-                        output < outputs.size()) {
-                        const auto* point = std::get_if<Vec3>(&outputs[output].location);
-                        return point ? std::optional {translate(*point, c.offset)} : std::nullopt;
-                    }
+                else if (const auto& outputs = std::get<std::shared_ptr<const Erom>>(c.asset)->outputs;
+                    output < outputs.size()) {
+                    const auto* point = std::get_if<Vec3>(&outputs[output].location);
+                    return point ? std::optional {translate(*point, c.offset)} : std::nullopt;
+                }
                 break;
             }
         throw std::out_of_range("unknown component output");

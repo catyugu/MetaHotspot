@@ -46,12 +46,12 @@ namespace {
         if (left_open) {
             e->Vb(1, 0) = 1;
             e->interfaces.push_back({left, 0.25, 0});
-            e->surfaces.push_back({"left", 1, 10, 2, 310});
+            e->boundary_groups.push_back({"left", 1, 10, 2, 310});
         }
         else
             e->outline.push_back({"left", {left}});
-        e->interfaces.push_back({right, 0.25, static_cast<SurfaceId>(e->surfaces.size())});
-        e->surfaces.push_back({"right", 1, 10, 1, 330});
+        e->interfaces.push_back({right, 0.25, static_cast<SurfaceId>(e->boundary_groups.size())});
+        e->boundary_groups.push_back({"right", 1, 10, 1, 330});
         e->reference_temperature = reference;
         e->uniform_temperature_mode = {1};
         e->sources = {{"first", 0}, {"second", 1}};
