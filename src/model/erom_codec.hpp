@@ -11,7 +11,7 @@
 
 namespace mhs::model::erom_codec {
     inline constexpr std::string_view magic = "MHEROM\r\n";
-    inline constexpr std::uint32_t version = 2;
+    inline constexpr std::uint32_t version = 3;
     static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559);
 
     // Numeric arrays are contiguous, with matrices in row-major order.

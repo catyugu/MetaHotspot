@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
-#include <set>
 #include <stdexcept>
 
 namespace mhs::model {
@@ -100,8 +99,8 @@ namespace mhs::model {
         const auto n = e.K.rows(), nf = e.Vb.rows();
         require(n > 0 && e.K.cols() == n && e.C.rows() == n && e.C.cols() == n, "invalid K/C dimensions");
         require(e.B.rows() == n && e.B.cols() == e.sources.size() && e.L.rows() == e.outputs.size() && e.L.cols() == n
-                && e.Vb.cols() == n && e.R.size() == nf && nf <= e.facets.size(),
-            "invalid B/L/Vb/R dimensions");
+                && e.Vb.cols() == n && nf == e.interfaces.size(),
+            "invalid B/L/Vb dimensions");
         for (const auto* matrix : {&e.K, &e.C, &e.B, &e.L, &e.Vb})
             for (std::size_t i = 0; i < matrix->rows(); ++i)
                 require(finite(matrix->row(i)), "nonfinite matrix entry");
@@ -126,45 +125,37 @@ namespace mhs::model {
         require(std::isfinite(e.reference_temperature) && e.uniform_temperature_mode.size() == n
                 && finite(e.uniform_temperature_mode),
             "invalid temperature initialization");
-        require(finite(e.R) && std::ranges::all_of(e.R, [](double r) { return r > 0; }),
-            "half-cell resistance must be positive and finite");
-        for (const auto& facet : e.facets)
+        auto validate_facet = [](const Facet& facet) {
             require(static_cast<unsigned>(facet.axis) < 3 && (facet.normal == -1 || facet.normal == 1)
                     && std::isfinite(facet.coordinate) && finite(facet.bounds) && facet.bounds[0] < facet.bounds[1]
                     && facet.bounds[2] < facet.bounds[3] && std::isfinite(facet.area()) && facet.area() > 0,
                 "invalid exterior facet geometry");
-
-        std::set<SurfaceId> surfaces;
-        require(e.facet_surface.size() == e.facets.size(), "invalid facet-to-surface map size");
+        };
         core::Vector<bool> used(e.surfaces.size(), false);
-        for (std::size_t i = 0; i < e.facet_surface.size(); ++i) {
-            const auto surface = e.facet_surface[i];
-            require(surface < e.surfaces.size() && (i < nf) == e.surfaces[surface].training.has_value(),
-                "invalid facet surface");
-            used[surface] = true;
+        for (const auto& interface : e.interfaces) {
+            validate_facet(interface.facet);
+            require(std::isfinite(interface.resistance) && interface.resistance > 0,
+                "half-cell resistance must be positive and finite");
+            require(interface.surface < e.surfaces.size(), "invalid interface surface");
+            used[interface.surface] = true;
         }
         require(std::ranges::all_of(used, [](bool x) { return x; }), "empty surface");
-        for (const auto& s : e.surfaces) {
-            require(s.id != core::invalid_id && surfaces.insert(s.id).second && !s.name.empty(),
-                "invalid or duplicate surface");
-            const auto& h = s.training;
-            if (h)
-                require(std::isfinite(h->minimum) && std::isfinite(h->maximum) && std::isfinite(h->coefficient)
-                        && std::isfinite(h->ambient) && h->minimum >= 0 && h->maximum > 0 && h->maximum >= h->minimum
-                        && h->coefficient >= 0,
-                    "invalid HTC values");
+        for (const auto& h : e.surfaces)
+            require(!h.name.empty() && std::isfinite(h.minimum) && std::isfinite(h.maximum)
+                    && std::isfinite(h.coefficient) && std::isfinite(h.ambient) && h.minimum >= 0 && h.maximum > 0
+                    && h.maximum >= h.minimum && h.coefficient >= 0,
+                "invalid HTC surface");
+        for (const auto& group : e.outline) {
+            require(!group.name.empty() && !group.facets.empty(), "invalid outline group");
+            for (const auto& facet : group.facets)
+                validate_facet(facet);
         }
-        std::set<SourceId> sources;
         for (const auto& s : e.sources)
-            require(s.id != core::invalid_id && sources.insert(s.id).second && !s.name.empty()
-                    && std::isfinite(s.default_power),
-                "invalid or duplicate source");
-        std::set<OutputId> outputs;
+            require(!s.name.empty() && std::isfinite(s.default_power), "invalid source");
         for (const auto& o : e.outputs) {
             const auto* point = std::get_if<Vec3>(&o.location);
-            require(o.id != core::invalid_id && outputs.insert(o.id).second && !o.name.empty()
-                    && (point ? finite(*point) : sources.contains(std::get<SourceId>(o.location))),
-                "invalid or duplicate temperature output");
+            require(!o.name.empty() && (point ? finite(*point) : std::get<SourceId>(o.location) < e.sources.size()),
+                "invalid temperature output");
         }
     }
 
@@ -173,9 +164,9 @@ namespace mhs::model {
         Reader reader(path);
         require(reader.bytes(erom_codec::magic.size()) == erom_codec::magic, "invalid magic");
         require(reader.u32() == erom_codec::version, "unsupported version");
-        const auto n = reader.u32(), ns = reader.u32(), no = reader.u32(), nb = reader.u32(), nf = reader.u32(),
-                   ng = reader.u32();
-        require(n > 0 && nb <= nf, "invalid record counts");
+        const auto n = reader.u32(), ns = reader.u32(), no = reader.u32(), nb = reader.u32(), ng = reader.u32(),
+                   nl = reader.u32();
+        require(n > 0, "invalid record counts");
         auto e = std::make_shared<Erom>();
         e->reference_temperature = reader.f64();
         e->K = reader.matrix(n, n);
@@ -183,44 +174,36 @@ namespace mhs::model {
         e->B = reader.matrix(n, ns);
         e->L = reader.matrix(no, n);
         e->Vb = reader.matrix(nb, n);
-        e->R = reader.vector(nb);
         e->uniform_temperature_mode = reader.vector(n);
-        reader.check_count(nf, 48);
-        for (std::size_t i = 0; i < nf; ++i) {
+        auto facet = [&] {
             const auto axis = reader.u32(), normal = reader.u32();
             require(axis < 3 && normal <= 1, "invalid facet axis or normal");
-            Facet f;
-            f.axis = static_cast<Axis>(axis);
-            f.normal = normal ? 1 : -1;
-            f.coordinate = reader.f64();
+            Facet f {static_cast<Axis>(axis), static_cast<std::int8_t>(normal ? 1 : -1), reader.f64(), {}};
             for (auto& x : f.bounds)
                 x = reader.f64();
-            e->facets.push_back(f);
-        }
-        reader.check_count(ng, 16);
-        e->facet_surface.assign(nf, core::invalid_id);
-        for (SurfaceId i = 0; i < ng; ++i) {
-            EromSurface surface {reader.u32(), reader.name(), std::nullopt};
-            const auto trained = reader.u32();
-            require(trained <= 1, "invalid surface training flag");
-            if (trained)
-                surface.training = EromSurfaceTraining {reader.f64(), reader.f64(), reader.f64(), reader.f64()};
+            return f;
+        };
+        reader.check_count(nb, 60);
+        for (std::size_t i = 0; i < nb; ++i)
+            e->interfaces.push_back({facet(), reader.f64(), reader.u32()});
+        reader.check_count(ng, 36);
+        for (std::size_t i = 0; i < ng; ++i)
+            e->surfaces.push_back({reader.name(), reader.f64(), reader.f64(), reader.f64(), reader.f64()});
+        reader.check_count(nl, 8);
+        for (std::size_t i = 0; i < nl; ++i) {
+            EromOutline group {reader.name(), {}};
             const auto count = reader.u32();
-            reader.check_count(count, 4);
-            for (std::size_t f = 0; f < count; ++f) {
-                const auto id = reader.u32();
-                require(
-                    id < nf && e->facet_surface[id] == core::invalid_id, "invalid or duplicate surface facet index");
-                e->facet_surface[id] = i;
-            }
-            e->surfaces.push_back(std::move(surface));
+            reader.check_count(count, 48);
+            for (std::size_t j = 0; j < count; ++j)
+                group.facets.push_back(facet());
+            e->outline.push_back(std::move(group));
         }
-        reader.check_count(ns, 16);
+        reader.check_count(ns, 12);
         for (std::size_t i = 0; i < ns; ++i)
-            e->sources.push_back({reader.u32(), reader.name(), reader.f64()});
-        reader.check_count(no, 12);
+            e->sources.push_back({reader.name(), reader.f64()});
+        reader.check_count(no, 8);
         for (std::size_t i = 0; i < no; ++i) {
-            EromOutput output {reader.u32(), reader.name(), reader.u32()};
+            EromOutput output {reader.name(), reader.u32()};
             if (std::get<SourceId>(output.location) == core::invalid_id)
                 output.location = Vec3 {reader.f64(), reader.f64(), reader.f64()};
             e->outputs.push_back(std::move(output));

@@ -36,7 +36,9 @@ namespace mhs::compiler {
             std::size_t component;
             FacetId id;
             const Facet* facet;
-            const EromSurface* surface;
+            SurfaceId surface;
+            std::string_view name;
+            bool outline;
             Rect rect;
         };
 
@@ -97,26 +99,20 @@ namespace mhs::compiler {
             Vector<Node> nodes_;
         };
 
-        void cover(FacetContact& record, const Face& side, const Rect& cut, const Vec3& offset, std::size_t contact)
+        void cover(Vector<Rect>& exposed, const Face& side, const Rect& cut, const Vec3& offset)
         {
             const auto& original = *side.facet;
             auto local = translate(cut, original.axis, {-offset[0], -offset[1], -offset[2]});
             for (std::size_t i = 0; i < local.size(); ++i)
                 if (cut[i] == side.rect[i])
                     local[i] = original.bounds[i];
-            if (record.contacts.empty())
-                record.exposed.push_back(original);
-            Vector<Facet> remainder;
+            Vector<Rect> remainder;
             auto append = [&](const Rect& r) {
-                if (r[1] > r[0] && r[3] > r[2]) {
-                    auto patch = original;
-                    patch.bounds = r;
-                    remainder.push_back(patch);
-                }
+                if (r[1] > r[0] && r[3] > r[2])
+                    remainder.push_back(r);
             };
             double removed = 0;
-            for (const auto& patch : record.exposed) {
-                const auto& r = patch.bounds;
+            for (const auto& r : exposed) {
                 if (const auto x = overlap(r, local)) {
                     removed += ((*x)[1] - (*x)[0]) * ((*x)[3] - (*x)[2]);
                     append({r[0], (*x)[0], r[2], r[3]});
@@ -125,13 +121,12 @@ namespace mhs::compiler {
                     append({(*x)[0], (*x)[1], (*x)[3], r[3]});
                 }
                 else
-                    remainder.push_back(patch);
+                    remainder.push_back(r);
             }
             const double area = (local[1] - local[0]) * (local[3] - local[2]);
             if (removed < area * (1 - 1e-8))
                 throw std::invalid_argument("overlapping thermal contacts on one component facet");
-            record.exposed = std::move(remainder);
-            record.contacts.push_back(contact);
+            exposed = std::move(remainder);
         }
     } // namespace
 
@@ -140,7 +135,7 @@ namespace mhs::compiler {
         Project project;
         project.components_ = std::move(definition.components);
         const auto components = project.components();
-        project.facet_contacts_.resize(components.size());
+        project.facet_patches_.resize(components.size());
         std::set<ComponentId> ids;
         std::set<const Erom*> validated;
         std::array<std::map<double, Plane>, 3> positive;
@@ -163,8 +158,7 @@ namespace mhs::compiler {
                             validate_erom(*asset);
                         size = asset->K.rows();
                         for (const auto& [id, schedule] : component.powers)
-                            if (!schedule
-                                || !std::ranges::any_of(asset->sources, [id](const auto& s) { return s.id == id; }))
+                            if (!schedule || id >= asset->sources.size())
                                 throw std::invalid_argument("unknown EROM source ID or empty power schedule");
                     }
                     else {
@@ -173,20 +167,13 @@ namespace mhs::compiler {
                             throw std::invalid_argument("FOM source laws belong to the model");
                     }
                     project.dof_offsets_.push_back(core::detail::checked_sparse_size(project.dof_count() + size));
-                    for (const auto& [id, law] : component.boundaries) {
-                        const bool known = [&] {
-                            if constexpr (reduced)
-                                return std::ranges::any_of(asset->surfaces,
-                                    [id](const auto& surface) { return surface.id == id && surface.training; });
-                            else
-                                return id < asset->surfaces.size();
-                        }();
-                        if (!known)
+                    for (const auto& [id, law] : component.boundaries)
+                        if (id >= asset->surfaces.size())
                             throw std::invalid_argument("unknown or non-connectable component surface ID");
-                    }
                     if (components.size() <= 1)
                         return;
-                    auto append = [&](FacetId id, const Facet& f, const EromSurface* surface = nullptr) {
+                    auto append = [&](FacetId id, const Facet& f, SurfaceId surface, std::string_view name,
+                                      bool outline = false) {
                         const auto axis = static_cast<std::size_t>(f.axis);
                         const auto plane = f.coordinate + component.offset[axis];
                         const auto rect = translate(f.bounds, f.axis, component.offset);
@@ -195,17 +182,21 @@ namespace mhs::compiler {
                             || rect[0] >= rect[1] || rect[2] >= rect[3])
                             throw std::invalid_argument("component translation exceeds facet precision");
                         auto& faces = f.normal > 0 ? positive[axis][plane].faces : negative[axis];
-                        faces.push_back({i, id, &f, surface, rect});
+                        faces.push_back({i, id, &f, surface, name, outline, rect});
                     };
                     if constexpr (reduced) {
-                        for (std::size_t id = 0; id < asset->facets.size(); ++id)
-                            append(static_cast<FacetId>(id), asset->facets[id],
-                                &asset->surfaces[asset->facet_surface[id]]);
+                        for (FacetId id = 0; id < asset->interfaces.size(); ++id) {
+                            const auto& f = asset->interfaces[id];
+                            append(id, f.facet, f.surface, asset->surfaces[f.surface].name);
+                        }
+                        for (SurfaceId group = 0; group < asset->outline.size(); ++group)
+                            for (const auto& f : asset->outline[group].facets)
+                                append(core::invalid_id, f, group, asset->outline[group].name, true);
                     }
                     else {
-                        for (std::size_t id = 0; id < asset->facet_surface.size(); ++id)
-                            if (asset->facet_surface[id] != core::invalid_id)
-                                append(static_cast<FacetId>(id), asset->discrete.facets[id]);
+                        for (FacetId id = 0; id < asset->facet_surface.size(); ++id)
+                            if (const auto surface = asset->facet_surface[id]; surface != core::invalid_id)
+                                append(id, asset->discrete.facets[id], surface, asset->surfaces[surface].name);
                     }
                 },
                 component.asset);
@@ -218,14 +209,8 @@ namespace mhs::compiler {
                 throw std::invalid_argument(
                     "contact resistance requires two valid sorted component IDs and a finite nonnegative value");
 
-        std::set<std::tuple<ComponentId, SurfaceId, ComponentId, SurfaceId>> warned;
-        auto surface_info = [&](const Face& side) -> std::pair<SurfaceId, std::string_view> {
-            if (side.surface)
-                return {side.surface->id, side.surface->name};
-            const auto& fom = *std::get<std::shared_ptr<const Fom>>(components[side.component].asset);
-            const auto id = fom.facet_surface[side.id];
-            return {id, fom.surfaces[id].name};
-        };
+        std::set<std::tuple<ComponentId, bool, SurfaceId, ComponentId, bool, SurfaceId>> warned;
+        Vector<std::map<FacetId, Vector<Rect>>> exposed(components.size());
         for (std::size_t axis = 0; axis < positive.size(); ++axis) {
             auto& index = positive[axis];
             for (auto& [coordinate, group] : index)
@@ -238,25 +223,34 @@ namespace mhs::compiler {
                         if (left.component == right.component)
                             return;
                         const auto l = components[left.component].id, r = components[right.component].id;
-                        if ((left.surface && !left.surface->training) || (right.surface && !right.surface->training)) {
-                            const auto [left_id, left_name] = surface_info(left);
-                            const auto [right_id, right_name] = surface_info(right);
-                            const auto key = std::tuple {l, left_id, r, right_id};
+                        if (left.outline || right.outline) {
+                            const auto key = std::tuple {l, left.outline, left.surface, r, right.outline, right.surface};
                             if (warned.insert(key).second)
                                 MHS_LOG_WARN("Components {} ({}) and {} ({}): EROM surface is not connectable; thermal "
                                              "contact is ignored",
-                                    l, left_name, r, right_name);
+                                    l, left.name, r, right.name);
                             return;
                         }
-                        for (const auto* side : {&left, &right})
-                            cover(project.facet_contacts_[side->component][side->id], *side, cut,
-                                components[side->component].offset, project.contacts_.size());
+                        for (const auto* side : {&left, &right}) {
+                            auto& remainders = exposed[side->component];
+                            auto it = remainders.try_emplace(side->id, Vector<Rect> {side->facet->bounds}).first;
+                            cover(it->second, *side, cut, components[side->component].offset);
+                            project.facet_patches_[side->component][side->id].push_back(project.patches_.size());
+                        }
                         const auto resistance = resistances.find(std::minmax(l, r));
-                        project.contacts_.push_back({left.component, right.component, left.id, right.id, cut,
-                            resistance == resistances.end() ? 0.0 : resistance->second});
+                        project.patches_.push_back({cut, SurfacePatch::Contact {{left.component, left.id},
+                            {right.component, right.id}, resistance == resistances.end() ? 0.0 : resistance->second}});
                     });
             }
         }
+        for (std::size_t i = 0; i < exposed.size(); ++i)
+            for (const auto& [facet, remainders] : exposed[i]) {
+                auto& indices = project.facet_patches_[i].at(facet);
+                for (const auto& bounds : remainders) {
+                    indices.push_back(project.patches_.size());
+                    project.patches_.push_back({bounds, std::nullopt});
+                }
+            }
         return project;
     }
 

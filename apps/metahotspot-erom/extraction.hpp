@@ -4,7 +4,6 @@
 #include "model/fom.hpp"
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
-#include <ranges>
 
 namespace mhs::app::erom {
     using Matrix = Eigen::MatrixXd;
@@ -19,8 +18,8 @@ namespace mhs::app::erom {
         core::Vector<model::CellId> boundary_cells; // indexed by connectable FacetId
         // Conductances are indexed by the same connectable FacetIds.
         void set_conductances(Eigen::Ref<Vector> values, const Vector& h) const;
-        Vector parameters(double model::EromSurfaceTraining::* field) const;
-        std::ranges::iota_view<Eigen::Index, Eigen::Index> surface_facets(model::SurfaceId surface) const;
+        core::Vector<core::Vector<Eigen::Index>> training_facets;
+        Vector parameters(double model::EromSurface::* field) const;
         void add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const;
     };
 

@@ -12,15 +12,6 @@ namespace mhs::solver {
         return it == overrides.end() ? fallback : it->second;
     }
 
-    inline std::span<const model::Facet> uncovered_patches(
-        const model::FacetContacts& contacts, model::FacetId id, const model::Facet& facet)
-    {
-        const auto it = contacts.find(id);
-        if (it != contacts.end())
-            return it->second.exposed;
-        return {&facet, 1};
-    }
-
     // Unit-area Fourier conduction resistance; no fluid/interface model involved.
     inline double side_thermal_resistance(double d, double k) { return d / k; }
 
@@ -80,12 +71,21 @@ namespace mhs::solver {
     BoundaryEvaluation evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
         double temperature, double time, double resistance);
 
-    inline std::pair<double, double> boundary_terms(
-        const model::FacetContacts& contacts, model::FacetId id, const model::Facet& facet, const auto& evaluate)
+    inline std::pair<double, double> boundary_terms(const model::Project* project, std::size_t component,
+        model::FacetId id, model::Facet facet, const auto& evaluate)
     {
+        const auto indices = project ? project->facet_patches(component, id) : std::span<const std::size_t> {};
+        if (indices.empty()) {
+            const auto trace = evaluate(facet);
+            return {trace.conductance, trace.load};
+        }
         double conductance = 0, load = 0;
-        for (const auto& patch : uncovered_patches(contacts, id, facet)) {
-            const auto trace = evaluate(patch);
+        for (const auto index : indices) {
+            const auto& patch = project->patches()[index];
+            if (patch.contact)
+                continue;
+            facet.bounds = patch.bounds;
+            const auto trace = evaluate(facet);
             conductance += trace.conductance;
             load += trace.load;
         }

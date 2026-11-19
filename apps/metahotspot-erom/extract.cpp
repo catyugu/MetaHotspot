@@ -11,27 +11,18 @@
 namespace mhs::app::erom {
     void Prepared::set_conductances(Eigen::Ref<Vector> values, const Vector& h) const
     {
-        for (Eigen::Index id = 0; id < values.size(); ++id)
-            values[id]
-                = solver::convection_conductance(asset.facets[id].area(), h[asset.facet_surface[id]], asset.R[id]);
+        for (Eigen::Index id = 0; id < values.size(); ++id) {
+            const auto& interface = asset.interfaces[id];
+            values[id] = solver::convection_conductance(interface.facet.area(), h[interface.surface], interface.resistance);
+        }
     }
 
-    Vector Prepared::parameters(double model::EromSurfaceTraining::* field) const
+    Vector Prepared::parameters(double model::EromSurface::* field) const
     {
-        const auto end = std::ranges::find_if_not(
-            asset.surfaces, [](const auto& surface) { return surface.training.has_value(); });
-        Vector values(end - asset.surfaces.begin());
+        Vector values(asset.surfaces.size());
         for (Eigen::Index i = 0; i < values.size(); ++i)
-            values[i] = (*asset.surfaces[i].training).*field;
+            values[i] = asset.surfaces[i].*field;
         return values;
-    }
-
-    std::ranges::iota_view<Eigen::Index, Eigen::Index> Prepared::surface_facets(model::SurfaceId surface) const
-    {
-        // prepare() appends facets in surface order.
-        const auto& owners = asset.facet_surface;
-        const auto ids = std::ranges::equal_range(owners, surface);
-        return std::views::iota(ids.begin() - owners.begin(), ids.end() - owners.begin());
     }
 
     void Prepared::add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const
@@ -78,8 +69,8 @@ namespace mhs::app::erom {
         {
             if (project.asset.outputs.empty())
                 return 0;
-            const Vector lower = project.parameters(&model::EromSurfaceTraining::minimum);
-            const Vector upper = project.parameters(&model::EromSurfaceTraining::maximum);
+            const Vector lower = project.parameters(&model::EromSurface::minimum);
+            const Vector upper = project.parameters(&model::EromSurface::maximum);
             const auto n = project.K.rows(), ng = lower.size();
             Vector closure(static_cast<Eigen::Index>(project.boundary_cells.size())), rhs(n);
             double worst = 0;
@@ -123,8 +114,8 @@ namespace mhs::app::erom {
                         load.setZero();
                     }
                     const auto& surface = project.asset.surfaces[i];
-                    const double delta = defaults ? surface.training->ambient - project.asset.reference_temperature : 1;
-                    for (const auto id : project.surface_facets(static_cast<model::SurfaceId>(i))) {
+                    const double delta = defaults ? surface.ambient - project.asset.reference_temperature : 1;
+                    for (const auto id : project.training_facets[i]) {
                         const double power = closure[id] * delta;
                         rhs[project.boundary_cells[id]] += power;
                         load.noalias() += power * boundary.row(id).transpose();
@@ -145,7 +136,7 @@ namespace mhs::app::erom {
                         h[i] = (i + alternate) % 2 ? upper[i] : lower[i];
                     check(h);
                 }
-            check(project.parameters(&model::EromSurfaceTraining::coefficient), true);
+            check(project.parameters(&model::EromSurface::coefficient), true);
             if (worst > tolerance) {
                 std::ostringstream message;
                 message << "output validation error " << worst << " exceeds tolerance " << tolerance;

@@ -41,21 +41,21 @@ namespace {
         e->L(1, 0) = 0.5;
         e->Vb = core::Matrix<double>(left_open ? 2 : 1, 1);
         e->Vb(0, 0) = 1;
-        e->R = {0.25};
+        const Facet left {Axis::X, -1, 0, {0, 1, 0, 1}};
+        const Facet right {Axis::X, 1, 1, {0, 1, 0, 1}};
         if (left_open) {
             e->Vb(1, 0) = 1;
-            e->R.push_back(0.25);
+            e->interfaces.push_back({left, 0.25, 0});
+            e->surfaces.push_back({"left", 1, 10, 2, 310});
         }
-        Facet left {Axis::X, -1, 0, {0, 1, 0, 1}};
-        Facet right {Axis::X, 1, 1, {0, 1, 0, 1}};
-        e->facets = left_open ? core::Vector<Facet> {left, right} : core::Vector<Facet> {right, left};
-        e->facet_surface = left_open ? core::Vector<SurfaceId> {0, 1} : core::Vector<SurfaceId> {1, 0};
-        e->surfaces = {{7, "left", left_open ? std::optional {EromSurfaceTraining {1, 10, 2, 310}} : std::nullopt},
-            {9, "right", EromSurfaceTraining {1, 10, 1, 330}}};
+        else
+            e->outline.push_back({"left", {left}});
+        e->interfaces.push_back({right, 0.25, static_cast<SurfaceId>(e->surfaces.size())});
+        e->surfaces.push_back({"right", 1, 10, 1, 330});
         e->reference_temperature = reference;
         e->uniform_temperature_mode = {1};
-        e->sources = {{3, "first", 0}, {5, "second", 1}};
-        e->outputs = {{17, "sensor", Vec3 {0.5, 0.25, 0.5}}, {25, "source mean", SourceId {3}}};
+        e->sources = {{"first", 0}, {"second", 1}};
+        e->outputs = {{"sensor", Vec3 {0.5, 0.25, 0.5}}, {"source mean", SourceId {0}}};
         return e;
     }
 
@@ -85,14 +85,14 @@ TEST(Project, ComponentCountsAndSharedAssets)
             definition.components.push_back(instance(static_cast<ComponentId>(i), erom, {2.0 * i, 0, 0}));
         const auto project = mhs::compiler::compile_project(std::move(definition));
         EXPECT_EQ(project.dof_count(), static_cast<std::size_t>(foms + eroms));
-        EXPECT_TRUE(project.contacts().empty());
+        EXPECT_TRUE(project.patches().empty());
         const auto result = solver::solve(project);
         EXPECT_TRUE(result.converged);
         ASSERT_EQ(result.output_traces.size(), 2u * eroms);
         for (int i = 0; i < eroms; ++i) {
             EXPECT_EQ(result.output_traces[2 * i].name, "sensor");
             EXPECT_EQ(result.output_traces[2 * i].component, static_cast<ComponentId>(i + foms));
-            EXPECT_EQ(result.output_traces[2 * i].output, 17u);
+            EXPECT_EQ(result.output_traces[2 * i].output, 0u);
         }
     }
 }
@@ -103,12 +103,12 @@ TEST(Project, MatchingAndNonmatchingFomContactConserveHeat)
         const auto project = mhs::compiler::compile_project(
             {{instance(1, cube()), instance(2, cube(split), {1, 0, 0})}, {{{1, 2}, 0.25}}});
         const auto count = split ? 2u : 1u;
-        ASSERT_EQ(project.contacts().size(), count);
+        ASSERT_EQ(project.patches().size(), count);
         solver::ProjectAssembler assembler(project);
         const core::Vector<double> t(project.dof_count(), 300.0);
         const auto& ops = assembler.assemble(t, 0);
         double area = 0;
-        for (const auto& patch : project.contacts()) {
+        for (const auto& patch : project.patches()) {
             area += patch.area();
             EXPECT_NEAR(patch.area(), 1.0 / count, 1e-14);
         }
@@ -131,10 +131,11 @@ TEST(Project, PartialMixedContactUsesExposedBoundaryAndReferenceOffsets)
     const auto erom = modal();
     const auto project = mhs::compiler::compile_project(
         {{instance(1, cube(false, true)), instance(2, erom, {1, 0.5, 0})}, {{{1, 2}, 0.25}}});
-    ASSERT_EQ(project.contacts().size(), 1u);
-    EXPECT_DOUBLE_EQ(project.contacts()[0].area(), 0.5);
-    EXPECT_EQ(project.output_position(2, 17), (Vec3 {1.5, 0.75, 0.5}));
-    EXPECT_FALSE(project.output_position(2, 25));
+    ASSERT_EQ(project.patches().size(), 3u);
+    EXPECT_TRUE(project.patches()[0].contact);
+    EXPECT_DOUBLE_EQ(project.patches()[0].area(), 0.5);
+    EXPECT_EQ(project.output_position(2, 0), (Vec3 {1.5, 0.75, 0.5}));
+    EXPECT_FALSE(project.output_position(2, 1));
     EXPECT_EQ(std::get<Vec3>(erom->outputs[0].location), (Vec3 {0.5, 0.25, 0.5}));
 
     solver::ProjectAssembler assembler(project);
@@ -162,19 +163,17 @@ TEST(Project, EromContactUsesModalOuterProductsAndInstanceSchedules)
     auto left = modal(280);
     auto right = modal(310);
     // Two contact patches share the same pair of modal blocks.
-    auto split = left->facets[1];
-    left->facets[1].bounds[1] = split.bounds[0] = 0.5;
-    left->facets.push_back(split);
-    left->facet_surface.push_back(1);
-    left->R.push_back(0.25);
+    auto split = left->interfaces[1];
+    left->interfaces[1].facet.bounds[1] = split.facet.bounds[0] = 0.5;
+    left->interfaces.push_back(split);
     left->Vb = core::Matrix<double>(3, 1);
     left->Vb(0, 0) = 1;
     left->Vb(1, 0) = left->Vb(2, 0) = 2;
     right->Vb(0, 0) = -3;
     auto l = instance(1, left), r = instance(2, right, {1, 0, 0});
-    l.powers[3] = [](double t) { return 7 * t; };
+    l.powers[0] = [](double t) { return 7 * t; };
     const auto project = mhs::compiler::compile_project({{l, r}, {}});
-    ASSERT_EQ(project.contacts().size(), 2u);
+    ASSERT_EQ(project.patches().size(), 2u);
     EXPECT_EQ(project.dof_count(), 2u);
     const core::Vector<double> state {0, 0};
     solver::ProjectAssembler assembler(project);
@@ -204,7 +203,7 @@ TEST(Project, UntrainedContactWarnsAndKeepsTheEnvironment)
     } capture;
     const auto project
         = mhs::compiler::compile_project({{instance(21, cube()), instance(42, modal(280, false), {1, 0, 0})}, {}});
-    EXPECT_TRUE(project.contacts().empty());
+    EXPECT_TRUE(project.patches().empty());
 #if MHS_LOG_COMPILED_LEVEL <= 3
     const auto message = capture.log.str();
     const auto warning = message.find("thermal contact is ignored");
@@ -226,6 +225,6 @@ TEST(Project, RejectsDuplicateIdentityAndOverlappingContacts)
                      {{instance(1, fom), instance(2, fom, {1, 0, 0}), instance(3, fom, {1, 0.2, 0})}, {}}),
         std::invalid_argument);
     auto e = modal();
-    e->facet_surface[1] = 0;
+    e->interfaces[1].surface = 0;
     EXPECT_THROW(mhs::compiler::compile_project({{instance(1, e)}, {}}), std::invalid_argument);
 }

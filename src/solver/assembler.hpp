@@ -15,7 +15,7 @@ namespace mhs::solver {
     public:
         explicit ThermalAssembler(const mhs::model::Fom& model);
         const Operators& assemble(std::span<const double> temperature, double time,
-            const model::FacetContacts& contacts = {}, const model::BoundaryOverrides& overrides = {});
+            const model::Project* project = nullptr, std::size_t component = 0);
         const Operators& assemble_internal(std::span<const double> temperature, double time);
         const Operators& operators() const { return operators_; }
         double resistance(model::FacetId id) const;
