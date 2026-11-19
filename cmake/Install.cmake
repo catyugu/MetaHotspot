@@ -8,6 +8,9 @@ set(_mhs_targets mhs_metahotspot mhs_core mhs_model mhs_expression mhs_linear
 if(MHS_BUILD_C_API)
     list(APPEND _mhs_targets mhs_c_api)
 endif()
+if(MHS_BUILD_EROM)
+    list(APPEND _mhs_targets mhs_erom_extraction)
+endif()
 
 install(TARGETS ${_mhs_targets} EXPORT MetaHotspotTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -20,11 +23,11 @@ install(DIRECTORY "${PROJECT_SOURCE_DIR}/include/metahotspot"
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 if(MHS_BUILD_APPS)
-    install(TARGETS metahotspot metahotspot-erom-prepare RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(TARGETS metahotspot RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
 # Runtime DLLs of the installed binaries; the MSVC C runtime is not among them.
-mhs_install_windows_runtime(TARGETS metahotspot metahotspot-erom-prepare mhs_c_api
+mhs_install_windows_runtime(TARGETS metahotspot mhs_c_api
     DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Licence and readme ship with the installed package.

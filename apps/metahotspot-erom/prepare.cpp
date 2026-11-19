@@ -1,132 +1,22 @@
-// Build the native operators and observation maps for the standalone extractor.
-#include "compiler/fom_compiler.hpp"
-#include "compiler/project_compiler.hpp"
-#include "pta/io.hpp"
+#include "extraction.hpp"
 #include "solver/assembler.hpp"
 #include "solver/thermal_reconstruction.hpp"
 
 #include <algorithm>
-#include <bit>
-#include <charconv>
 #include <cmath>
-#include <fstream>
-#include <iostream>
-#include <limits>
 #include <set>
 #include <stdexcept>
 #include <string_view>
-#include <type_traits>
 
-namespace {
-    using namespace mhs;
+namespace mhs::app::erom {
     using namespace mhs::model;
     using Weights = std::map<CellId, double>;
-
-    class Writer {
-    public:
-        explicit Writer(const char* path) : output_(path, std::ios::binary)
-        {
-            output_.exceptions(std::ios::badbit | std::ios::failbit);
-            output_.write("MHPREP01", 8);
-        }
-
-        void count(std::size_t value)
-        {
-            if (value > std::numeric_limits<std::uint32_t>::max())
-                throw std::length_error("EROM extraction input exceeds 32-bit counts");
-            integer(static_cast<std::uint32_t>(value));
-        }
-
-        void scalar(double value) { integer(std::bit_cast<std::uint64_t>(value)); }
-
-        void name(std::string_view value)
-        {
-            count(value.size());
-            output_.write(value.data(), static_cast<std::streamsize>(value.size()));
-        }
-
-        void weights(const Weights& weights, double scale)
-        {
-            count(weights.size());
-            for (const auto& [cell, value] : weights) {
-                count(cell);
-                scalar(value * scale);
-            }
-        }
-
-        void close() { output_.close(); }
-
-    private:
-        template <typename T> void integer(T value)
-        {
-            std::array<std::uint8_t, sizeof(T)> bytes {};
-            for (std::size_t i = 0; i < bytes.size(); ++i)
-                bytes[i] = static_cast<std::uint8_t>(value >> (i * 8));
-            output_.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-        }
-
-        std::ofstream output_;
-    };
 
     double constant(const expression::CompiledExpression& e, std::string_view name)
     {
         if (!e.is_constant() || !std::isfinite(e.constant_value()))
             throw std::invalid_argument(std::string(name) + " must be constant and finite for EROM extraction");
         return e.constant_value();
-    }
-
-    template <typename T> T number(std::string_view value)
-    {
-        if constexpr (std::is_same_v<T, double>) {
-            std::size_t consumed = 0;
-            const auto parsed = std::stod(std::string(value), &consumed);
-            if (consumed != value.size())
-                throw std::invalid_argument("invalid number: " + std::string(value));
-            return parsed;
-        }
-        else {
-            T result;
-            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), result);
-            if (error != std::errc {} || end != value.data() + value.size())
-                throw std::invalid_argument("invalid number: " + std::string(value));
-            return result;
-        }
-    }
-
-    struct Selection {
-        std::map<SurfaceId, EromSurfaceTraining> htc;
-        std::set<std::string> probes;
-        bool all_probes = true;
-        bool source_temperatures = true;
-    };
-
-    Selection parse(int argc, char** argv)
-    {
-        Selection result;
-        for (int i = 3; i < argc; ++i) {
-            const std::string_view option = argv[i];
-            if (option == "--htc" && i + 3 < argc) {
-                const auto id = number<SurfaceId>(argv[++i]);
-                const auto min = number<double>(argv[++i]), max = number<double>(argv[++i]);
-                if (!std::isfinite(min) || !std::isfinite(max) || min <= 0 || max < min)
-                    throw std::invalid_argument("HTC range requires 0 < minimum <= maximum");
-                if (!result.htc.emplace(id, EromSurfaceTraining {min, max}).second)
-                    throw std::invalid_argument("duplicate HTC surface");
-            }
-            else if (option == "--probe" && i + 1 < argc) {
-                result.all_probes = false;
-                result.probes.emplace(argv[++i]);
-            }
-            else if (option == "--no-point-probes")
-                result.all_probes = false;
-            else if (option == "--no-source-temperatures")
-                result.source_temperatures = false;
-            else
-                throw std::invalid_argument("invalid EROM extraction option: " + std::string(option));
-        }
-        if (result.htc.empty())
-            throw std::invalid_argument("select at least one HTC training surface");
-        return result;
     }
 
     struct Source {
@@ -140,7 +30,7 @@ namespace {
         Weights weights;
     };
 
-    Output project_probe(const Fom& model, const Selection& selection, OutputId id, core::Vector<double>& state)
+    Output project_probe(const Fom& model, const HtcRanges& ranges, OutputId id, core::Vector<double>& state)
     {
         const auto& probe = model.point_probes[id];
         if (probe.cell == core::invalid_id)
@@ -159,7 +49,7 @@ namespace {
                 continue;
             }
             const auto axis = static_cast<std::size_t>(facet.axis);
-            if (selection.htc.contains(model.facet_surface[f])
+            if (ranges.contains(model.facet_surface[f])
                 && (on_boundary ? facet.contains(probe.point) : probe.point[axis] != center[axis]))
                 throw std::invalid_argument("probe " + probe.name
                     + " depends directly on HTC boundary temperature and cannot be represented by L");
@@ -180,12 +70,8 @@ namespace {
         return output;
     }
 
-    void prepare(const Project& project, double initial_temperature, Selection selection, Writer& writer)
+    Prepared prepare(const Fom& model, const HtcRanges& ranges)
     {
-        if (project.components().size() != 1
-            || !std::holds_alternative<std::shared_ptr<const Fom>>(project.components().front().asset))
-            throw std::invalid_argument("EROM extraction currently requires a single FOM project");
-        const auto& model = *std::get<std::shared_ptr<const Fom>>(project.components().front().asset);
         const auto& mesh = model.discrete;
         if (mesh.cells.empty() || !model.fluid.fluid_to_global.empty())
             throw std::invalid_argument("EROM extraction requires a nonempty solid FOM");
@@ -199,37 +85,49 @@ namespace {
                         "EROM extraction requires positive material properties on active cells");
         }
 
-        for (const auto& group : selection.htc)
-            if (const auto id = group.first; id >= model.surfaces.size() || model.surfaces[id].facets.empty())
-                throw std::invalid_argument("unknown or empty HTC surface " + std::to_string(id));
+        for (const auto& [id, range] : ranges)
+            if (id >= model.surfaces.size() || model.surfaces[id].facets.empty())
+                throw std::invalid_argument("unknown or empty HTC group " + std::to_string(id));
 
-        core::Vector<const Surface*> surfaces;
+        solver::ThermalAssembler assembler(model);
+        core::Vector<double> state(mesh.cells.size(), model.reference_temperature);
+        const auto& operators = assembler.assemble_internal(state, 0);
+        Prepared result;
+        const auto n = static_cast<Eigen::Index>(mesh.cells.size());
+        result.K = Eigen::Map<const Sparse>(n, n, static_cast<Eigen::Index>(operators.K.nnz()),
+            operators.K.row_ptr().data(), operators.K.col_idx().data(), operators.K.values().data());
+        result.capacity = Eigen::Map<const Vector>(operators.C.values().data(), n);
+        result.reference = model.reference_temperature;
         for (const auto& surface : model.surfaces) {
             if (surface.facets.empty())
                 continue;
-            surfaces.push_back(&surface);
-            const auto training = selection.htc.find(surface.id);
+            SurfaceData data {surface.id, surface.name, std::nullopt, {}, {}, {}};
+            if (const auto it = ranges.find(surface.id); it != ranges.end())
+                data.training = EromSurfaceTraining {it->second.minimum, it->second.maximum, 0, result.reference};
             const auto condition_id = model.facet_thermal_condition[surface.facets.front()];
-            for (const auto id : surface.facets)
-                if (model.facet_thermal_condition[id] != condition_id)
-                    throw std::invalid_argument("EROM surface requires a uniform thermal condition");
             const auto& condition = model.boundary_conditions[condition_id];
             if (const auto* htc = std::get_if<Convection>(&condition)) {
                 const double h = constant(htc->coefficient, "HTC");
-                if (h < 0 || (h > 0 && training == selection.htc.end()))
+                if (h < 0 || (h > 0 && !data.training))
                     throw std::invalid_argument(
                         "surface " + std::to_string(surface.id) + " has an untrained or negative HTC");
-                if (training != selection.htc.end()) {
-                    training->second.coefficient = h;
-                    training->second.ambient = constant(htc->ambient_temperature, "Ambient temperature");
+                if (data.training) {
+                    data.training->coefficient = h;
+                    data.training->ambient = constant(htc->ambient_temperature, "Ambient temperature");
                 }
             }
             else if (const auto* flux = std::get_if<Neumann>(&condition);
                 !flux || constant(flux->heat_flux, "Neumann heat flux") != 0)
                 throw std::invalid_argument("surface " + std::to_string(surface.id)
                     + " has a Dirichlet or nonzero Neumann condition unsupported by EROM extraction");
-            else if (training != selection.htc.end())
-                training->second.ambient = model.reference_temperature;
+            for (const auto id : surface.facets) {
+                data.facets.push_back(mesh.facets[id]);
+                if (data.training) {
+                    data.cells.push_back(mesh.cell_facets[id].owner());
+                    data.resistance.push_back(assembler.resistance(id));
+                }
+            }
+            result.surfaces.push_back(std::move(data));
         }
 
         std::map<SourceId, Source> sources;
@@ -239,7 +137,6 @@ namespace {
             auto [density, inserted] = source_density.try_emplace(id);
             if (inserted)
                 density->second = constant(model.heat_source_table[id], "Volumetric source");
-            // PTA emits a zero-valued source entry even for an unpowered block.
             if (density->second == 0)
                 continue;
             if (!sources.contains(id)) {
@@ -255,110 +152,32 @@ namespace {
         for (auto& [id, source] : sources)
             source.channel.default_power = source_density.at(id) * source.total_volume;
 
-        core::Vector<Output> outputs;
-        core::Vector<double> state(mesh.cells.size(), model.reference_temperature);
-        for (std::size_t i = 0; i < model.point_probes.size(); ++i) {
-            const auto& probe = model.point_probes[i];
-            if (selection.all_probes || selection.probes.contains(probe.name))
-                outputs.push_back(project_probe(model, selection, static_cast<OutputId>(i), state));
-        }
-        for (const auto& requested : selection.probes)
-            if (!std::ranges::any_of(model.point_probes, [&](const auto& probe) { return probe.name == requested; }))
-                throw std::invalid_argument("unknown point probe: " + requested);
-
-        solver::ThermalAssembler assembler(model);
-        const auto& operators = assembler.assemble_internal(state, 0);
-        writer.count(operators.K.rows());
-        writer.count(operators.K.nnz());
-        writer.count(surfaces.size());
-        writer.count(sources.size());
-        writer.count(outputs.size() + (selection.source_temperatures ? sources.size() : 0));
-        writer.scalar(model.reference_temperature);
-        writer.scalar(initial_temperature);
-        for (const auto v : operators.K.row_ptr())
-            writer.count(v);
-        for (const auto v : operators.K.col_idx())
-            writer.count(v);
-        for (const auto v : operators.K.values())
-            writer.scalar(v);
-        for (const auto v : operators.C.values())
-            writer.scalar(v);
-
-        for (const auto* surface : surfaces) {
-            writer.count(surface->id);
-            writer.name(surface->name);
-            const auto range = selection.htc.find(surface->id);
-            writer.count(range != selection.htc.end());
-            if (range != selection.htc.end())
-                for (const auto value :
-                    {range->second.minimum, range->second.maximum, range->second.coefficient, range->second.ambient})
-                    writer.scalar(value);
-            writer.count(surface->facets.size());
-            for (const auto id : surface->facets) {
-                const auto& f = mesh.facets[id];
-                writer.count(static_cast<std::uint32_t>(f.axis));
-                writer.count(f.normal > 0);
-                writer.scalar(f.coordinate);
-                for (const auto x : f.bounds)
-                    writer.scalar(x);
-                if (range != selection.htc.end()) {
-                    writer.count(mesh.cell_facets[id].owner());
-                    writer.scalar(assembler.resistance(id));
-                }
-            }
-        }
+        result.B = Matrix::Zero(n, static_cast<Eigen::Index>(sources.size()));
+        Eigen::Index column = 0;
         for (const auto& [id, source] : sources) {
-            writer.count(id);
-            writer.name(source.channel.name);
-            writer.scalar(source.channel.default_power);
-            writer.weights(source.volume, 1 / source.total_volume);
+            result.sources.push_back(source.channel);
+            for (const auto& [cell, volume] : source.volume)
+                result.B(cell, column) = volume / source.total_volume;
+            ++column;
         }
-        auto write_output = [&](const EromOutput& output, const Weights& weights, double scale) {
-            writer.count(output.id);
-            writer.name(output.name);
-            writer.count(static_cast<std::uint32_t>(output.kind));
-            writer.scalar(output.offset);
-            if (output.point)
-                for (const auto x : *output.point)
-                    writer.scalar(x);
-            else
-                writer.count(output.source);
-            writer.weights(weights, scale);
+        core::Vector<Eigen::Triplet<double>> weights;
+        auto add_output = [&](EromOutput output, const Weights& values, double scale) {
+            const auto row = static_cast<int>(result.outputs.size());
+            result.outputs.push_back(std::move(output));
+            for (const auto& [cell, value] : values)
+                weights.emplace_back(row, static_cast<int>(cell), value * scale);
         };
-        for (const auto& output : outputs)
-            write_output(output.channel, output.weights, 1);
-        if (selection.source_temperatures) {
-            std::size_t id = model.point_probes.size();
-            for (const auto& [source_id, source] : sources)
-                write_output(
-                    {static_cast<OutputId>(id++), source.channel.name + " temperature",
-                        EromOutputKind::SourceTemperature, model.reference_temperature, std::nullopt, source_id},
-                    source.volume, 1 / source.total_volume);
+        for (std::size_t i = 0; i < model.point_probes.size(); ++i) {
+            auto output = project_probe(model, ranges, static_cast<OutputId>(i), state);
+            add_output(std::move(output.channel), output.weights, 1);
         }
+        std::size_t id = model.point_probes.size();
+        for (const auto& [source_id, source] : sources)
+            add_output({static_cast<OutputId>(id++), source.channel.name + " temperature",
+                           EromOutputKind::SourceTemperature, model.reference_temperature, std::nullopt, source_id},
+                source.volume, 1 / source.total_volume);
+        result.L.resize(static_cast<Eigen::Index>(result.outputs.size()), n);
+        result.L.setFromTriplets(weights.begin(), weights.end());
+        return result;
     }
-} // namespace
-
-int main(int argc, char** argv)
-{
-    try {
-        if (argc < 3)
-            throw std::invalid_argument("usage: metahotspot-erom-prepare PTA.xml OUTPUT [--htc ID MIN MAX]...");
-        const auto input = mhs::app::pta::read_xml(argv[1]);
-        auto model = std::make_shared<const Fom>(mhs::compiler::compile_fom(input.model, input.mesh));
-        if (std::string_view(argv[2]) == "--list-surfaces") {
-            for (const auto& surface : model->surfaces)
-                if (!surface.facets.empty())
-                    std::cout << surface.id << '\t' << surface.name << '\t' << surface.facets.size() << " facets\n";
-            return 0;
-        }
-        const auto project = mhs::compiler::compile_project({{{0, {}, std::move(model), {}, {}}}, {}});
-        Writer writer(argv[2]);
-        prepare(project, input.study.initial_temperature, parse(argc, argv), writer);
-        writer.close();
-        return 0;
-    }
-    catch (const std::exception& error) {
-        std::cerr << "EROM extraction: " << error.what() << '\n';
-        return 1;
-    }
-}
+} // namespace mhs::app::erom

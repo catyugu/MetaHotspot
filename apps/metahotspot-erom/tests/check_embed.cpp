@@ -1,6 +1,6 @@
 #include "compiler/fom_compiler.hpp"
 #include "compiler/project_compiler.hpp"
-#include "pta/io.hpp"
+#include "erom/extraction.hpp"
 #include "solver/solver.hpp"
 
 #include <cmath>
@@ -13,6 +13,27 @@ using namespace mhs;
 using namespace mhs::model;
 
 namespace {
+    const MeshSpec mesh {{0, 1, 2, 3}, {0, 0.5, 1}, {0, 1}};
+
+    FomDefinition fixture()
+    {
+        FomDefinition definition;
+        definition.reference_temperature = 295;
+        definition.materials = {{"solid", {MaterialKind::Solid, "2", "2", "2", "1", "4", {}}}, {"unused", {}}};
+        definition.sources = {"5", "0", "8"};
+        definition.source_names = {"heater A", "", "heater B"};
+        for (SourceId i = 0; i < 3; ++i) {
+            const double x = i;
+            definition.volumes.push_back({0, i, {{GeometryOperation::Add, {x, 0, 0}, {x + 1, 1, 1}}}});
+        }
+        definition.thermal_boundaries = {
+            {{{Axis::X, 0, {0, 1, 0, 1}}}, ConvectionBoundary {"3", "299"}, "upstream"},
+            {{{Axis::X, 3, {0, 1, 0, 1}}}, ConvectionBoundary {"4", "302"}},
+        };
+        definition.point_probes = {{"off center", 1.2, 0.5, 0.5}};
+        return definition;
+    }
+
     void check(bool passed, const char* message)
     {
         if (!passed)
@@ -44,6 +65,7 @@ namespace {
             "wrong source or output identity");
         near(e.sources[0].default_power, 5);
         near(e.sources[1].default_power, 8);
+        near(e.surface_training[0]->maximum, 1e4);
         near(e.surface_training[1]->maximum, 9);
         near(e.reference_temperature, 295);
         near(e.initial_temperature, 295);
@@ -78,6 +100,55 @@ namespace {
             }
     }
 
+    void extract_fixture(const std::filesystem::path& path, std::string_view variant)
+    {
+        using namespace mhs::app::erom;
+        auto definition = fixture();
+        HtcRanges ranges {{0, {1, 1e4}}, {1, {2, 9}}};
+        if (variant == "trace")
+            definition.point_probes.push_back({"HTC trace", 3, 0.5, 0.5});
+        if (variant == "passive" || variant == "flux") {
+            definition.sources = {"0", "0", "0"};
+            definition.point_probes.clear();
+        }
+        if (variant == "flux")
+            definition.default_thermal_boundary = NeumannBoundary {"1"};
+        if (variant == "empty") {
+            definition.thermal_boundaries.push_back({{}, NeumannBoundary {}});
+            ranges.emplace(2, HtcRange {1, 10});
+        }
+        if (variant == "partial") {
+            definition.thermal_boundaries[0].regions[0].rectangle.a_max = 0.75;
+            definition.sources = {"0", "0", "0"};
+            definition.materials[1] = {"resistive", {MaterialKind::Solid, "0.02", "0.02", "0.02", "1", "4", {}}};
+            definition.volumes.push_back({1, core::invalid_id, {{GeometryOperation::Add, {0, 0.5, 0}, {1, 1, 1}}}});
+        }
+        constexpr double tolerance = 1e-6;
+        const auto result = extract(definition, mesh, ranges, tolerance);
+        check(result.statistics.output_error <= tolerance, "sampled output error exceeds extraction tolerance");
+        if (variant == "partial") {
+            const auto& e = result.asset;
+            const auto& facets = e.surfaces[0].facets;
+            check(facets.size() == 2, "wrong facet partition for the partial HTC group");
+            near(e.facets[facets[0]].area() + e.facets[facets[1]].area(), 0.75);
+            near(e.R[facets[0]], 0.25);
+            near(e.R[facets[1]], 25);
+
+            const auto fom = std::make_shared<const Fom>(compiler::compile_fom(definition, mesh));
+            const auto rom = std::make_shared<const Erom>(e);
+            using expression::CompiledExpression;
+            const BoundaryOverrides boundary {
+                {0, Convection {CompiledExpression::make_constant(70), CompiledExpression::make_constant(310)}}};
+            const auto full = compiler::compile_project({{{0, {}, fom, {}, boundary}}, {}});
+            const auto reduced = compiler::compile_project({{{0, {}, rom, {}, boundary}}, {}});
+            const auto full_solution = solver::solve(full), reduced_solution = solver::solve(reduced);
+            check(full_solution.converged && reduced_solution.converged, "steady solve did not converge");
+            near(full_solution.output_traces.at(0).values.back(), reduced_solution.output_traces.at(0).values.back(),
+                1e-5);
+        }
+        write_erom(path, result.asset);
+    }
+
     void compare(const Project& mixed, const Project& full, mhs::solver::Study study)
     {
         solver::SolveOptions opts;
@@ -109,6 +180,10 @@ namespace {
 int main(int argc, char** argv)
 {
     try {
+        if (argc == 4 && std::string_view(argv[1]) == "--extract") {
+            extract_fixture(argv[2], argv[3]);
+            return 0;
+        }
         if (argc == 4 && std::string_view(argv[1]) == "--reject") {
             try {
                 (void)read_erom(argv[2]);
@@ -127,15 +202,14 @@ int main(int argc, char** argv)
             check(solver::solve(project).converged, "source-free EROM did not converge");
             return 0;
         }
-        check(argc == 3, "expected a .mherom and a PTA reference");
+        check(argc == 2, "expected a .mherom file");
         const auto e = read_erom(argv[1]);
         check_asset(*e);
-        auto input = app::pta::read_xml(argv[2]);
-        input.model.point_probes.resize(1);
-        auto fom = std::make_shared<const Fom>(compiler::compile_fom(input.model, input.mesh));
+        const auto definition = fixture();
+        auto fom = std::make_shared<const Fom>(compiler::compile_fom(definition, mesh));
 
         FomDefinition sink;
-        sink.materials.push_back(input.model.materials[0]);
+        sink.materials.push_back(definition.materials[0]);
         sink.volumes = {{0, core::invalid_id, {{GeometryOperation::Add, {}, {1, 1, 1}}}}};
         sink.thermal_boundaries = {{{{Axis::X, 1, {0, 1, 0, 1}}}, DirichletBoundary {"288"}}};
         auto body = std::make_shared<const Fom>(compiler::compile_fom(sink, {{0, 1}, {0, 1}, {0, 1}}));
