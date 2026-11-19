@@ -1,7 +1,7 @@
 #pragma once
 #include <optional>
 
-#include "model/model.hpp"
+#include "model/fom.hpp"
 #include "model/model_definition.hpp"
 
 #include "core/vector.hpp"
@@ -19,7 +19,7 @@ namespace mhs::compiler {
 
     std::optional<std::size_t> classify_point(
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& point);
-    void compile_conformal_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
+    void compile_conformal_mesh(mhs::model::Fom& model, const mhs::model::MeshSpec& input,
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
 
     // Partition exterior facets once against the union of thermal and fluid regions,

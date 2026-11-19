@@ -21,7 +21,7 @@ outward sign and membership. `FacetId` identifies one canonical integration regi
 The geometry compiler partitions exterior facets against the union of thermal and
 fluid boundary region cuts **before** building cell-facet incidence. A partially
 covered rectangle creates several Facets, including uncovered pieces. The compiler
-then independently binds thermal conditions to `Model::facet_thermal_condition`
+then independently binds thermal conditions to `Fom::facet_thermal_condition`
 and fluid boundaries to those same FacetIds. Later regions take precedence within
 each physics. The default thermal condition applies to uncovered exterior facets.
 Internal facet geometry does not depend on exterior boundary assignments.

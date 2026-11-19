@@ -12,7 +12,7 @@ namespace test_pta {
         return {axis, coordinate, rectangle};
     }
 
-    struct Model : mhs::model::Model {
+    struct Model : mhs::model::Fom {
         mhs::model::MeshSpec sampling_grid;
         struct {
             mhs::core::Vector<mhs::model::Vec3> points;
@@ -22,7 +22,7 @@ namespace test_pta {
     inline Model build_model(const mhs::model::ModelDefinition& d, const mhs::model::MeshSpec& mesh)
     {
         Model m;
-        static_cast<mhs::model::Model&>(m) = mhs::compiler::build_model(d, mesh);
+        static_cast<mhs::model::Fom&>(m) = mhs::compiler::build_model(d, mesh);
         m.sampling_grid = mesh;
         m.output.cartesian_shape = {mesh.x_vertices.size(), mesh.y_vertices.size(), mesh.z_vertices.size()};
         for (double x : mesh.x_vertices)

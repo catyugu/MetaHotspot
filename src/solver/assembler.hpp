@@ -30,7 +30,7 @@ namespace mhs::solver {
     // overwrites numerical buffers, including explicit zero coefficients.
     class ThermalAssembler {
     public:
-        explicit ThermalAssembler(const mhs::model::Model& model);
+        explicit ThermalAssembler(const mhs::model::Fom& model);
         const Operators& assemble(std::span<const double> temperature, double time,
             const model::ExposedFacets& exposed = {}, const BoundaryOverrides& overrides = {});
         const Operators& assemble_internal(std::span<const double> temperature, double time);
@@ -40,7 +40,7 @@ namespace mhs::solver {
         Operators take_operators() && { return std::move(operators_); }
 
     private:
-        const mhs::model::Model& model_;
+        const mhs::model::Fom& model_;
         Operators operators_;
         mhs::core::Vector<mhs::core::SparseIndex> diagonal_positions_;
         mhs::core::Vector<mhs::model::Vec3> conductivity_;
@@ -61,6 +61,6 @@ namespace mhs::solver {
     };
 
     // Owning export for the C API and standalone operator inspection.
-    Operators assemble_thermal(const mhs::model::Model& model, std::span<const double> temperature, double time);
+    Operators assemble_thermal(const mhs::model::Fom& model, std::span<const double> temperature, double time);
 
 } // namespace mhs::solver

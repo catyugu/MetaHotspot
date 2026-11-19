@@ -65,7 +65,7 @@ namespace mhs::solver {
             return core::Vector<double>(initial_state.begin(), initial_state.end());
         }
 
-        void append_fom_traces(core::Vector<ProbeTrace>& traces, const model::Model& model, model::ComponentId id)
+        void append_fom_traces(core::Vector<ProbeTrace>& traces, const model::Fom& model, model::ComponentId id)
         {
             for (std::size_t p = 0; p < model.point_probes.size(); ++p)
                 traces.push_back({model.point_probes[p].name, {}, id, static_cast<model::OutputId>(p)});
@@ -182,7 +182,7 @@ namespace mhs::solver {
         return solve_transient(study, assemble, std::move(state), solver, opts, nl_config, observe);
     }
 
-    mhs::solver::Solution solve(const mhs::model::Model& model, const mhs::model::Study& study,
+    mhs::solver::Solution solve(const mhs::model::Fom& model, const mhs::model::Study& study,
         std::span<const double> initial_state, const SolveOptions& options)
     {
         auto state = initial_values(model.discrete.cells.size(), study, initial_state);
@@ -211,7 +211,7 @@ namespace mhs::solver {
         const auto components = project.components();
         for (std::size_t i = 0; i < components.size(); ++i) {
             const auto& component = components[i];
-            if (const auto* model = std::get_if<std::shared_ptr<const model::Model>>(&component.asset)) {
+            if (const auto* model = std::get_if<std::shared_ptr<const model::Fom>>(&component.asset)) {
                 append_fom_traces(traces, **model, component.id);
             }
             else {
@@ -238,7 +238,7 @@ namespace mhs::solver {
         auto observe = [&](double time, std::span<const double> accepted) {
             std::size_t trace = 0;
             for (std::size_t i = 0; i < components.size(); ++i) {
-                if (const auto* fom = std::get_if<std::shared_ptr<const model::Model>>(&components[i].asset)) {
+                if (const auto* fom = std::get_if<std::shared_ptr<const model::Fom>>(&components[i].asset)) {
                     for (const auto& p : (*fom)->point_probes)
                         traces[trace++].values.push_back(assembler.sample_fom(i, p, accepted, time));
                 }

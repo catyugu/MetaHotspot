@@ -17,7 +17,7 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "python"))
 
 import metahotspot
@@ -90,7 +90,7 @@ def build_current_detailed(x: np.ndarray, y: np.ndarray):
 
     base_pos, base_size = xyz(base, "location"), xyz(base, "size")
     src_pos, src_size = xyz(source, "location"), xyz(source, "size")
-    model = metahotspot.Model()
+    model = metahotspot.Fom()
     model.set_reference_temperature(AMBIENT_K)
     grid_mm = current_grid_axis_mm()
     model.set_cartesian_mesh(grid_mm * 1e-3, grid_mm * 1e-3, grid_mm * 1e-3)

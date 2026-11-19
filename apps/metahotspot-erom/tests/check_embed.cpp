@@ -131,13 +131,13 @@ int main(int argc, char** argv)
         check_asset(*e);
         auto input = app::pta::read_xml(argv[2]);
         input.model.point_probes.resize(1);
-        auto fom = std::make_shared<const Model>(compiler::build_model(input.model, input.mesh));
+        auto fom = std::make_shared<const Fom>(compiler::build_model(input.model, input.mesh));
 
         ModelDefinition sink;
         sink.materials.push_back(input.model.materials[0]);
         sink.volumes = {{0, core::invalid_id, {{GeometryOperation::Add, {}, {1, 1, 1}}}}};
         sink.thermal_boundaries = {{{{Axis::X, 1, {0, 1, 0, 1}}}, DirichletBoundary {"288"}}};
-        auto body = std::make_shared<const Model>(compiler::build_model(sink, {{0, 1}, {0, 1}, {0, 1}}));
+        auto body = std::make_shared<const Fom>(compiler::build_model(sink, {{0, 1}, {0, 1}, {0, 1}}));
         Component external {20, {3, 0, 0}, body, {}, {}};
         const auto mixed = compile_project({{{10, {}, e, {}, {}}, external}, {}});
         const auto full = compile_project({{{10, {}, fom, {}, {}}, external}, {}});

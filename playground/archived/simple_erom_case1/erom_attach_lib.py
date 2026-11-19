@@ -46,7 +46,7 @@ from metahotspot.macromodel.embeddable import (
     extract_rom,
 )
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "archived"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from legacy_erom_interface import common_patches, connect, solve_system
 
 # copper cube (matches simple_case1.ecxml)
@@ -145,7 +145,7 @@ def build_geometry(cfg: AttachConfig, *, detail: bool, macro: bool):
     """Assemble the full stacked model (no BC; default Neumann)."""
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
-    model = metahotspot.Model()
+    model = metahotspot.Fom()
     model.set_reference_temperature(cfg.ambient_K)
     model.set_cartesian_mesh(cube_axis_mm() * 1e-3, cube_axis_mm() * 1e-3, _z_full_mm(cfg) * 1e-3)
     copper = model.add_material("Copper (Pure)", *COPPER)

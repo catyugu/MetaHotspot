@@ -20,7 +20,7 @@ CLI 兼容 PTA 时保留从 XML 的 `Results/Mesh` 或 `GeneratedMesh` 读取网
 
 PTA `VolumetricHeatSource` 使用 W/m³；引用裸函数名时，适配器转换为 `function(t)`。PTA 的周期分段常数函数 Interval 为每段时长，周期为 Interval × Values.Count。
 
-`OutputMesh`、节点插值、PTA XML 结果回写和 VTU 写出均属于应用私有实现。运行期 Model 只保存计算数据。SDK 不依赖 tinyxml2，不安装应用层头文件。
+`OutputMesh`、节点插值、PTA XML 结果回写和 VTU 写出均属于应用私有实现。运行期 `Fom` 只保存计算数据。SDK 不依赖 tinyxml2，不安装应用层头文件。
 
 ## C ABI / Python
 
@@ -32,10 +32,10 @@ Python 的 `set_cartesian_mesh`、`add_point_probe(name, position)` 分别对应
 以下示例创建一个可编译、可求解的模型：
 
 ```python
-from metahotspot import Model, SurfaceRegion
+from metahotspot import Fom, SurfaceRegion
 from metahotspot.enums import Axis
 
-with Model() as model:
+with Fom() as model:
     model.set_cartesian_mesh([0, 0.001], [0, 0.001], [0, 0.001])
     material = model.add_material("solid", "1", "1", "1", "1000", "500")
     volume = model.add_volume(material)

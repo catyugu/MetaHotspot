@@ -156,7 +156,7 @@ class AffineParametricModel:
     # ------------------------------------------------- geometry hooks (required)
 
     def build_geometry(self, *, detail, macro):
-        """Assemble a metahotspot ``Model`` for the given study/domain split."""
+        """Assemble a metahotspot ``Fom`` for the given study/domain split."""
         raise NotImplementedError
 
     def source_ports(self) -> list[SourcePort]:

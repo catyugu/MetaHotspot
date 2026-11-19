@@ -12,19 +12,16 @@ C API library, selected with `MHS_CAPI_PATH`.
 experiments/
   mor_common.py                    FVM operators, conservative coupling and contour elements
   pop.py                           whole-PoP two-source BCI/contour comparison
-  simple_erom.py                   reusable interface-enriched ROM vs FloTHERM
   test_contour_elements.py         independent contour quadrature checks
   transfer_boundary_basis.py       matrix-based boundary transfer directions
   transfer_boundary_enrichment.py  manual extra-boundary-mode sweep
 baseline/
-  flotherm_erom/                   curated FloTHERM EROM reference data
   metahotspot/                     reference-run configuration and provenance
 results/                            generated locally; ignored
 ```
 
 Generated numerical results stay under ignored `results/` directories or in CI
-artifacts; the repository contains experiment code, baseline notes and the
-curated FloTHERM comparison CSV.
+artifacts. The repository contains experiment code and baseline notes.
 
 ## Whole-PoP boundary-representation comparison
 
@@ -65,16 +62,5 @@ Conservative non-conforming common-patch coupling is provided separately by
 `mor_common.py` and `metahotspot.macromodel.embeddable`; `pop.py` compares whole-PoP
 operators rather than connecting a reduced bottom package to a detailed top.
 
-## FloTHERM simple-EROM comparison
-
-```bash
-python experiments/simple_erom.py \
-  --cases baseline_copper bottom_htc_strong external_source_200w all_stress layered_extreme_source
-```
-
-This uses `playground/simple_erom_case1/` and compares one reusable
-interface-enriched MetaHotspot cube ROM against the frozen FloTHERM EROM stress
-baseline in `baseline/flotherm_erom/simple_case1_stress_baseline.csv`. The cube
-ROM is extracted once using its internal source and interface heat-flux
-training directions, then reused for every attachment case. Results are written
-to `results/simple_erom/`.
+The FloTHERM simple-cube comparison and its reference data are archived with
+[`simple_erom_case1`](../archived/simple_erom_case1/).

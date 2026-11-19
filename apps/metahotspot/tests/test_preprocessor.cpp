@@ -11,7 +11,7 @@ using namespace mhs::compiler;
 enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 
 // Select a canonical exterior facet by its owner cell and outward direction.
-static FacetId find_boundary_facet(const Model& model, std::size_t cell_idx, FaceDir dir)
+static FacetId find_boundary_facet(const Fom& model, std::size_t cell_idx, FaceDir dir)
 {
     for (auto id : model.discrete.incident_facets(static_cast<CellId>(cell_idx))) {
         const auto& facet = model.discrete.facets[id];
@@ -23,7 +23,7 @@ static FacetId find_boundary_facet(const Model& model, std::size_t cell_idx, Fac
 }
 
 template <typename Condition>
-static const Condition* find_condition(const Model& model, std::size_t cell_idx, FaceDir dir)
+static const Condition* find_condition(const Fom& model, std::size_t cell_idx, FaceDir dir)
 {
     for (auto id : model.discrete.incident_facets(static_cast<CellId>(cell_idx))) {
         const auto& facet = model.discrete.facets[id];
@@ -35,7 +35,7 @@ static const Condition* find_condition(const Model& model, std::size_t cell_idx,
     return nullptr;
 }
 
-static SourceId source_id(const Model& model, std::size_t cell)
+static SourceId source_id(const Fom& model, std::size_t cell)
 {
     for (const auto& term : model.source_terms)
         if (term.cell == cell)
@@ -103,7 +103,7 @@ TEST(PreprocessorTest, CartesianAdapterPreservesSIBounds)
 
 // Map an input-grid fixture index to a compiled cell by its lower corner.
 // These PTA test fixtures use millimeters; compiled cell geometry is in meters.
-static std::size_t input_cell(const Model& model, const mhs::model::MeshSpec& input, std::size_t flat)
+static std::size_t input_cell(const Fom& model, const mhs::model::MeshSpec& input, std::size_t flat)
 {
     const auto ny = input.y_vertices.size() - 1, nz = input.z_vertices.size() - 1;
     const auto x = flat / (ny * nz), y = (flat % (ny * nz)) / nz, z = flat % nz;

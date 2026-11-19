@@ -11,7 +11,7 @@ MetaHotspot 是面向电子封装多层堆叠结构的三维有限体积热仿�
 依赖方向：
 
 ```text
-IO → (ModelDefinition, MeshSpec) → Compiler → Model → Solver → Solution → IO
+IO → (ModelDefinition, MeshSpec) → Compiler → Fom → Solver → Solution → IO
 ```
 
 `mhs::core` 是编译后的公共内核，提供容器、内存池与低级 kernel；`model` 保存输入定义和运行期领域数据。依赖为 `model → expression → core`、`linear → core`，compiler/solver 在其上工作。Eigen 仅用于内部小规模 QR 与可选 PARDISO 实现，不属于公开头或 SDK 链接依赖。
@@ -28,7 +28,7 @@ IO → (ModelDefinition, MeshSpec) → Compiler → Model → Solver → Solutio
 - 模态瞬态宏模型必须在同一基底下提供完整的 `K_r`、`C_r`、`f_r` 和一致
   初态。静态端口柔度的 SVD 只验证稳态端口响应，不能单独证明瞬态降阶精度；
   瞬态 ROM 需要动态模态或时域快照及时间步收敛验证。
-- Model FVM 详细离散始终由求解器内部组装。
+- FOM 的有限体积算子由求解器组装。
 - `solve_system` 要求显式完整初状态；`solve(state=)` 为空时才从
   `initial_temperature` 构建均匀温度。
 - 每个外边界积分片具有温度迹；局部静态凝聚保持全局状态和算子为单元规模。
@@ -54,7 +54,7 @@ IO → (ModelDefinition, MeshSpec) → Compiler → Model → Solver → Solutio
 4. 头文件禁止 `using namespace`。
 5. 匿名命名空间用于单文件私有实现。
 6. 外部格式字符串止于 IO；运行期模型不保存 XML 表示。
-7. setup 与 solve 明确分离，临时预处理状态不进入 `Model`。
+7. setup 与 solve 明确分离，临时预处理状态不进入 `Fom`。
 
 ## 文档导航
 

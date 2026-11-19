@@ -50,7 +50,7 @@ namespace mhs::model {
         CellId cell = mhs::core::invalid_id;
     };
 
-    struct Model {
+    struct Fom {
         DiscreteMesh discrete;
 
         mhs::core::Vector<MaterialId> cell_material;

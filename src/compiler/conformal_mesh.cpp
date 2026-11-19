@@ -8,7 +8,7 @@
 namespace mhs::compiler {
     // The only structured-index arithmetic in the compiled model pipeline.
     // Conformal Cartesian cells: volume box faces inside the mesh must lie on input grid planes.
-    void compile_conformal_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
+    void compile_conformal_mesh(mhs::model::Fom& model, const mhs::model::MeshSpec& input,
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
     {
         using namespace mhs::core;

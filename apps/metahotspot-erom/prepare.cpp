@@ -140,7 +140,7 @@ namespace {
         Weights weights;
     };
 
-    Output project_probe(const Model& model, const Selection& selection, OutputId id, core::Vector<double>& state)
+    Output project_probe(const Fom& model, const Selection& selection, OutputId id, core::Vector<double>& state)
     {
         const auto& probe = model.point_probes[id];
         if (probe.cell == core::invalid_id)
@@ -183,9 +183,9 @@ namespace {
     void prepare(const Project& project, double initial_temperature, Selection selection, Writer& writer)
     {
         if (project.components().size() != 1
-            || !std::holds_alternative<std::shared_ptr<const Model>>(project.components().front().asset))
+            || !std::holds_alternative<std::shared_ptr<const Fom>>(project.components().front().asset))
             throw std::invalid_argument("EROM extraction currently requires a single FOM project");
-        const auto& model = *std::get<std::shared_ptr<const Model>>(project.components().front().asset);
+        const auto& model = *std::get<std::shared_ptr<const Fom>>(project.components().front().asset);
         const auto& mesh = model.discrete;
         if (mesh.cells.empty() || !model.fluid.fluid_to_global.empty())
             throw std::invalid_argument("EROM extraction requires a nonempty solid FOM");
@@ -340,7 +340,7 @@ int main(int argc, char** argv)
         if (argc < 3)
             throw std::invalid_argument("usage: metahotspot-erom-prepare PTA.xml OUTPUT [--htc ID MIN MAX]...");
         const auto input = mhs::app::pta::read_xml(argv[1]);
-        auto model = std::make_shared<const Model>(mhs::compiler::build_model(input.model, input.mesh));
+        auto model = std::make_shared<const Fom>(mhs::compiler::build_model(input.model, input.mesh));
         if (std::string_view(argv[2]) == "--list-surfaces") {
             for (const auto& surface : model->surfaces)
                 if (!surface.facets.empty())

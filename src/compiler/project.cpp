@@ -109,7 +109,7 @@ namespace mhs::model {
 
         std::span<const Facet> facets(const Component& component)
         {
-            if (const auto* model = std::get_if<std::shared_ptr<const Model>>(&component.asset))
+            if (const auto* model = std::get_if<std::shared_ptr<const Fom>>(&component.asset))
                 return (*model)->discrete.facets;
             return std::get<std::shared_ptr<const Erom>>(component.asset)->facets;
         }
@@ -275,7 +275,7 @@ namespace mhs::model {
     {
         for (const auto& c : components())
             if (c.id == component) {
-                if (const auto* model = std::get_if<std::shared_ptr<const Model>>(&c.asset)) {
+                if (const auto* model = std::get_if<std::shared_ptr<const Fom>>(&c.asset)) {
                     if (output < (*model)->point_probes.size())
                         return translate((*model)->point_probes[output].point, c.offset);
                 }

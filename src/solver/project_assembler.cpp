@@ -17,7 +17,7 @@ namespace mhs::solver {
         };
 
         struct Block {
-            const Model* fom = nullptr;
+            const Fom* fom = nullptr;
             const Erom* erom = nullptr;
             std::unique_ptr<ThermalAssembler> thermal;
             Vector<BoundaryCondition> erom_defaults;
@@ -89,7 +89,7 @@ namespace mhs::solver {
         {
             for (const auto& component : project.components()) {
                 auto& block = blocks.emplace_back();
-                if (const auto* model = std::get_if<std::shared_ptr<const Model>>(&component.asset)) {
+                if (const auto* model = std::get_if<std::shared_ptr<const Fom>>(&component.asset)) {
                     block.fom = model->get();
                     block.thermal = std::make_unique<ThermalAssembler>(*block.fom);
                 }

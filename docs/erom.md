@@ -23,7 +23,7 @@ const auto* trace = solution.find_probe(20, 0);
 ```
 
 Build a FOM with `mhs::compiler::build_model` and share the result as
-`std::shared_ptr<const Model>`. `Project::dof_offset` and `dof_size` identify a
+`std::shared_ptr<const Fom>`. `Project::dof_offset` and `dof_size` identify a
 component's block in each state snapshot. FOM blocks store absolute cell
 temperatures. EROM blocks store modal states. `output_position` translates
 point observations into world coordinates.
@@ -109,5 +109,6 @@ temperature `T_ref + Vb q` and output temperature `T_offset + L q`. The format
 stores no mesh or full-field basis. The native reader checks the version,
 truncation, numeric values, dimensions and facet ownership.
 
-FloTHERM exports use a separate format. Their comparison scripts are in
-`playground/simple_erom_case1` and `playground/bci_rom_testcase1`.
+FloTHERM exports use a separate format. See
+[`bci_rom_testcase1`](../playground/bci_rom_testcase1/) and the archived
+[`simple_erom_case1`](../playground/archived/simple_erom_case1/) for comparisons.

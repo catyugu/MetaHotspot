@@ -1,6 +1,6 @@
 #pragma once
 
-#include "model/model.hpp"
+#include "model/fom.hpp"
 #include <utility>
 
 namespace mhs::solver {
@@ -14,7 +14,7 @@ namespace mhs::solver {
     // Unit-area resistances from the minus/plus cell centers to an interior
     // facet. For solid-fluid interfaces the fluid-side resistance is the film.
     std::pair<double, double> interior_facet_resistances(
-        const mhs::model::Model& model, mhs::model::FacetId id, double k_minus, double k_plus);
+        const mhs::model::Fom& model, mhs::model::FacetId id, double k_minus, double k_plus);
 
     // Algebraic elimination of an external boundary's surface temperature.
     struct BoundaryTrace {

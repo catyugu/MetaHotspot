@@ -9,6 +9,10 @@
 | `hdim/`                    | 2026-10-20 | ISEDA 2025 层级分解复现封存，不再维护                               |
 | `nonlinear_interface_rom/` | 2026-10-26 | 瞬态非线性界面 ROM 沙箱封存，结论保留、代码不再维护                 |
 | `cms_prototype/`           | 2026-10-28 | 带空腔封装的部件 ROM + TIM/lid FOM 原型封存，结论保留、代码不再维护 |
+| [`interface_nc_correction/`](interface_nc_correction/) | 2026-11-19 | 非共形界面的 TPFA 与非正交通量校正对比 |
+| [`simple_erom_case1/`](simple_erom_case1/) | 2026-11-19 | 简单立方体 EROM 耦合实验及 FloTHERM 对比基线 |
+
+`simple_erom_case1/` 同时保留原 `connecting_mor_models` 中依赖该案例的 FloTHERM 对比脚本 `compare_flotherm.py` 及其基线。
 
 `adaptive_bci_sampling/` 从提交 `c776a7552366b322ad1cd043dff622c7e449dba6` 原样迁入。内部 README 的“维护中”状态、运行命令和旧路径属于历史记录，不代表当前维护承诺；迁移后不修补其运行环境或路径。
 

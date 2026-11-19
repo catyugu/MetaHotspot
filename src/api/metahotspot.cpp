@@ -72,7 +72,7 @@ struct mhs_model_t {
 };
 
 struct mhs_compiled_t {
-    mhs::model::Model model;
+    mhs::model::Fom model;
 };
 
 struct mhs_operators_t {

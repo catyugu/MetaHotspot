@@ -11,7 +11,7 @@
 #include <type_traits>
 
 namespace mhs::compiler::fluid {
-    void build_domain(mhs::model::Model& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
+    void build_domain(mhs::model::Fom& model, const mhs::core::Vector<mhs::model::FluidBoundarySpec>& boundaries,
         const mhs::core::Vector<mhs::core::EntityIndex>& facet_boundary_tags,
         const mhs::core::Vector<double>& initial_viscosity)
     {

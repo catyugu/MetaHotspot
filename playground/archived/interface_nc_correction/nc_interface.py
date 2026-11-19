@@ -47,7 +47,7 @@ import scipy.sparse.linalg as spla
 
 from metahotspot.macromodel.embeddable import FacePort
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "archived"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from legacy_erom_interface import _EDGE_TOL, _contains, common_patches, connect
 
 

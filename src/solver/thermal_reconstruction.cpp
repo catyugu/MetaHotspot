@@ -6,8 +6,8 @@
 
 namespace mhs::solver {
     namespace {
-        double conductivity(const mhs::model::Model& model, std::span<const double> temperature,
-            mhs::model::CellId cell, double time, int axis)
+        double conductivity(const mhs::model::Fom& model, std::span<const double> temperature, mhs::model::CellId cell,
+            double time, int axis)
         {
             const auto p = model.discrete.cells[cell].center();
             const mhs::expression::FieldContext ctx {p[0], p[1], p[2], temperature[cell], time};
@@ -15,7 +15,7 @@ namespace mhs::solver {
             return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval(ctx);
         }
 
-        BoundarySample exterior_sample(const model::Model& model, std::span<const double> temperature, double time,
+        BoundarySample exterior_sample(const model::Fom& model, std::span<const double> temperature, double time,
             model::CellId cell, model::FacetId id)
         {
             const auto& facet = model.discrete.facets[id];
@@ -30,7 +30,7 @@ namespace mhs::solver {
 
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
         // use the same two-point thermal-resistance law as the diffusion assembly.
-        mhs::model::Vec3 reconstruct_cell_gradient(const mhs::model::Model& model, std::span<const double> temperature,
+        mhs::model::Vec3 reconstruct_cell_gradient(const mhs::model::Fom& model, std::span<const double> temperature,
             double time, mhs::model::CellId cell, const BoundarySampler& sample_boundary)
         {
             using namespace mhs::core;
@@ -69,7 +69,7 @@ namespace mhs::solver {
         }
     } // namespace
 
-    static std::optional<double> boundary_value(const mhs::model::Model& model, std::span<const double> temperature,
+    static std::optional<double> boundary_value(const mhs::model::Fom& model, std::span<const double> temperature,
         double time, mhs::model::CellId cell, const mhs::model::Vec3& p, const BoundarySampler& sample_boundary)
     {
         if (cell == mhs::core::invalid_id)
@@ -96,13 +96,13 @@ namespace mhs::solver {
         return std::nullopt;
     }
 
-    std::optional<double> boundary_value_at(const model::Model& model, std::span<const double> temperature, double time,
+    std::optional<double> boundary_value_at(const model::Fom& model, std::span<const double> temperature, double time,
         model::CellId cell, const model::Vec3& point)
     {
         return boundary_value(model, temperature, time, cell, point, {});
     }
 
-    double sample_point(const mhs::model::Model& model, std::span<const double> temperature, double time,
+    double sample_point(const mhs::model::Fom& model, std::span<const double> temperature, double time,
         mhs::model::CellId cell, const mhs::model::Vec3& p, const BoundarySampler& sample_boundary)
     {
         if (cell == mhs::core::invalid_id)

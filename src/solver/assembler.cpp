@@ -38,7 +38,7 @@ namespace mhs::solver {
         }
     }
 
-    ThermalAssembler::ThermalAssembler(const model::Model& model)
+    ThermalAssembler::ThermalAssembler(const model::Fom& model)
         : model_(model)
         , operators_ {core::CSRMatrix<double>(build_thermal_pattern(model.discrete)),
               build_capacity(model.discrete.cells.size()), core::Vector<double>(model.discrete.cells.size())}
@@ -176,7 +176,7 @@ namespace mhs::solver {
         return side_thermal_resistance(model_.discrete.cells[cell].size()[axis] / 2, conductivity_[cell][axis]);
     }
 
-    Operators assemble_thermal(const model::Model& model, std::span<const double> temperature, double time)
+    Operators assemble_thermal(const model::Fom& model, std::span<const double> temperature, double time)
     {
         ThermalAssembler assembler(model);
         assembler.assemble(temperature, time);

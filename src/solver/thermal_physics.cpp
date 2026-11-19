@@ -10,7 +10,7 @@
 
 namespace mhs::solver {
     std::pair<double, double> interior_facet_resistances(
-        const mhs::model::Model& model, mhs::model::FacetId id, double k_minus, double k_plus)
+        const mhs::model::Fom& model, mhs::model::FacetId id, double k_minus, double k_plus)
     {
         const auto axis = static_cast<std::size_t>(model.discrete.facets[id].axis);
         const auto& facet = model.discrete.cell_facets[id];

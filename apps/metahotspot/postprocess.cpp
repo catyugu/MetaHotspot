@@ -27,7 +27,7 @@ namespace mhs::app::postprocess {
 
     } // namespace
 
-    mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::Model& model, const mhs::model::MeshSpec& grid,
+    mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::Fom& model, const mhs::model::MeshSpec& grid,
         std::span<const double> cell_temperature, double time)
     {
         if (cell_temperature.size() != model.discrete.cells.size())

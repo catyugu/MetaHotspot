@@ -1,7 +1,7 @@
 #pragma once
 
 #include "model/erom.hpp"
-#include "model/model.hpp"
+#include "model/fom.hpp"
 #include <functional>
 #include <map>
 #include <memory>
@@ -11,7 +11,7 @@ namespace mhs::model {
     struct Component {
         ComponentId id = core::invalid_id;
         Vec3 offset {};
-        std::variant<std::shared_ptr<const Model>, std::shared_ptr<const Erom>> asset;
+        std::variant<std::shared_ptr<const Fom>, std::shared_ptr<const Erom>> asset;
         std::map<SourceId, std::function<double(double)>> powers; // EROM source schedules, W
         std::map<SurfaceId, BoundaryCondition> boundaries;
     };

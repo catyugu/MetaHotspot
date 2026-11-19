@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from metahotspot.model import Study
+    from metahotspot.fom import Study
 
 from metahotspot._compiled_data import CompiledFields, Operators
 from metahotspot._error import check
@@ -245,7 +245,7 @@ def _assembled_operators(dll, handle, state: np.ndarray, time: float):
 
 
 class Compiled(OwnedHandle):
-    """Read-only compiled runtime model. Use ``Model.compile()``."""
+    """Read-only compiled runtime model. Use ``Fom.compile()``."""
 
     def __init__(self, dll, handle) -> None:
         super().__init__(dll, handle, dll.mhs_compiled_destroy)

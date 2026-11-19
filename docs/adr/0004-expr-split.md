@@ -28,7 +28,7 @@ PTA geometry arithmetic is handled entirely in `apps/metahotspot/pta` by a small
 
 ### Heat source table
 
-`Model::heat_source_table` holds one compiled expression per source definition. `SourceTerm::source` references this table. Source terms are evaluated at their physical integration points and multiplied by the subvolume weight.
+`Fom::heat_source_table` holds one compiled expression per source definition. `SourceTerm::source` references this table. Source terms are evaluated at their physical integration points and multiplied by the subvolume weight.
 
 ### Native functions
 

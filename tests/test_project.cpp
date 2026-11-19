@@ -11,7 +11,7 @@ using namespace mhs;
 using namespace mhs::model;
 
 namespace {
-    std::shared_ptr<const Model> cube(bool split = false, bool interface_probe = false)
+    std::shared_ptr<const Fom> cube(bool split = false, bool interface_probe = false)
     {
         ModelDefinition definition;
         MaterialSpec material;
@@ -23,7 +23,7 @@ namespace {
             {{{Axis::X, 1, {0, 1, 0, 1}}}, DirichletBoundary {"300"}}};
         if (interface_probe)
             definition.point_probes = {{"contact", 1, 0.75, 0.5}, {"exposed", 1, 0.25, 0.5}};
-        return std::make_shared<const Model>(compiler::build_model(
+        return std::make_shared<const Fom>(compiler::build_model(
             definition, {{0, 1}, split ? core::Vector<double> {0, 0.5, 1} : core::Vector<double> {0, 1}, {0, 1}}));
     }
 
@@ -61,7 +61,7 @@ namespace {
         return e;
     }
 
-    Component instance(ComponentId id, std::shared_ptr<const Model> model, Vec3 at = {})
+    Component instance(ComponentId id, std::shared_ptr<const Fom> model, Vec3 at = {})
     {
         return {id, at, std::move(model), {}, {}};
     }

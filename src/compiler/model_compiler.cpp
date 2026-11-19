@@ -77,13 +77,13 @@ namespace mhs::compiler {
 
     } // namespace
 
-    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition, const mhs::model::MeshSpec& mesh)
+    mhs::model::Fom build_model(const mhs::model::ModelDefinition& definition, const mhs::model::MeshSpec& mesh)
     {
         if (!std::isfinite(definition.reference_temperature))
             throw std::invalid_argument("reference temperature must be finite");
         validate_surface_regions(definition);
 
-        mhs::model::Model model;
+        mhs::model::Fom model;
         model.reference_temperature = definition.reference_temperature;
         if (!definition.source_names.empty() && definition.source_names.size() != definition.sources.size())
             throw std::invalid_argument("source names must match the source table");
