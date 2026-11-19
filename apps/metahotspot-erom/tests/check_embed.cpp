@@ -20,8 +20,7 @@ namespace {
         FomDefinition definition;
         definition.reference_temperature = 295;
         definition.materials = {{"solid", {MaterialKind::Solid, "2", "2", "2", "1", "4", {}}}, {"unused", {}}};
-        definition.sources = {"5", "0", "8"};
-        definition.source_names = {"heater A", "", "heater B"};
+        definition.sources = {{"heater A", "5"}, {{}, "0"}, {"heater B", "8"}};
         for (SourceId i = 0; i < 3; ++i) {
             const double x = i;
             definition.volumes.push_back({0, i, {{GeometryOperation::Add, {x, 0, 0}, {x + 1, 1, 1}}}});
@@ -54,23 +53,22 @@ namespace {
     {
         check(e.K.rows() == 3 && e.C.rows() == 3 && e.Vb.rows() == 4 && e.B.cols() == 2 && e.L.rows() == 3,
             "wrong matrix dimensions");
-        check(e.surfaces.size() == 3 && e.surfaces[0].training && e.surfaces[1].training && !e.surfaces[2].training,
-            "wrong HTC groups");
-        check(e.surfaces[0].id == 0 && e.surfaces[0].name == "upstream" && e.surfaces[1].id == 1
-                && e.facet_surface == core::Vector<SurfaceId> {0, 0, 1, 1, 2, 2, 2, 2},
+        check(e.boundary_groups.size() == 2 && e.outline.size() == 1 && e.outline[0].facets.size() == 4,
+            "wrong HTC groups or outline");
+        check(e.boundary_groups[0].name == "upstream" && e.interfaces.size() == 4 && e.interfaces[0].surface == 0
+                && e.interfaces[1].surface == 0 && e.interfaces[2].surface == 1 && e.interfaces[3].surface == 1,
             "wrong facet ownership");
-        check(e.sources[0].id == 0 && e.sources[0].name == "heater A" && e.sources[1].id == 2 && e.outputs[0].id == 0
-                && e.outputs[0].name == "off center" && std::get<SourceId>(e.outputs[1].location) == 0
-                && std::get<SourceId>(e.outputs[2].location) == 2,
+        check(e.sources[0].name == "heater A" && e.sources[1].name == "heater B" && e.outputs[0].name == "off center"
+                && std::get<SourceId>(e.outputs[1].location) == 0 && std::get<SourceId>(e.outputs[2].location) == 1,
             "wrong source or output identity");
         near(e.sources[0].default_power, 5);
         near(e.sources[1].default_power, 8);
-        near(e.surfaces[0].training->maximum, 1e4);
-        near(e.surfaces[1].training->maximum, 9);
+        near(e.boundary_groups[0].maximum, 1e4);
+        near(e.boundary_groups[1].maximum, 9);
         near(e.reference_temperature, 295);
-        for (double r : e.R)
-            near(r, 0.25);
-        near(e.facets[3].area(), 0.5);
+        for (const auto& facet : e.interfaces)
+            near(facet.resistance, 0.25);
+        near(e.interfaces[3].facet.area(), 0.5);
 
         // Reconstruct the three x-cell rows of the basis from the two end
         // surfaces and the Green-Gauss observation at x=1.2.
@@ -106,7 +104,8 @@ namespace {
         if (variant == "trace")
             definition.point_probes.push_back({"HTC trace", 3, 0.5, 0.5});
         if (variant == "passive" || variant == "flux") {
-            definition.sources = {"0", "0", "0"};
+            for (auto& source : definition.sources)
+                source.density = "0";
             definition.point_probes.clear();
         }
         if (variant == "flux")
@@ -116,8 +115,9 @@ namespace {
             ranges.emplace(2, HtcRange {1, 10});
         }
         if (variant == "partial") {
-            definition.thermal_boundaries[0].regions[0].rectangle.a_max = 0.75;
-            definition.sources = {"0", "0", "0"};
+            definition.thermal_boundaries[0].regions[0].bounds[1] = 0.75;
+            for (auto& source : definition.sources)
+                source.density = "0";
             definition.materials[1] = {"resistive", {MaterialKind::Solid, "0.02", "0.02", "0.02", "1", "4", {}}};
             definition.volumes.push_back({1, core::invalid_id, {{GeometryOperation::Add, {0, 0.5, 0}, {1, 1, 1}}}});
         }
@@ -126,11 +126,11 @@ namespace {
         check(result.statistics.output_error <= tolerance, "sampled output error exceeds extraction tolerance");
         if (variant == "partial") {
             const auto& e = result.asset;
-            check(e.facet_surface[0] == 0 && e.facet_surface[1] == 0 && e.facet_surface[2] == 1,
+            check(e.interfaces[0].surface == 0 && e.interfaces[1].surface == 0 && e.interfaces[2].surface == 1,
                 "wrong facet partition for the partial HTC group");
-            near(e.facets[0].area() + e.facets[1].area(), 0.75);
-            near(e.R[0], 0.25);
-            near(e.R[1], 25);
+            near(e.interfaces[0].facet.area() + e.interfaces[1].facet.area(), 0.75);
+            near(e.interfaces[0].resistance, 0.25);
+            near(e.interfaces[1].resistance, 25);
 
             const auto fom = std::make_shared<const Fom>(compiler::compile_fom(definition, mesh));
             const auto rom = std::make_shared<const Erom>(e);
@@ -214,7 +214,7 @@ int main(int argc, char** argv)
         ComponentInstance external {20, {3, 0, 0}, body, {}, {}};
         const auto mixed = mhs::compiler::compile_project({{{10, {}, e, {}, {}}, external}, {}});
         const auto full = mhs::compiler::compile_project({{{10, {}, fom, {}, {}}, external}, {}});
-        check(mixed.dof_count() == 4 && full.dof_count() == 7 && mixed.contacts().size() == 2,
+        check(mixed.dof_count() == 4 && full.dof_count() == 7 && mixed.patches().size() == 2,
             "embedding failed to reduce DOFs and match nonconforming facets");
         compare(mixed, full, {});
         compare(mixed, full, {mhs::solver::StudyType::Transient, 304, 4, 0.5});

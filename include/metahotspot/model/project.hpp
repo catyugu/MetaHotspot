@@ -5,6 +5,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 
 namespace mhs::model {
@@ -34,37 +35,38 @@ namespace mhs::model {
         std::map<std::pair<ComponentId, ComponentId>, double> contact_resistance;
     };
 
-    struct ContactPatch {
-        std::size_t left, right; // indices in Project::components()
-        FacetId left_facet, right_facet;
-        std::array<double, 4> overlap; // world tangential bounds
-        double resistance;
-
-        double area() const { return (overlap[1] - overlap[0]) * (overlap[3] - overlap[2]); }
+    struct ContactSide {
+        std::size_t component; // index in Project::components()
+        FacetId facet;
     };
 
-    struct FacetContact {
-        core::Vector<Facet> exposed; // component-local coordinates
-        core::Vector<std::size_t> contacts; // indices in Project::contacts()
+    struct SurfacePatch {
+        struct Contact {
+            ContactSide left, right;
+            double resistance; // m² K/W
+        };
+        Rect bounds; // world coordinates for contact, component coordinates for exposure
+        std::optional<Contact> contact;
+
+        double area() const { return rect_area(bounds); }
     };
-    using FacetContacts = std::map<FacetId, FacetContact>;
 
     struct Project {
         auto components() const { return std::span<const ComponentInstance>(components_); }
-        auto contacts() const { return std::span<const ContactPatch>(contacts_); }
+        auto patches() const { return std::span<const SurfacePatch>(patches_); }
         std::size_t dof_count() const { return dof_offsets_.back(); }
         std::size_t dof_offset(std::size_t component) const { return dof_offsets_.at(component); }
         std::size_t dof_size(std::size_t component) const { return dof_offset(component + 1) - dof_offset(component); }
 
-        // Only contacted facets have entries.
-        const FacetContacts& facet_contacts(std::size_t component) const { return facet_contacts_.at(component); }
+        // An empty span means the original facet is fully exposed.
+        std::span<const std::size_t> facet_patches(std::size_t component, FacetId facet) const;
         std::optional<Vec3> output_position(ComponentId component, OutputId output) const;
 
     private:
         friend Project compiler::compile_project(model::ProjectDefinition definition);
         core::Vector<ComponentInstance> components_;
-        core::Vector<ContactPatch> contacts_;
+        core::Vector<SurfacePatch> patches_;
         core::Vector<std::size_t> dof_offsets_ {0};
-        core::Vector<FacetContacts> facet_contacts_;
+        core::Vector<std::map<FacetId, core::Vector<std::size_t>>> facet_patches_;
     };
 } // namespace mhs::model

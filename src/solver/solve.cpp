@@ -1,4 +1,5 @@
 #include "solver/solve.hpp"
+#include "compiler/project_compiler.hpp"
 #include "core/csr_ops.hpp"
 #include "core/vector.hpp"
 #include "logging/logger.hpp"
@@ -6,13 +7,12 @@
 #include "solver/assembler.hpp"
 #include "solver/nonlinear_solver.hpp"
 #include "solver/solver.hpp"
-#include "solver/thermal_reconstruction.hpp"
 #include <atstep/settings.hpp>
 #include <atstep/stepper.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
-#include <numeric>
 #include <stdexcept>
 #include <string>
 
@@ -53,33 +53,27 @@ namespace mhs::solver {
         }
 
         core::Vector<double> initial_values(
-            std::size_t count, const Study& study, std::span<const double> initial_state)
+            const model::Project& project, const Study& study, std::span<const double> initial_state)
         {
+            const auto count = project.dof_count();
             if (count == 0)
                 throw std::invalid_argument("solve: project has no degrees of freedom");
             if (!std::isfinite(study.initial_temperature))
                 throw std::invalid_argument("solve: initial temperature must be finite");
-            if (initial_state.empty())
-                return core::Vector<double>(count, study.initial_temperature);
-            if (initial_state.size() != count)
-                throw std::invalid_argument("solve: initial_state size must match the project DOF count");
-            return core::Vector<double>(initial_state.begin(), initial_state.end());
-        }
+            if (!initial_state.empty()) {
+                if (initial_state.size() != count)
+                    throw std::invalid_argument("solve: initial_state size must match the project DOF count");
+                return {initial_state.begin(), initial_state.end()};
+            }
 
-        core::Vector<double> project_initial_values(
-            const model::Project& project, const Study& study, std::span<const double> initial_state)
-        {
-            auto state = initial_values(project.dof_count(), study, initial_state);
-            if (!initial_state.empty())
-                return state;
-            for (std::size_t i = 0; i < project.components().size(); ++i)
-                if (const auto* asset
-                    = std::get_if<std::shared_ptr<const model::Erom>>(&project.components()[i].asset)) {
-                    const auto& erom = **asset;
-                    const auto offset = project.dof_offset(i);
-                    const double delta = study.initial_temperature - erom.reference_temperature;
-                    for (std::size_t j = 0; j < erom.uniform_temperature_mode.size(); ++j)
-                        state[offset + j] = delta * erom.uniform_temperature_mode[j];
+            core::Vector<double> state(count, study.initial_temperature);
+            const auto components = project.components();
+            for (std::size_t i = 0; i < components.size(); ++i)
+                if (const auto* asset = std::get_if<std::shared_ptr<const model::Erom>>(&components[i].asset)) {
+                    const auto& e = **asset;
+                    const double delta = study.initial_temperature - e.reference_temperature;
+                    std::ranges::transform(e.uniform_temperature_mode, state.begin() + project.dof_offset(i),
+                        [delta](double weight) { return delta * weight; });
                 }
             return state;
         }
@@ -201,28 +195,15 @@ namespace mhs::solver {
     mhs::solver::Solution solve(const mhs::model::Fom& model, const mhs::solver::Study& study,
         std::span<const double> initial_state, const SolveOptions& options)
     {
-        auto state = initial_values(model.discrete.cells.size(), study, initial_state);
-        core::Vector<OutputTrace> traces;
-        append_fom_traces(traces, model, 0);
-        ThermalAssembler assembler(model);
-        auto assemble = [&](std::span<const double> current, double time) -> const Operators& {
-            return assembler.assemble(current, time);
-        };
-        auto observe = [&](double time, std::span<const double> accepted) {
-            for (std::size_t i = 0; i < model.point_probes.size(); ++i) {
-                const auto& probe = model.point_probes[i];
-                traces[i].values.push_back(sample_point(model, accepted, time, probe.cell, probe.point));
-            }
-        };
-        auto solution = solve_system(study, assemble, std::move(state), options, observe);
-        solution.output_traces = std::move(traces);
-        return solution;
+        // The single-component project borrows the model for this synchronous call.
+        const std::shared_ptr<const model::Fom> asset(std::shared_ptr<const model::Fom> {}, &model);
+        return solve(compiler::compile_project({{{0, {}, asset, {}, {}}}, {}}), study, initial_state, options);
     }
 
     Solution solve(const model::Project& project, const Study& study, std::span<const double> initial_state,
         const SolveOptions& options)
     {
-        auto state = project_initial_values(project, study, initial_state);
+        auto state = initial_values(project, study, initial_state);
         auto traces = project_outputs(project);
         ProjectAssembler assembler(project);
         auto assemble = [&](std::span<const double> current, double time) -> const Operators& {

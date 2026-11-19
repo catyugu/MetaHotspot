@@ -32,8 +32,7 @@ The compiler locates opposing coplanar facets and couples their overlap by TPFA.
 `ProjectDefinition::contact_resistance` accepts area-specific contact
 resistances in m² K/W keyed by ascending component IDs. A connected patch
 replaces the environment over its covered area. The remaining area keeps the
-surface's environment. FOMs use `facet_surface` to index both the geometric
-group and its thermal law. Instance overrides use `SurfaceId`. Contacts with
+surface's environment. FOMs use `facet_boundary` to select a thermal boundary group and its law. Instance overrides use `SurfaceId`. Contacts with
 untrained EROM surfaces log a warning and leave both environment laws in effect. Fluid advection and
 hydraulic boundary terms operate within the individual FOM.
 
@@ -65,9 +64,15 @@ write_erom("package.mherom", result.asset);
 
 A group's ID is its index in `FomDefinition::thermal_boundaries`. The default
 group has ID `thermal_boundaries.size()`. Every region of a selected group
-must lie on the exterior of the FOM. Groups may cover full faces or parts of
-faces. Groups that select interior faces or mix interior and exterior faces
-are rejected.
+must lie entirely on the boundary of the axis-aligned bounding box of the
+active FOM cells. A group may contain parts of several box faces, with every
+part covered by exterior mesh facets. Selecting any interior or recessed
+exterior facet, including exposed steps, rejects the group. The same rule
+applies when the default group is selected for training.
+EROM source, output and connectable group IDs are zero-based indices in their
+asset tables. Extraction assigns these indices after selecting powered sources
+and trained groups from the FOM.
+
 Supply positive HTC limits in W/(m² K) for each training group. All compiled
 groups with nonzero HTC must be selected. A selected adiabatic group becomes
 connectable with zero default HTC. The original constant HTC and ambient are
@@ -95,10 +100,11 @@ surfaces, evaluated at each sampled HTC value. Global capacity-scaled spectral
 estimates use a preconditioned low-end Rayleigh–Ritz iteration and restarted,
 reorthogonalized high-end Krylov iteration. Both require a checked eigenpair
 residual. Elliptic matching points are positive real shifts, evaluated with
-arithmetic-geometric means using the complementary modulus. Each input keeps
-its own response space. Ten successful log-uniform HTC residual probes advance
-each input to the next shift. The fixed C++ random seed gives reproducible
-native runs.
+arithmetic-geometric means using the complementary modulus. Training visits
+those shifts from low to high to learn the HTC-sensitive responses first.
+Each input keeps its own response space. Ten successful log-uniform HTC
+residual probes advance each input to the next shift. The fixed C++ random
+seed gives reproducible native runs.
 
 Each facet uses the exact TPFA conductance
 `g_f(h) = A_f h / (1 + R_f h)`. Conductances are summed per owner cell for
@@ -116,11 +122,13 @@ compression and sampled output acceptance. Output validation uses independent
 AMG-CG FOM solves with a true relative residual at most the smaller of
 `1e-8` and one-thousandth of the extraction tolerance. It checks several
 settings in the training range and the default environment when anchored.
-The measured error is the temperature difference divided by the larger of one
-kelvin and the magnitude of the FOM temperature rise. Accuracy after embedding
-depends on the attached geometry and loads.
+At each sampled setting it exploits symmetry to solve per output when there
+are fewer outputs than independent inputs. The measured error is the
+temperature difference divided by the larger of one kelvin and the magnitude
+of the FOM temperature rise. Accuracy after embedding depends on the attached
+geometry and loads.
 
-## Native .mherom v2
+## Native .mherom v3
 
 The binary stream is little-endian and unpadded. Counts and IDs are unsigned
 32-bit integers. Scalars and row-major matrix entries are IEEE 754 binary64.
@@ -128,27 +136,24 @@ Strings are UTF-8 bytes preceded by a 32-bit byte count.
 
 | Order | Record | Layout |
 | --- | --- | --- |
-| 1 | Header | Eight bytes `MHEROM\r\n`, version `2`, then counts `n, ns, no, nb, nf, ng` |
+| 1 | Header | Eight bytes `MHEROM\r\n`, version `3`, then counts `n, ns, no, nb, ng, nl` |
 | 2 | Temperature | Reference temperature |
-| 3 | Operators | `K[n,n], C[n,n], B[n,ns], L[no,n], Vb[nb,n], R[nb]` |
+| 3 | Operators | `K[n,n], C[n,n], B[n,ns], L[no,n], Vb[nb,n]` |
 | 4 | Initialization | Uniform mode of length `n` |
-| 5 | Facets | `nf` records of axis (0/1/2), outward normal (0 for −, 1 for +), plane, and four tangent bounds |
-| 6 | Surfaces | `ng` records of ID, name, trained flag, four scalars if trained (HTC min/max/default and ambient), facet count, and facet IDs |
-| 7 | Sources | `ns` records of ID, name and default power in watts |
-| 8 | Outputs | `no` records of ID, name, and source ID. Point outputs use `0xffffffff` as the source ID, followed by three coordinates |
+| 5 | Interfaces | `nb` records of facet geometry, area-specific half-cell resistance and HTC group index |
+| 6 | HTC groups | `ng` records of name and four scalars (HTC min, max, default and ambient temperature) |
+| 7 | Outline | `nl` records of group name, facet count and facet geometries |
+| 8 | Sources | `ns` records of name and default power in watts |
+| 9 | Outputs | `no` records of name and source index. Point outputs use `0xffffffff` in place of the source index, followed by three coordinates |
 
-`n` is the modal order. The first `nb` facets correspond one-to-one to the
-rows of `Vb` and the positive area-specific half-cell resistances `R`. The
-remaining facets describe the outline for diagnostic contact detection. Every
-facet belongs to one surface. All HTC groups index the same `Vb` and `R`.
-In C++, `Erom::facet_surface` maps each facet to an index in `Erom::surfaces`.
-`EromSurface::training` holds the HTC range and default environment, while
-`EromOutput::location` holds either a point or a source ID.
+Facet geometry contains axis (0/1/2), outward normal (0 for −, 1 for +),
+plane coordinate and four tangent bounds. Interface records correspond
+one-to-one to rows of `Vb`. Outline geometry is used for contact diagnostics.
+
 The operators use `C dq/dt + Kq = BP + f_external`, with internal surface-side
-temperature `T_ref + Vb q` and output temperature `T_ref + L q`. The format
-stores no mesh or full-field basis. The native reader checks the version,
-truncation, numeric values, dimensions and facet ownership. Regenerate v1
-assets with the current extractor before loading them.
+temperature `T_ref + Vb q` and output temperature `T_ref + L q`. The native reader
+checks the version, truncation, numeric values, dimensions and group indices.
+Regenerate older assets with the current extractor before loading them.
 
 FloTHERM exports use a separate format. See
 [`bci_rom_testcase1`](../playground/bci_rom_testcase1/) and the archived

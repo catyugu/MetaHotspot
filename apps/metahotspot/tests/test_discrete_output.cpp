@@ -19,7 +19,7 @@ static CubeDefinition cube_definition()
     mat.conductivity_x = mat.conductivity_y = mat.conductivity_z = "1";
     mat.density = mat.specific_heat = "1";
     d.materials.push_back({"solid", mat});
-    d.sources = {"0"};
+    d.sources = {{{}, "0"}};
     d.volumes.push_back({0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {1, 1, 1}}}});
     return d;
 }
@@ -88,11 +88,11 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         d.thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, conditions[kind]}};
         const auto model = test_pta::compile_fom(d, d.mesh);
         // All other faces share the compiled zero-flux default condition.
-        ASSERT_EQ(model.surfaces.size(), 2u);
+        ASSERT_EQ(model.boundary_groups.size(), 2u);
         ASSERT_EQ(model.discrete.facets.size(), 6u);
         for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
             const auto& facet = model.discrete.facets[id];
-            const auto& condition = model.surfaces[model.facet_surface[id]].condition;
+            const auto& condition = model.boundary_groups[model.facet_boundary[id]].condition;
             if (facet.axis != Axis::X || facet.normal != 1) {
                 EXPECT_TRUE(std::holds_alternative<Neumann>(condition));
                 continue;

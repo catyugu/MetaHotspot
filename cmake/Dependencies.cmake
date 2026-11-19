@@ -173,8 +173,6 @@ endif()
 # Intel oneMKL (optional, provides MKL::MKL). Pardiso is the direct solver; the
 # AMG-preconditioned CG (Amg) default does not depend on MKL.
 # ----------------------------------------------------------------------------
-set(MHS_ENABLE_PARDISO OFF)
-
 if(MHS_USE_MKL)
     # Consumed by oneMKL's own MKLConfig.cmake (MKL_LINK etc.); `sdl` is a
     # valid link mode when MPI is off (the default here).
@@ -187,6 +185,5 @@ if(MHS_USE_MKL)
     endif()
     set(MKL_INTERFACE "lp64" CACHE STRING "MKL index interface (lp64|ilp64)")
     find_package(MKL CONFIG REQUIRED)
-    set(MHS_ENABLE_PARDISO ON)
 endif()
 

@@ -126,8 +126,7 @@ namespace mhs::app::pta {
                 mhs::model::VolumeSpec v;
                 v.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
                 v.source = static_cast<mhs::model::SourceId>(out.sources.size());
-                out.sources.push_back(b.volumetric_heat_source);
-                out.source_names.push_back(b.name);
+                out.sources.push_back({b.name, b.volumetric_heat_source});
                 const double x = eval(layer.x_offset) + eval(b.x_offset), y = eval(layer.y_offset) + eval(b.y_offset);
                 const double top = z + ((l == 0 && b.thickness) ? eval(*b.thickness) : thickness[l]);
                 for (const auto& op : b.geometry) {
@@ -146,10 +145,8 @@ namespace mhs::app::pta {
         auto scale_regions = [&](auto& regions) {
             for (auto& r : regions) {
                 r.coordinate *= scale;
-                r.rectangle.a_min *= scale;
-                r.rectangle.a_max *= scale;
-                r.rectangle.b_min *= scale;
-                r.rectangle.b_max *= scale;
+                for (auto& x : r.bounds)
+                    x *= scale;
             }
         };
         for (auto& b : out.thermal_boundaries)

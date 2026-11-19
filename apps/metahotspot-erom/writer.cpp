@@ -68,43 +68,40 @@ namespace mhs::app::erom {
         const Temporary cleanup {temporary};
         Writer writer(temporary);
         writer.count(model::erom_codec::version);
-        for (const auto count :
-            {e.K.rows(), e.sources.size(), e.outputs.size(), e.Vb.rows(), e.facets.size(), e.surfaces.size()})
+        for (const auto count : {e.K.rows(), e.sources.size(), e.outputs.size(), e.interfaces.size(),
+                 e.boundary_groups.size(), e.outline.size()})
             writer.count(count);
         writer.scalar(e.reference_temperature);
         for (const auto* matrix : {&e.K, &e.C, &e.B, &e.L, &e.Vb})
             writer.values(model::erom_codec::elements(*matrix));
-        writer.values(std::span<const double>(e.R));
         writer.values(std::span<const double>(e.uniform_temperature_mode));
-        for (const auto& facet : e.facets) {
+        auto write_facet = [&](const model::Facet& facet) {
             writer.count(static_cast<std::uint32_t>(facet.axis));
             writer.count(facet.normal > 0);
             writer.scalar(facet.coordinate);
             writer.values(std::span<const double>(facet.bounds));
+        };
+        for (const auto& face : e.interfaces) {
+            write_facet(face.facet);
+            writer.scalar(face.resistance);
+            writer.count(face.surface);
         }
-        core::Vector<core::Vector<model::FacetId>> facets_by_surface(e.surfaces.size());
-        for (std::size_t id = 0; id < e.facet_surface.size(); ++id)
-            facets_by_surface[e.facet_surface[id]].push_back(static_cast<model::FacetId>(id));
-        for (std::size_t i = 0; i < e.surfaces.size(); ++i) {
-            const auto& surface = e.surfaces[i];
-            writer.count(surface.id);
+        for (const auto& surface : e.boundary_groups) {
             writer.name(surface.name);
-            const auto& h = surface.training;
-            writer.count(h.has_value());
-            if (h)
-                for (const double value : {h->minimum, h->maximum, h->coefficient, h->ambient})
-                    writer.scalar(value);
-            writer.count(facets_by_surface[i].size());
-            for (const auto id : facets_by_surface[i])
-                writer.count(id);
+            for (const double value : {surface.minimum, surface.maximum, surface.coefficient, surface.ambient})
+                writer.scalar(value);
+        }
+        for (const auto& group : e.outline) {
+            writer.name(group.name);
+            writer.count(group.facets.size());
+            for (const auto& facet : group.facets)
+                write_facet(facet);
         }
         for (const auto& source : e.sources) {
-            writer.count(source.id);
             writer.name(source.name);
             writer.scalar(source.default_power);
         }
         for (const auto& output : e.outputs) {
-            writer.count(output.id);
             writer.name(output.name);
             if (const auto* point = std::get_if<model::Vec3>(&output.location)) {
                 writer.count(core::invalid_id);

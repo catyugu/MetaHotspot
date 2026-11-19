@@ -15,7 +15,7 @@ static mhs::model::FomDefinition make_simple_cube_io()
 {
     mhs::model::FomDefinition io;
 
-    io.sources = {"0"};
+    io.sources = {{{}, "0"}};
     io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
@@ -56,7 +56,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
     // produce different K.
     mhs::model::FomDefinition io;
 
-    io.sources = {"0"};
+    io.sources = {{{}, "0"}};
     io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;

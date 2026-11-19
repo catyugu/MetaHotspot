@@ -22,17 +22,16 @@ namespace mhs::app::erom {
         return result;
     }
 
-    Matrix solve_positive(const Matrix& matrix, const Matrix& rhs)
+    Vector solve_positive(const Matrix& matrix, const Vector& rhs)
     {
         Eigen::LLT<Matrix> solver(matrix);
         if (solver.info() != Eigen::Success)
             throw std::runtime_error("reduced operator is not positive definite");
-        Matrix result = solver.solve(rhs);
+        Vector result = solver.solve(rhs);
         if (!result.allFinite())
             throw std::runtime_error("nonfinite reduced response");
         return result;
     }
-    Vector solve_positive(const Matrix& matrix, const Vector& rhs) { return solve_positive(matrix, Matrix(rhs)); }
 
     namespace {
         struct ResponseSpace {
@@ -90,21 +89,19 @@ namespace mhs::app::erom {
             std::set<std::pair<Eigen::Index, int>> inputs;
             for (std::size_t id = 0; id < project.boundary_cells.size(); ++id)
                 if (const auto region = regions[project.boundary_cells[id]]; !driven[region])
-                    inputs.emplace(project.asset.facet_surface[id], region);
+                    inputs.emplace(project.interfaces[id].surface, region);
             return {inputs.begin(), inputs.end()};
         }
     } // namespace
 
-    Matrix build_basis(
-        const Prepared& project, const core::Vector<int>& regions, double tolerance, Statistics& statistics)
+    Matrix build_basis(const Prepared& project, const Vector& lower, const Vector& upper,
+        const core::Vector<int>& regions, double tolerance, Statistics& statistics)
     {
         constexpr std::size_t max_responses = 512;
         const auto& K = project.K;
         const auto& capacity = project.capacity;
         const auto n = K.rows();
         const auto nb = static_cast<Eigen::Index>(project.boundary_cells.size());
-        const Vector lower = project.parameters(&model::EromSurfaceTraining::minimum);
-        const Vector upper = project.parameters(&model::EromSurfaceTraining::maximum);
         const Vector log_lower = lower.array().log(), log_upper = upper.array().log();
         Vector diagonal = Vector::Zero(n);
         Vector closure(nb);
@@ -145,7 +142,7 @@ namespace mhs::app::erom {
                     if (is_passive) {
                         const auto [group, region] = passive[port - powered];
                         ambient.setZero();
-                        for (const auto id : project.surface_facets(static_cast<model::SurfaceId>(group)))
+                        for (const auto id : project.training[group].facets)
                             if (regions[project.boundary_cells[id]] == region)
                                 ambient[id] = closure[id];
                         g.setZero();

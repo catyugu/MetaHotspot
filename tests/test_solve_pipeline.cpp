@@ -11,7 +11,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     // Cube with heat source + Dirichlet on bottom + convective BC on top
     mhs::model::FomDefinition io;
 
-    io.sources = {"1e6"};
+    io.sources = {{{}, "1e6"}};
     io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
@@ -45,7 +45,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
     mhs::model::FomDefinition io;
 
-    io.sources = {"1e8"};
+    io.sources = {{{}, "1e8"}};
     io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;
@@ -108,7 +108,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 {
     mhs::model::FomDefinition io;
 
-    io.sources = {"0"};
+    io.sources = {{{}, "0"}};
     io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
 
     mhs::model::MaterialSpec mat;

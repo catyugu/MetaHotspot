@@ -141,21 +141,23 @@ namespace mhs::solver {
         return operators_;
     }
 
-    const Operators& ThermalAssembler::assemble(std::span<const double> temperature, double time,
-        const model::FacetContacts& contacts, const model::BoundaryOverrides& overrides)
+    const Operators& ThermalAssembler::assemble(
+        std::span<const double> temperature, double time, const model::Project* project, std::size_t component)
     {
         assemble_internal(temperature, time);
-        for (std::size_t i = 0; i < model_.facet_surface.size(); ++i) {
-            const auto surface = model_.facet_surface[i];
+        const auto* overrides = project ? &project->components()[component].boundaries : nullptr;
+        for (std::size_t i = 0; i < model_.facet_boundary.size(); ++i) {
+            const auto surface = model_.facet_boundary[i];
             if (surface == core::invalid_id)
                 continue;
-            const auto& law = boundary_override(overrides, surface, model_.surfaces[surface].condition);
+            const auto& fallback = model_.boundary_groups[surface].condition;
+            const auto& law = overrides ? *boundary_override(*overrides, surface, &fallback) : fallback;
             if (is_adiabatic(law))
                 continue;
             const auto id = static_cast<model::FacetId>(i);
             const auto cell = model_.discrete.cell_facets[id].owner();
             const auto r = resistance(id);
-            const auto [conductance, load] = boundary_terms(contacts, id, model_.discrete.facets[id],
+            const auto [conductance, load] = boundary_terms(project, component, id, model_.discrete.facets[id],
                 [&](const model::Facet& patch) { return evaluate_boundary(law, patch, temperature[cell], time, r); });
             operators_.K.values()[diagonal_positions_[cell]] += conductance;
             operators_.f[cell] += load;

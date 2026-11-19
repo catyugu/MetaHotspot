@@ -7,9 +7,9 @@
 | `FomDefinition` | 几何、材料、热源、边界、探针和参考温度 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
 | `mhs::model::Fom` | 显式网格、材料与积分数据、编译表达式和冻结流场 | `compile_fom` 的独立结果；供重复装配和求解使用 |
 | `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；重复装配只刷新数值，单次导出独立拥有 |
-| `Erom` | 模态算子、HTC 训练表面、物理源、输出恢复和初态 | `.mherom` 读取后不可变、可共享 |
+| `Erom` | 模态算子、可连接 HTC 接口、诊断轮廓、源、输出及初态 | `.mherom` 读取后不可变、可共享 |
 | `ProjectDefinition` | FOM/EROM 资产实例、平移、源功率与表面条件覆盖、接触热阻 | 可变工程输入 |
-| `Project` | 只读实例、自由度偏移、`ContactPatch` 与逐 Facet 接触记录 | `compiler::compile_project` 的独立结果 |
+| `Project` | 只读实例、自由度偏移、共享面片分割及逐 Facet 索引 | `compiler::compile_project` 的独立结果 |
 | `Solution` | 最终混合状态、可选状态历史和 `OutputTrace` | 独立拥有求解结果 |
 
 `compile` 不修改输入；`assemble` 和 `solve` 不修改编译模型。C opaque handle 和 Python wrapper 负责所有权与转换。Python 返回的 NumPy/SciPy 数据在 native handle 销毁后仍有效。
@@ -31,7 +31,7 @@
 
 当前 TPFA 适用于轴对齐长方体、相邻中心沿面法向对齐及对角导热张量。编译器根据用户指定的笛卡尔轴生成控制体与面片，不执行自适应网格加密。
 
-`SourceTerm` 仅保存 CellId、源表索引、体积权重和积分点。当前共形体编译路径要求所有落在网格内部的几何盒面与对应轴顶点平面对齐（容差 `geometry_eps`）；不满足时拒绝编译。每个有效单元按照有序体区域的覆盖关系确定唯一材料与热源，源项在单元中心计算，以单元体积为权重。体区域的非共形切分留待专用实现。热与流体边界在共同的几何切分上分别采用后出现条件覆盖前者的绑定，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取模型参考温度。
+`SourceTerm` 保存 CellId 和源表索引。当前共形体编译路径要求所有落在网格内部的几何盒面与对应轴顶点平面对齐（容差 `geometry_eps`）；不满足时拒绝编译。每个有效单元按照有序体区域的覆盖关系确定唯一材料与热源，源项在单元中心计算，以单元体积为权重。体区域的非共形切分留待专用实现。热与流体边界在共同的几何切分上分别采用后出现条件覆盖前者的绑定，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取模型参考温度。
 
 `FluidBoundaryTerm` 保存 FacetId 和内联的 `FluidTransportCondition = variant<FluidInflow, FluidOutflow>`。两种记录均保存非负的质量流率（kg/s），仅 `FluidInflow` 保存流入温度；按压力解得到的实际流向选择类型，而非输入的入口/出口标签，因此压力边界反向流动时仍采用该边界的流入温度。零流量归入 `FluidOutflow`，能量贡献为零。这些记录只有数值和内联判别信息，无动态分配；每片的冻结流量独立，不需要额外条件表。
 
@@ -43,24 +43,24 @@
 
 ## 混合工程
 
-编译后的 FOM 用 `facet_surface` 将外表面映射到 `SurfaceId`，用同一 ID 查找几何组和热边界条件。内部面的映射值为 invalid。
+编译后的 FOM 用 `facet_boundary` 将外部 Facet 映射到热边界组索引 `SurfaceId`。内部 Facet 使用 `invalid_id`。
 
 `ComponentInstance` 保存 `shared_ptr<const Fom/Erom>` variant、稳定 ID、平移和实例覆盖。FOM 的源表达式归资产；EROM 的 `powers` 以 SourceId 替换指定源的默认瓦数，其他源保持默认值，覆盖不叠加。`boundaries` 以 SurfaceId 替换未被接触覆盖部分的环境条件，不修改共享资产。
 
-`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面。接触记录存交集和面积比热阻，面积从交集计算。每片发生接触的 Facet 记录接触索引和剩余外露区域，供装配与探针重建共用。未训练的 EROM 表面接触时记录去重的日志警告，双方继续施加环境条件。
+`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面。二维矩形同时描述接触交集和剩余外露面片；逐 Facet 索引供装配和探针重建共用。工程对每个接触面片只装配一次。接触未训练 EROM 轮廓时，编译器记录去重的日志警告，双方继续施加各自的环境条件。
 
 `ThermalAssembler` 组装 FOM 内部与剩余外边界，`ProjectAssembler` 合并组件算子并用两侧温度映射装配接触。FOM 外部接触采用法向半单元 `d/k`，内部流固面另用冻结流场的膜阻；跨组件接触不承担水力连通或流固膜模型推断。单 FOM 工程直接返回局部装配结果。全局 CSR 模式用连续缓冲区两遍构建；纯 EROM 工程缓存不随状态、时间变化的接触算子，混合工程保留逐次求值的 FOM 热阻。
 
-观察量在 `project_output.cpp` 单独计算，不读取装配器上次求值的状态。初态转换区分 FOM 的绝对温度与 EROM 的模态坐标，缺少均匀温度响应且初温改变时，瞬态必须提供完整初态。所有 `OutputTrace` 共用 `snapshot_times`，由 `(ComponentId, OutputId)` 查询。C++ 的 `SolveOptions::store_snapshot_states=false` 可只保留时间、输出轨迹和最终状态；默认仍保存全状态历史，C/Python 结果契约不变。
+观察量在 `project_output.cpp` 单独计算，不读取装配器上次求值的状态。求解入口将均匀初温填入 FOM 状态，并按 EROM 的均匀温度模态和参考温度生成模态初态。调用者也可给出完整初态。所有 `OutputTrace` 共用 `snapshot_times`，由 `(ComponentId, OutputId)` 查询。C++ 的 `SolveOptions::store_snapshot_states=false` 可只保留时间、输出轨迹和最终状态；默认仍保存全状态历史，C/Python 结果契约不变。
 
 ## 输入与数组约定
 
 - C++ 的 `MeshSpec`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Fom.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
 - C/Python 网格导出使用 `facet_minus`、`facet_plus`、`facet_axis`、`facet_coordinate` 和 `facet_bounds`。前四者为 `(facet_count,)`，bounds 为 `(facet_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量由 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
-- Facet 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 `facet_coordinate` 给出，外法向由缺失的一侧确定。一个 cell side 可有多个外边界 Facet。跨组件非匹配表面通过共面矩形交集建立 `ContactPatch`。单元至 Facet 只保留一套 CSR 关联索引。
+- Facet 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 `facet_coordinate` 给出，外法向由缺失的一侧确定。一个 cell side 可有多个外边界 Facet。跨组件非匹配表面按共面矩形交集建立接触面片。单元至 Facet 只保留一套 CSR 关联索引。
 - 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。
-- `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
-- `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FacetId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
+- `FomDefinition::sources` 每项包含名称和体积功率密度表达式。`Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。
+- 原生 EROM 提取接收 FOM 热边界组索引及各组 HTC 范围。每个可连接接口记录几何、半单元热阻 $R_f$ 和所属组索引，`Vb` 行按接口索引排列。训练和装配逐面计算精确 HTC 导通率 $A_f h/(1+R_f h)$。
 
 函数在编译阶段统一构造求值器：分段线性要求至少两个点，按横坐标排序，并拒绝重复横坐标和非有限值；周期分段常数要求非空值和有限正周期。表达式解析失败立即抛出异常，不保存失败求值器。所有探针值共用 `Solution::snapshot_times`；XML 输出显式接收这份时间序列。
 
