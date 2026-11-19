@@ -56,15 +56,21 @@ namespace mhs::app::erom {
             }
         }
 
-        bool exterior_region(const DiscreteMesh& mesh, const SurfaceRegion& region)
+        bool on_box_face(const Facet& face, const CellGeometry& box)
+        {
+            const auto axis = static_cast<std::size_t>(face.axis);
+            // Compiled facet planes and active cells use the same mesh coordinates.
+            return face.normal != 0 && face.coordinate == (face.normal < 0 ? box.min[axis] : box.max[axis]);
+        }
+
+        bool covered_by_box_faces(const DiscreteMesh& mesh, const SurfaceRegion& region, const CellGeometry& box)
         {
             double covered = 0;
-            for (std::size_t i = 0; i < mesh.facets.size(); ++i) {
-                const auto& f = mesh.facets[i];
+            for (const auto& f : mesh.facets) {
                 if (f.axis != region.axis || std::abs(f.coordinate - region.coordinate) >= geometry_eps)
                     continue;
                 if (const auto hit = rect_intersection(f.bounds, region.bounds)) {
-                    if (!mesh.cell_facets[i].exterior())
+                    if (!on_box_face(f, box))
                         return false;
                     covered += rect_area(*hit);
                 }
@@ -115,11 +121,6 @@ namespace mhs::app::erom {
         for (std::size_t id = 0; id < model.facet_boundary.size(); ++id)
             if (const auto surface = model.facet_boundary[id]; surface != core::invalid_id)
                 facets_by_surface[surface].push_back(static_cast<FacetId>(id));
-        for (SurfaceId id = 0; id < definition.thermal_boundaries.size(); ++id)
-            if (ranges.contains(id))
-                for (const auto& region : definition.thermal_boundaries[id].regions)
-                    if (!exterior_region(mesh, region))
-                        throw std::invalid_argument("HTC group " + std::to_string(id) + " must lie on the exterior");
         auto bounds = mesh.cells.front();
         for (const auto& cell : mesh.cells)
             for (std::size_t axis = 0; axis < bounds.min.size(); ++axis) {
@@ -129,12 +130,12 @@ namespace mhs::app::erom {
         for (const auto& [id, range] : ranges) {
             if (id >= facets_by_surface.size() || facets_by_surface[id].empty())
                 throw std::invalid_argument("unknown or empty HTC group " + std::to_string(id));
-            if (std::ranges::any_of(facets_by_surface[id], [&](FacetId f) {
-                    const auto& face = mesh.facets[f];
-                    const auto axis = static_cast<std::size_t>(face.axis);
-                    // Compiled facet planes and active cells use the same mesh coordinates.
-                    return face.normal == 0
-                        || face.coordinate != (face.normal < 0 ? bounds.min[axis] : bounds.max[axis]);
+            const bool invalid_regions = id < definition.thermal_boundaries.size()
+                && std::ranges::any_of(
+                    definition.thermal_boundaries[id].regions,
+                    [&](const auto& region) { return !covered_by_box_faces(mesh, region, bounds); });
+            if (invalid_regions || std::ranges::any_of(facets_by_surface[id], [&](FacetId f) {
+                    return !on_box_face(mesh.facets[f], bounds);
                 }))
                 throw std::invalid_argument(
                     "HTC group " + std::to_string(id) + " must lie entirely on the faces of the FOM bounding box");
