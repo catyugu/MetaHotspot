@@ -70,7 +70,11 @@ def _snapshot_svd_basis(snapshot_matrix, tolerance):
     """Compress physical responses after removing the preserved constant mode."""
     snapshots = np.asarray(snapshot_matrix, dtype=np.float64)
     snapshots = snapshots - snapshots.mean(axis=0, keepdims=True)
-    snapshots = snapshots / np.linalg.norm(snapshots, axis=0)
+    norms = np.linalg.norm(snapshots, axis=0)
+    keep = norms > np.finfo(float).eps * np.linalg.norm(snapshot_matrix, axis=0)
+    if not np.any(keep):
+        return snapshots[:, :0], np.empty(0)
+    snapshots = snapshots[:, keep] / norms[keep]
     U, singular_values, _ = scipy.linalg.svd(
         snapshots,
         full_matrices=False,
@@ -153,6 +157,14 @@ def eigenvalue_bounds(
     D = sp.diags(1.0 / np.sqrt(c_diag))
     A_min = (D @ K_min @ D).tocsr()
     A_max = (D @ K_max @ D).tocsr()
+    if n <= 3:
+        low = float(np.linalg.eigvalsh(A_min.toarray())[0])
+        high = float(np.linalg.eigvalsh(A_max.toarray())[-1])
+        if low <= 0.0 or not np.isfinite(high):
+            raise RuntimeError(
+                "eigenvalue_bounds: HTC training operators must be positive definite"
+            )
+        return low, high
     seed = np.full(n, 1.0 / np.sqrt(n))
 
     # LOBPCG uses an absolute tolerance; check the relative residual below.
@@ -177,7 +189,7 @@ def eigenvalue_bounds(
 
     high = spla.eigsh(
         A_max,
-        k=2,
+        k=1,
         which="LM",
         tol=EIGENBOUND_RTOL,
         ncv=min(cap, n - 1),
@@ -383,7 +395,7 @@ def build_parametric_basis(
         return A.tocsc()
 
     lambda_min, lambda_max = eigenvalue_bounds(K_min, K_max, C)
-    kappa = lambda_max / lambda_min
+    kappa = max(1.0, lambda_max / lambda_min)
     shift_count = mpmm_elliptic_shift_count(tolerance, lambda_min, lambda_max)
     shifts = mpmm_elliptic_shifts(shift_count, lambda_max, kappa)
     local_bases = [np.empty((K.shape[0], 0)) for _ in range(G.shape[1])]
@@ -501,7 +513,11 @@ def build_parametric_basis(
         "max_accepted_residual": float(max_accepted_residual),
         "history": history,
         "seconds": time.perf_counter() - started,
-        "singular_value_ratios": (singular_values / singular_values[0]).tolist(),
+        "singular_value_ratios": (
+            (singular_values / singular_values[0]).tolist()
+            if singular_values.size
+            else []
+        ),
     }
 
 

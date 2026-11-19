@@ -27,6 +27,7 @@ namespace mhs::app::pta {
     };
 
     struct BlockSpec {
+        std::string name;
         std::string material;
         mhs::model::Expression volumetric_heat_source;
         std::string x_offset;

@@ -8,7 +8,7 @@
 namespace mhs::compiler {
     // The only structured-index arithmetic in the compiled model pipeline.
     // Conformal Cartesian cells: volume box faces inside the mesh must lie on input grid planes.
-    void compile_conformal_mesh(mhs::model::Model& model, const mhs::model::MeshSpec& input,
+    void compile_conformal_mesh(mhs::model::Fom& model, const mhs::model::MeshSpec& input,
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
     {
         using namespace mhs::core;
@@ -81,8 +81,9 @@ namespace mhs::compiler {
                                 continue;
                             const auto& cell = model.discrete.cells[c];
                             Facet f;
-                            f.minus = sign > 0 ? c : neighbor;
-                            f.plus = sign > 0 ? neighbor : c;
+                            f.normal = neighbor == invalid_id ? static_cast<std::int8_t>(sign) : 0;
+                            model.discrete.cell_facets.push_back(
+                                sign > 0 ? CellFacet {c, neighbor} : CellFacet {neighbor, c});
                             f.axis = static_cast<Axis>(a);
                             f.coordinate = sign > 0 ? cell.max[a] : cell.min[a];
                             const int t = a == 0 ? 1 : 0, u = a == 2 ? 1 : 2;

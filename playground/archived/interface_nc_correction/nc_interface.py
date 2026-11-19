@@ -2,7 +2,7 @@
 """Non-conforming interface: eliminated patch conductance vs non-orthogonal correction.
 
 Sandbox for the interface discretisation the repository's embeddable ROM uses
-(``metahotspot.macromodel.embeddable.connect``, i.e. the weekly-report condensation
+(``legacy_erom_interface.connect``, i.e. the weekly-report condensation
 ``H_Gamma = (H_L^-1 + H_R^-1)^-1``), evaluated against the standard finite-volume
 treatment of a skewed cell-to-cell connection.
 
@@ -35,7 +35,9 @@ Units are SI everywhere (m, W, K); temperatures are rises above a 0 K ambient.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Sequence
 
 import numpy as np
@@ -43,7 +45,10 @@ import pyamg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from metahotspot.macromodel.embeddable import FacePort, common_patches, connect
+from metahotspot.macromodel.embeddable import FacePort
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from legacy_erom_interface import _EDGE_TOL, _contains, common_patches, connect
 
 
 # ---------------------------------------------------------------------------
@@ -453,7 +458,6 @@ class PatchSet:
 
 def common_patches_with_rects(port_l: FacePort, port_r: FacePort) -> PatchSet:
     """``common_patches`` plus the patch rectangles (same edge/containment rule)."""
-    from metahotspot.macromodel.embeddable import _EDGE_TOL, _contains
 
     rl, rr = port_l.rects, port_r.rects
     x_edges = np.unique(np.r_[rl[:, (0, 1)], rr[:, (0, 1)]])
@@ -646,7 +650,7 @@ class AmgCg:
     The coupled matrix does not change under the deferred-correction iteration (only
     the right-hand side does), so one hierarchy serves every corrector and the previous
     state is the warm start -- the same contract as
-    ``metahotspot.macromodel.embeddable.solve_system``.
+    ``legacy_erom_interface.solve_system``.
     """
 
     def __init__(self, matrix, *, rtol: float = COUPLED_RTOL):

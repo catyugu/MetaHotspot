@@ -74,7 +74,7 @@ C 接口使用 `mhs::c_api` 目标与 `<metahotspot_c_api.h>`。
 ## Python 包
 
 建模接口与示例见[建模契约](docs/design/io-structure.md#c-abi--python)。
-Python 使用 `SurfaceRegion` 统一指定热与流体边界，探针和 study 设置属于 `Model`。
+Python 使用 `SurfaceRegion` 统一指定热与流体边界，探针和 study 设置属于 `Fom`。
 
 Python 包是对 C API 的 `ctypes` 封装，源码在 `python/metahotspot/`，构建由根目录的
 `pyproject.toml`（scikit-build-core）驱动：轮子里包含本项目编译出的 C API 动态库及其运行时依赖，
@@ -156,7 +156,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 - **tinyxml2**：（仅 APP）PTA XML 兼容层的解析和 DOM 操作。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
-- **Eigen**：仅供内部小规模 QR 与可选 MKL/Pardiso 实现使用，不随 SDK 导出。基础容器是 `core::Vector`、`core::Matrix` 和 `core::CSRMatrix`；AMGCL 直接读取 CSR。
+- **Eigen**：用于内部小规模线性代数、EROM 算子校验和可选 MKL/Pardiso 实现，不随 SDK 导出。基础容器是 `core::Vector`、`core::Matrix` 和 `core::CSRMatrix`；AMGCL 直接读取 CSR。
 - **AMGCL**：代数多重网格预条件与 CG 求解，编入 `mhs_linear`。
 - **OpenMP**：AMGCL 的线程后端。muparser 关闭其 OpenMP 后端，表达式求值由 TBB 并行调度。
 - **GTest**：单元测试框架，用例由 CTest 发现并运行。
@@ -178,3 +178,8 @@ metahotspot --output-vtu /tmp/out.vtu \
 及 C API `mhs_log_set_level()`、Python `set_log_level()` 可在运行时覆盖环境配置。
 日志设置仅影响 MetaHotspot 自身，初始化不会修改宿主程序的 spdlog 配置。
 `init()` 应在启动阶段、并发输出日志之前调用。
+
+### FOM–EROM 混合工程
+
+C++ SDK 支持通过表面接触连接详细模型与可复用的 EROM。独立提取工具读取 PTA XML，
+生成原生 `.mherom` 资产。使用方式和文件布局见[混合工程与 EROM 提取文档](docs/erom.md)。

@@ -20,15 +20,8 @@ Modules:
   :class:`~metahotspot.macromodel.geometry.CellGeometry` geometry view.
   Concrete models subclass the base from playground adapters; the library
   itself ships no concrete model.
-* :mod:`embeddable` — the embeddable ROM extractor: boundary-face port
-  enumeration (only explicitly declared ambient faces are excluded; every other
-  boundary face becomes a connectable
-  :class:`~metahotspot.macromodel.embeddable.FacePort`),
-  subdomain assembly and whole-subdomain extraction
-  (:class:`~metahotspot.macromodel.embeddable.EmbeddableRom`),
-  non-conforming common-patch area weighting, and
-  independent-interface-node coupling
-  (:func:`~metahotspot.macromodel.embeddable.connect`).
+* :mod:`embeddable` — the subdomain extraction tools used by the research
+  adapters. The native C++ Project API assembles and solves mixed projects.
 
 All algorithms consume plain numpy/scipy data or the ``metahotspot`` bindings'
 generic ``Operators`` / ``CompiledFields`` contracts — never a named case.
@@ -49,11 +42,8 @@ from metahotspot.macromodel.embeddable import (
     FacePort,
     Subdomain,
     build_subdomain,
-    common_patches,
-    connect,
     enumerate_interface_ports,
     extract_rom,
-    solve_system,
 )
 from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
 
@@ -70,11 +60,8 @@ __all__ = [
     "Subdomain",
     "affine",
     "build_subdomain",
-    "common_patches",
-    "connect",
     "embeddable",
     "enumerate_interface_ports",
     "extract_rom",
-    "solve_system",
     "utils",
 ]

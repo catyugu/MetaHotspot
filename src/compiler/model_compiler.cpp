@@ -77,14 +77,17 @@ namespace mhs::compiler {
 
     } // namespace
 
-    mhs::model::Model build_model(const mhs::model::ModelDefinition& definition, const mhs::model::MeshSpec& mesh)
+    mhs::model::Fom build_model(const mhs::model::ModelDefinition& definition, const mhs::model::MeshSpec& mesh)
     {
         if (!std::isfinite(definition.reference_temperature))
             throw std::invalid_argument("reference temperature must be finite");
         validate_surface_regions(definition);
 
-        mhs::model::Model model;
+        mhs::model::Fom model;
         model.reference_temperature = definition.reference_temperature;
+        if (!definition.source_names.empty() && definition.source_names.size() != definition.sources.size())
+            throw std::invalid_argument("source names must match the source table");
+        model.source_names = definition.source_names;
 
         mhs::expression::SymbolTable symbols;
         register_all_functions(symbols, definition.functions);
@@ -159,6 +162,20 @@ namespace mhs::compiler {
 
         model.facet_thermal_condition
             = assign_exterior_regions(model.discrete, compiled_boundaries, default_thermal_boundary);
+
+        for (std::size_t i = 0; i < model.boundary_conditions.size(); ++i) {
+            const auto id = static_cast<mhs::model::SurfaceId>(i);
+            std::string name = "default";
+            if (i != default_thermal_boundary) {
+                name = definition.thermal_boundaries[i].name;
+                if (name.empty())
+                    name = "boundary " + std::to_string(i);
+            }
+            model.surfaces.push_back({id, std::move(name), {}});
+        }
+        for (std::size_t i = 0; i < model.facet_thermal_condition.size(); ++i)
+            if (const auto condition = model.facet_thermal_condition[i]; condition != mhs::core::invalid_id)
+                model.surfaces[condition].facets.push_back(static_cast<mhs::model::FacetId>(i));
 
         // Hydraulic boundary assignments share the same canonical FacetIds.
         auto fluid_tags = assign_exterior_regions(model.discrete, fluid_regions);

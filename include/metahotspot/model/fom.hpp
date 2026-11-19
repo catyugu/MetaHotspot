@@ -50,7 +50,7 @@ namespace mhs::model {
         CellId cell = mhs::core::invalid_id;
     };
 
-    struct Model {
+    struct Fom {
         DiscreteMesh discrete;
 
         mhs::core::Vector<MaterialId> cell_material;
@@ -59,6 +59,8 @@ namespace mhs::model {
         mhs::core::Vector<BoundaryCondition> boundary_conditions;
         mhs::core::Vector<SourceTerm> source_terms;
         mhs::core::Vector<BoundaryConditionId> facet_thermal_condition; // by FacetId; invalid for interior facets
+        mhs::core::Vector<Surface> surfaces;
+        mhs::core::Vector<std::string> source_names;
         FluidModel fluid;
 
         double reference_temperature = 300.0;

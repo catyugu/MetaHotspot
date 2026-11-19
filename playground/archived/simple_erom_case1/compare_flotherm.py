@@ -5,27 +5,22 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-SIMPLE_CASE = REPO_ROOT / "playground" / "simple_erom_case1"
-sys.path.insert(0, str(SIMPLE_CASE))
+import erom_attach_lib as attach
+from stress_erom_attach import CASES
 
-import erom_attach_lib as attach  # noqa: E402
-from stress_erom_attach import CASES  # noqa: E402
-
-from metahotspot.macromodel.embeddable import build_subdomain  # noqa: E402
-from metahotspot.macromodel.interface_enrichment import (  # noqa: E402
+from metahotspot.macromodel.embeddable import build_subdomain
+from metahotspot.macromodel.interface_enrichment import (
     clone_embeddable_rom,
     extract_interface_enriched_rom,
 )
 
-ROOT = Path(__file__).resolve().parents[1]
-BASELINE = ROOT / "baseline" / "flotherm_erom" / "simple_case1_stress_baseline.csv"
-OUT = ROOT / "results" / "simple_erom"
+ROOT = Path(__file__).resolve().parent
+BASELINE = ROOT / "baseline" / "simple_case1_stress_baseline.csv"
+OUT = ROOT / "results" / "flotherm_comparison"
 DEFAULT_CASES = (
     "baseline_copper",
     "bottom_htc_strong",

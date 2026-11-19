@@ -13,7 +13,7 @@
 
 namespace {
 
-    mhs::model::Model load_microfluid_case()
+    mhs::model::Fom load_microfluid_case()
     {
         const std::string root = MHS_SOURCE_DIR;
         const std::string input = root + "/cases/microfluid_cases/steady_case1.xml";
@@ -70,7 +70,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     };
     bool nonzero = false;
     for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
-        const auto& f = model.discrete.facets[id];
+        const auto& f = model.discrete.cell_facets[id];
         if (f.exterior())
             continue;
         const double mass = model.fluid.facet_volume_flux[id] * (density(f.minus) + density(f.plus)) / 2;
@@ -90,7 +90,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
                     return flow.mass_flow_rate;
             },
             term.condition);
-        balance[model.discrete.facets[term.facet].owner()] += mass;
+        balance[model.discrete.cell_facets[term.facet].owner()] += mass;
         boundary_sum += mass;
     }
     for (auto cell : model.fluid.fluid_to_global)
@@ -138,7 +138,7 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     d.model.fluid_boundaries = {
         {{{Axis::X, 0, {0, 0.2, 0, 1}}, {Axis::X, 0, {0.1, 0.2, 0, 1}}}, MassFlowInlet {2, 280}},
         {{{Axis::X, 0, {0.8, 1, 0, 1}}}, MassFlowInlet {3, 320}}, {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}}};
-    auto verify = [&](const mhs::model::Model& model) {
+    auto verify = [&](const mhs::model::Fom& model) {
         const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
         EXPECT_NEAR(diagonal, 5, 1e-12);
@@ -159,7 +159,7 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     bool has_cross_cut = false;
     for (auto id : refined.discrete.incident_facets(0)) {
         const auto& facet = refined.discrete.facets[id];
-        if (!facet.exterior() || facet.axis != Axis::X || facet.outward_sign() != -1)
+        if (facet.axis != Axis::X || facet.normal != -1)
             continue;
         ++side_facets;
         side_area += facet.area();
@@ -178,7 +178,7 @@ TEST(FluidModuleTest, PressureInletPumpResistanceIsLumpedAcrossFacetSplits)
     d.model.fluid_boundaries.push_back({{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {200, 280, 0}});
     d.model.fluid_boundaries.push_back({{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {0}});
 
-    auto total_inflow = [](const mhs::model::Model& model) {
+    auto total_inflow = [](const mhs::model::Fom& model) {
         double inflow = 0, outflow = 0;
         for (const auto& term : model.fluid.boundary_terms) {
             if (const auto* flow = std::get_if<FluidInflow>(&term.condition)) {
@@ -244,7 +244,7 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     EXPECT_EQ(std::ranges::count_if(reverse.fluid.boundary_terms,
                   [](const auto& term) { return std::holds_alternative<mhs::model::FluidInflow>(term.condition); }),
         1);
-    auto verify_reverse = [&](const mhs::model::Model& model, double temperature) {
+    auto verify_reverse = [&](const mhs::model::Fom& model, double temperature) {
         const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);
         const double diagonal = inc.K.coeff(0, 0);
         ASSERT_GT(diagonal, 0);

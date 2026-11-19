@@ -12,6 +12,9 @@ requires-python = ">=3.10"
 dependencies = ["numpy>=1.21", "scipy>=1.7", "pyamg>=4.0", "matplotlib>=3.10"]
 dynamic = ["version"]
 
+[project.scripts]
+metahotspot-erom = "metahotspot.erom:main"
+
 [project.urls]
 Homepage = "https://github.com/catyugu/MetaHotspot"
 

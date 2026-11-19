@@ -97,19 +97,19 @@ def _add_periodic_constant(dll, handle, name, values, period) -> None:
 # ---- public wrapper ------------------------------------------------------
 
 
-class Model(OwnedHandle):
-    """A mutable MetaHotspot model, wrapping an mhs_model_t handle.
+class Fom(OwnedHandle):
+    """Build a full-order model with a mutable mhs_model_t handle.
 
     Usage::
 
-        m = Model()
+        m = Fom()
         # Set SI mesh axes, materials and volumes before compiling.
         c = m.compile()
         sol = c.solve()
 
     Use the context manager for automatic cleanup::
 
-        with Model() as m:
+        with Fom() as m:
             ...
     """
 
@@ -118,7 +118,7 @@ class Model(OwnedHandle):
         handle = _create_model(dll)
         super().__init__(dll, handle, dll.mhs_model_destroy)
 
-    # ---- Model construction helpers ----
+    # ---- Fom construction helpers ----
 
     def set_reference_temperature(self, temperature_K: float) -> None:
         """Set compile-time reference temperature for frozen-flow preprocessing."""

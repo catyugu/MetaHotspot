@@ -11,8 +11,8 @@ from metahotspot._error import MetaHotspotError
 from metahotspot.enums import Axis, StudyType
 
 
-def _model(*, transient: bool = False) -> metahotspot.Model:
-    model = metahotspot.Model()
+def _model(*, transient: bool = False) -> metahotspot.Fom:
+    model = metahotspot.Fom()
     model.set_cartesian_mesh(
         np.array([0.0, 0.001]),
         np.array([0.0, 0.001]),

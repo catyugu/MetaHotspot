@@ -1,5 +1,6 @@
 add_library(mhs_solver STATIC
     assembler.cpp
+    project_assembler.cpp
     nonlinear_solver.cpp
     solve.cpp
     thermal_reconstruction.cpp
@@ -13,6 +14,5 @@ target_link_libraries(mhs_solver
     $<BUILD_INTERFACE:Eigen3::Eigen>
     $<BUILD_INTERFACE:AdaptiveTimeStepper::AdaptiveTimeStepper>
     mhs_logging
-    TBB::tbb
     $<BUILD_INTERFACE:mhs_options>
 )

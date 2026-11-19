@@ -1,6 +1,6 @@
 #include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
-#include "model/model.hpp"
+#include "model/fom.hpp"
 #include "model/model_definition.hpp"
 #include "solver/assembler.hpp"
 #include <gtest/gtest.h>

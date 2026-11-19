@@ -13,7 +13,7 @@
 | `model` / `mhs_model` | `mhs::model`：输入定义、运行期模型、网格与领域类型 | core、expression（INTERFACE） | 无 |
 | `linear` / `mhs_linear` | `mhs::linear`：求解接口、AMGCL、可选 PARDISO | core | AMGCL、OpenMP、可选 Eigen/MKL |
 | `compiler` / `mhs_compiler` | `mhs::compiler`：几何投影、表达式编译、冻结流场 | model | linear |
-| `solver` / `mhs_solver` | `mhs::solver`：组装、非线性迭代、时间积分、解与物理场重建 | model | expression、linear、logging、Eigen、TBB、AdaptiveTimeStepper |
+| `solver` / `mhs_solver` | `mhs::solver`：组装、非线性迭代、时间积分、解与物理场重建 | model | expression、linear、logging、Eigen、AdaptiveTimeStepper |
 | `logging` / `mhs_logging` | `mhs::logger`：日志服务 | spdlog | 项目编译选项 |
 | `api` / `mhs_c_api` | C ABI 与 opaque handle | 无 | compiler、solver、logging |
 
@@ -29,7 +29,7 @@
 
 ## 数据模型与计算流程
 
-`model::ModelDefinition` 保存声明式输入，`compiler::build_model` 产生 `model::Model`。后者持有 `DiscreteMesh`、`FluidModel`、材料、边界和编译后表达式。PTA 语法、XML 兼容、节点采样和 VTU 输出全部位于 `apps/metahotspot`，使用 `mhs::app::*` 命名空间，不进入 SDK。`model::StudyType` 在定义和运行期共用，领域表索引与 CellId/FacetId 归 model；实体索引表示与稀疏索引归 core。
+`model::ModelDefinition` 保存声明式输入，`compiler::build_model` 产生 `model::Fom`。后者持有 `DiscreteMesh`、`FluidModel`、材料、边界和编译后表达式。PTA 语法、XML 兼容、节点采样和 VTU 输出全部位于 `apps/metahotspot`，使用 `mhs::app::*` 命名空间，不进入 SDK。`model::StudyType` 在定义和运行期共用，领域表索引与 CellId/FacetId 归 model；实体索引表示与稀疏索引归 core。
 
 求解入口为 `solver/solver.hpp`，配置为 `solver::SolveOptions`，结果为 `solver::Solution`。内部组装、物理场重建、历史状态与时间积分都归 solver。表达式模块不依赖 model，从而保持 `model → expression → core` 的单向关系。
 

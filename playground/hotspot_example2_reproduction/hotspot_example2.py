@@ -159,11 +159,11 @@ def load_ptrace(path: str) -> tuple[np.ndarray, list[str]]:
 
 def build_model(
     heat_sources: dict[str, str] | None = None,
-    model: metahotspot.Model | None = None,
-) -> metahotspot.Model:
+    model: metahotspot.Fom | None = None,
+) -> metahotspot.Fom:
     """Build the MetaHotSpot model for example2."""
     if model is None:
-        model = metahotspot.Model()
+        model = metahotspot.Fom()
     m = model
 
     m.set_reference_temperature(T_AMB)
@@ -377,7 +377,7 @@ def main():
     print("=" * 72)
 
     t0 = _time.perf_counter()
-    transient_model = metahotspot.Model()
+    transient_model = metahotspot.Fom()
 
     # Register periodic piecewise-constant functions first.
     # HotSpot ptrace: total power (W). Convert to volumetric density (W/m3).

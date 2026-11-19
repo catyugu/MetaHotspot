@@ -201,7 +201,7 @@ def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
     """Assemble the Case-1 geometry (no boundary conditions; default Neumann)."""
     if not detail and not macro:
         raise ValueError("at least one domain must be enabled")
-    model = metahotspot.Model()
+    model = metahotspot.Fom()
     model.set_reference_temperature(cfg.ambient_K)
     model.set_cartesian_mesh(
         cfg.x_vertices_mm * 1e-3, cfg.y_vertices_mm * 1e-3, cfg.z_vertices_mm * 1e-3

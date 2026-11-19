@@ -63,6 +63,7 @@ namespace mhs::model {
     template <typename Condition> struct SurfaceConditionSpec {
         mhs::core::Vector<SurfaceRegion> regions;
         Condition condition;
+        std::string name {};
     };
 
     using ThermalBoundarySpec = SurfaceConditionSpec<ThermalBoundary>;
@@ -159,6 +160,7 @@ namespace mhs::model {
         ThermalBoundary default_thermal_boundary = NeumannBoundary {};
         mhs::core::Vector<PointProbeSpec> point_probes;
         mhs::core::Vector<FluidBoundarySpec> fluid_boundaries;
+        mhs::core::Vector<std::string> source_names; // optional, by SourceId
     };
 
 } // namespace mhs::model

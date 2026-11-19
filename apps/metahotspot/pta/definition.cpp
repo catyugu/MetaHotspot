@@ -127,6 +127,7 @@ namespace mhs::app::pta {
                 v.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
                 v.source = static_cast<mhs::model::SourceId>(out.sources.size());
                 out.sources.push_back(b.volumetric_heat_source);
+                out.source_names.push_back(b.name);
                 const double x = eval(layer.x_offset) + eval(b.x_offset), y = eval(layer.y_offset) + eval(b.y_offset);
                 const double top = z + ((l == 0 && b.thickness) ? eval(*b.thickness) : thickness[l]);
                 for (const auto& op : b.geometry) {
