@@ -59,6 +59,7 @@ namespace mhs::model {
         mhs::core::Vector<BoundaryCondition> boundary_conditions;
         mhs::core::Vector<SourceTerm> source_terms;
         mhs::core::Vector<BoundaryConditionId> facet_thermal_condition; // by FacetId; invalid for interior facets
+        mhs::core::Vector<SurfaceId> facet_surface; // geometric identity, independent of the thermal law
         mhs::core::Vector<Surface> surfaces;
         mhs::core::Vector<std::string> source_names;
         FluidModel fluid;

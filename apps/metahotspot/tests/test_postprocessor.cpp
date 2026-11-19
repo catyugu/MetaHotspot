@@ -1,5 +1,5 @@
 #include "core/vector.hpp"
-#include "model/model_definition.hpp"
+#include "model/fom_definition.hpp"
 #include "pta_test_utils.hpp"
 #include <gtest/gtest.h>
 
@@ -47,7 +47,7 @@ TEST(PostprocessorTest, UniformGridInterpolationMatchesSimpleAverage)
     // On a uniform grid, distance-weighted interpolation should
     // produce the same result as a simple arithmetic mean.
     auto io = make_simple_uniform_grid_io();
-    auto model = test_pta::build_model(io);
+    auto model = test_pta::compile_fom(io);
 
     int N = static_cast<int>(model.cell_material.size());
     // Set cell temperatures to known values
@@ -126,7 +126,7 @@ TEST(PostprocessorTest, DirichletBCOverridesMixedBoundaryAtCorner)
     // Neumann(0) for all other faces (adiabatic)
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = test_pta::build_model(io);
+    auto model = test_pta::compile_fom(io);
 
     // Set all cell temperatures to something different from 500
     int N = static_cast<int>(model.cell_material.size());
@@ -193,7 +193,7 @@ TEST(PostprocessorTest, DirichletEvalUsesProvidedTime)
 
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = test_pta::build_model(io);
+    auto model = test_pta::compile_fom(io);
 
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> cell_T(N, 400.0);

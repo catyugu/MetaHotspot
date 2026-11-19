@@ -45,9 +45,9 @@ import pyamg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from metahotspot.macromodel.embeddable import FacePort
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from legacy_embeddable import FacePort
+
 from legacy_erom_interface import _EDGE_TOL, _contains, common_patches, connect
 
 

@@ -9,7 +9,7 @@ import pyamg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from metahotspot.macromodel.embeddable import EmbeddableRom, FacePort, Subdomain
+from legacy_embeddable import EmbeddableRom, FacePort, Subdomain
 
 
 # ---------------------------------------------------------------------------

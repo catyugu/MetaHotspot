@@ -1,5 +1,5 @@
 #include "cli.hpp"
-#include "compiler/model_compiler.hpp"
+#include "compiler/fom_compiler.hpp"
 #include "logging/logger.hpp"
 #include "output/vtu.hpp"
 #include "postprocess.hpp"
@@ -41,7 +41,7 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Loaded {} volumes, {} materials, {} boundaries", definition.model.volumes.size(),
             definition.model.materials.size(), definition.model.thermal_boundaries.size());
 
-        auto model = mhs::compiler::build_model(definition.model, definition.mesh);
+        auto model = mhs::compiler::compile_fom(definition.model, definition.mesh);
 
         MHS_LOG_INFO("Compiled {} cells and {} facets", model.discrete.cells.size(), model.discrete.facets.size());
 
@@ -62,7 +62,7 @@ int main(int argc, char* argv[])
         // XML output uses node-centered data (interpolated from cell centers)
         auto node_temperature = mhs::app::postprocess::interpolate_cell_to_node(model, grid, solution, result.time);
         mhs::app::pta::write_xml(
-            input_path, output_xml, shape, node_temperature, result.probe_traces, result.snapshot_times);
+            input_path, output_xml, shape, node_temperature, result.output_traces, result.snapshot_times);
         MHS_LOG_INFO("XML written to: {}", output_xml);
 
         // Print statistics

@@ -10,12 +10,30 @@ import numpy as np
 
 from metahotspot._error import check
 from metahotspot._handle import OwnedHandle
+from metahotspot.enums import StudyType
 from metahotspot.types import (
     MhsSolution,
     MhsSolutionInfo,
     MhsStudy,
     _SolveOptionsCStruct,
 )
+
+
+@dataclass(frozen=True)
+class Study:
+    type: StudyType = StudyType.STEADY
+    initial_temperature: float = 300.0
+    duration: float = 0.0
+    output_interval: float = 1.0
+
+    def _native(self) -> MhsStudy:
+        return MhsStudy(
+            int(self.type),
+            self.initial_temperature,
+            self.duration,
+            self.output_interval,
+        )
+
 
 # ---- read-only result snapshots -----------------------------------------
 

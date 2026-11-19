@@ -25,3 +25,7 @@
 `structured_interface_operator/` 于 2026-10-26 整目录删除，未迁入本目录。该工作区的 Robin HTC 路线停在“连续 HTC × 全频率无证书”：脚本是可运行的数值原型，核心问题（不保留边界未知量、不依赖参数多项式 BRL 的连续 HTC 上界）仍无证明或有效实例，因此不保留归档副本。它引用的材料参数盒归档 `structured_interface_operator_material_20261018/` 在任何提交中都不存在，是原记录遗留的失效链接。
 
 后续研究在独立工作区开展，不导入或重新启用本目录下的脚本。
+
+`legacy_embeddable.py`、`legacy_interface_enrichment.py` 与 `test_legacy_embeddable.py`
+于 2026-11-19 从 Python 包迁入，保留旧子域/FacePort 研究实现和对应验证。
+现行提取器只依赖 `macromodel.utils` 与 `macromodel.contour` 的通用数值算法。

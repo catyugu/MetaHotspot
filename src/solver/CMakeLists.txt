@@ -1,5 +1,6 @@
 add_library(mhs_solver STATIC
     assembler.cpp
+    project_output.cpp
     project_assembler.cpp
     nonlinear_solver.cpp
     solve.cpp

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -12,8 +13,9 @@ import numpy as np
 import erom_attach_lib as attach
 from stress_erom_attach import CASES
 
-from metahotspot.macromodel.embeddable import build_subdomain
-from metahotspot.macromodel.interface_enrichment import (
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from legacy_embeddable import build_subdomain
+from legacy_interface_enrichment import (
     clone_embeddable_rom,
     extract_interface_enriched_rom,
 )

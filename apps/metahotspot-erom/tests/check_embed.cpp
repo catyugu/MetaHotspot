@@ -1,5 +1,5 @@
-#include "compiler/model_compiler.hpp"
-#include "model/project.hpp"
+#include "compiler/fom_compiler.hpp"
+#include "compiler/project_compiler.hpp"
 #include "pta/io.hpp"
 #include "solver/solver.hpp"
 
@@ -33,7 +33,8 @@ namespace {
     {
         check(e.K.rows() == 3 && e.C.rows() == 3 && e.Vb.rows() == 4 && e.B.cols() == 2 && e.L.rows() == 3,
             "wrong matrix dimensions");
-        check(e.surfaces.size() == 3 && e.htc[0] && e.htc[1] && !e.htc[2], "wrong HTC groups");
+        check(e.surfaces.size() == 3 && e.surface_training[0] && e.surface_training[1] && !e.surface_training[2],
+            "wrong HTC groups");
         check(e.surfaces[0].id == 0 && e.surfaces[0].name == "upstream"
                 && e.surfaces[0].facets == core::Vector<FacetId> {0, 1} && e.surfaces[1].id == 1
                 && e.surfaces[1].facets == core::Vector<FacetId> {2, 3},
@@ -43,7 +44,7 @@ namespace {
             "wrong source or output identity");
         near(e.sources[0].default_power, 5);
         near(e.sources[1].default_power, 8);
-        near(e.htc[1]->maximum, 9);
+        near(e.surface_training[1]->maximum, 9);
         near(e.reference_temperature, 295);
         near(e.initial_temperature, 295);
         for (double r : e.R)
@@ -77,7 +78,7 @@ namespace {
             }
     }
 
-    void compare(const Project& mixed, const Project& full, Study study)
+    void compare(const Project& mixed, const Project& full, mhs::solver::Study study)
     {
         solver::SolveOptions opts;
         opts.time_tolerance = 1e-8;
@@ -87,19 +88,19 @@ namespace {
         const auto detailed = solver::solve(full, study, {}, opts), reduced = solver::solve(mixed, study, {}, opts);
         check(detailed.converged && reduced.converged, "a reference or mixed solve did not converge");
         check(detailed.snapshot_times == reduced.snapshot_times, "probe timeline mismatch");
-        check(reduced.probe_traces.size() == 3, "mixed output count mismatch");
-        check(reduced.find_probe(10, 0) == &reduced.probe_traces[0], "mixed output identity mismatch");
+        check(reduced.output_traces.size() == 3, "mixed output count mismatch");
+        check(reduced.find_output(10, 0) == &reduced.output_traces[0], "mixed output identity mismatch");
 
         for (std::size_t i = 0; i < detailed.snapshot_times.size(); ++i) {
             const auto* t = detailed.snapshot_states.data() + i * full.dof_count();
-            near(reduced.probe_traces[0].values[i], detailed.probe_traces[0].values[i], 1e-4);
-            near(reduced.probe_traces[1].values[i], (t[0] + t[1]) / 2, 1e-4);
-            near(reduced.probe_traces[2].values[i], (t[4] + t[5]) / 2, 1e-4);
-            if (i == 0 && study.type == StudyType::Transient)
-                near(reduced.probe_traces[0].values[i], study.initial_temperature, 1e-10);
+            near(reduced.output_traces[0].values[i], detailed.output_traces[0].values[i], 1e-4);
+            near(reduced.output_traces[1].values[i], (t[0] + t[1]) / 2, 1e-4);
+            near(reduced.output_traces[2].values[i], (t[4] + t[5]) / 2, 1e-4);
+            if (i == 0 && study.type == mhs::solver::StudyType::Transient)
+                near(reduced.output_traces[0].values[i], study.initial_temperature, 1e-10);
         }
         const auto& t = detailed.state;
-        check(std::abs(detailed.probe_traces[0].values.back() - (t[2] + t[3]) / 2) > 0.01,
+        check(std::abs(detailed.output_traces[0].values.back() - (t[2] + t[3]) / 2) > 0.01,
             "fixture does not distinguish interpolation from nearest cell");
         near(reduced.state.back(), detailed.state.back(), 1e-4);
     }
@@ -122,7 +123,7 @@ int main(int argc, char** argv)
             const auto e = read_erom(argv[2]);
             check(e->sources.empty() && e->outputs.empty() && e->B.cols() == 0 && e->L.rows() == 0,
                 "expected empty source and output channels");
-            const auto project = compile_project({{{0, {}, e, {}, {}}}, {}});
+            const auto project = mhs::compiler::compile_project({{{0, {}, e, {}, {}}}, {}});
             check(solver::solve(project).converged, "source-free EROM did not converge");
             return 0;
         }
@@ -131,20 +132,20 @@ int main(int argc, char** argv)
         check_asset(*e);
         auto input = app::pta::read_xml(argv[2]);
         input.model.point_probes.resize(1);
-        auto fom = std::make_shared<const Fom>(compiler::build_model(input.model, input.mesh));
+        auto fom = std::make_shared<const Fom>(compiler::compile_fom(input.model, input.mesh));
 
-        ModelDefinition sink;
+        FomDefinition sink;
         sink.materials.push_back(input.model.materials[0]);
         sink.volumes = {{0, core::invalid_id, {{GeometryOperation::Add, {}, {1, 1, 1}}}}};
         sink.thermal_boundaries = {{{{Axis::X, 1, {0, 1, 0, 1}}}, DirichletBoundary {"288"}}};
-        auto body = std::make_shared<const Fom>(compiler::build_model(sink, {{0, 1}, {0, 1}, {0, 1}}));
-        Component external {20, {3, 0, 0}, body, {}, {}};
-        const auto mixed = compile_project({{{10, {}, e, {}, {}}, external}, {}});
-        const auto full = compile_project({{{10, {}, fom, {}, {}}, external}, {}});
-        check(mixed.dof_count() == 4 && full.dof_count() == 7 && mixed.connections().size() == 2,
+        auto body = std::make_shared<const Fom>(compiler::compile_fom(sink, {{0, 1}, {0, 1}, {0, 1}}));
+        ComponentInstance external {20, {3, 0, 0}, body, {}, {}};
+        const auto mixed = mhs::compiler::compile_project({{{10, {}, e, {}, {}}, external}, {}});
+        const auto full = mhs::compiler::compile_project({{{10, {}, fom, {}, {}}, external}, {}});
+        check(mixed.dof_count() == 4 && full.dof_count() == 7 && mixed.contacts().size() == 2,
             "embedding failed to reduce DOFs and match nonconforming facets");
         compare(mixed, full, {});
-        compare(mixed, full, {StudyType::Transient, 304, 4, 0.5});
+        compare(mixed, full, {mhs::solver::StudyType::Transient, 304, 4, 0.5});
         return 0;
     }
     catch (const std::exception& error) {

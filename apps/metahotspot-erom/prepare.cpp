@@ -1,6 +1,6 @@
 // Build the native operators and observation maps for the standalone extractor.
-#include "compiler/model_compiler.hpp"
-#include "model/project.hpp"
+#include "compiler/fom_compiler.hpp"
+#include "compiler/project_compiler.hpp"
 #include "pta/io.hpp"
 #include "solver/assembler.hpp"
 #include "solver/thermal_reconstruction.hpp"
@@ -94,7 +94,7 @@ namespace {
     }
 
     struct Selection {
-        std::map<SurfaceId, EromHtc> htc;
+        std::map<SurfaceId, EromSurfaceTraining> htc;
         std::set<std::string> probes;
         bool all_probes = true;
         bool source_temperatures = true;
@@ -110,7 +110,7 @@ namespace {
                 const auto min = number<double>(argv[++i]), max = number<double>(argv[++i]);
                 if (!std::isfinite(min) || !std::isfinite(max) || min <= 0 || max < min)
                     throw std::invalid_argument("HTC range requires 0 < minimum <= maximum");
-                if (!result.htc.emplace(id, EromHtc {min, max}).second)
+                if (!result.htc.emplace(id, EromSurfaceTraining {min, max}).second)
                     throw std::invalid_argument("duplicate HTC surface");
             }
             else if (option == "--probe" && i + 1 < argc) {
@@ -159,7 +159,7 @@ namespace {
                 continue;
             }
             const auto axis = static_cast<std::size_t>(facet.axis);
-            if (selection.htc.contains(model.facet_thermal_condition[f])
+            if (selection.htc.contains(model.facet_surface[f])
                 && (on_boundary ? facet.contains(probe.point) : probe.point[axis] != center[axis]))
                 throw std::invalid_argument("probe " + probe.name
                     + " depends directly on HTC boundary temperature and cannot be represented by L");
@@ -209,7 +209,11 @@ namespace {
                 continue;
             surfaces.push_back(&surface);
             const auto training = selection.htc.find(surface.id);
-            const auto& condition = model.boundary_conditions[surface.id];
+            const auto condition_id = model.facet_thermal_condition[surface.facets.front()];
+            for (const auto id : surface.facets)
+                if (model.facet_thermal_condition[id] != condition_id)
+                    throw std::invalid_argument("EROM surface requires a uniform thermal condition");
+            const auto& condition = model.boundary_conditions[condition_id];
             if (const auto* htc = std::get_if<Convection>(&condition)) {
                 const double h = constant(htc->coefficient, "HTC");
                 if (h < 0 || (h > 0 && training == selection.htc.end()))
@@ -340,14 +344,14 @@ int main(int argc, char** argv)
         if (argc < 3)
             throw std::invalid_argument("usage: metahotspot-erom-prepare PTA.xml OUTPUT [--htc ID MIN MAX]...");
         const auto input = mhs::app::pta::read_xml(argv[1]);
-        auto model = std::make_shared<const Fom>(mhs::compiler::build_model(input.model, input.mesh));
+        auto model = std::make_shared<const Fom>(mhs::compiler::compile_fom(input.model, input.mesh));
         if (std::string_view(argv[2]) == "--list-surfaces") {
             for (const auto& surface : model->surfaces)
                 if (!surface.facets.empty())
                     std::cout << surface.id << '\t' << surface.name << '\t' << surface.facets.size() << " facets\n";
             return 0;
         }
-        const auto project = compile_project({{{0, {}, std::move(model), {}, {}}}, {}});
+        const auto project = mhs::compiler::compile_project({{{0, {}, std::move(model), {}, {}}}, {}});
         Writer writer(argv[2]);
         prepare(project, input.study.initial_temperature, parse(argc, argv), writer);
         writer.close();

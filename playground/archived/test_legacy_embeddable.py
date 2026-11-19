@@ -1,4 +1,4 @@
-"""Unit tests for the model-agnostic ``metahotspot.macromodel`` package.
+"""Archived tests for the former Python subdomain and FacePort API.
 
 The tests cover face-port conductance, ambient-face selection and adiabatic
 subdomain cuts. Project contact is covered by the native C++ tests.
@@ -6,11 +6,20 @@ subdomain cuts. Project contact is covered by the native C++ tests.
 
 from __future__ import annotations
 
+from legacy_embeddable import FacePort, Subdomain, extract_rom
+from legacy_interface_enrichment import (
+    clone_embeddable_rom,
+    extract_interface_enriched_rom,
+)
+import scipy.sparse as sp
+from numpy.testing import assert_allclose
+
 import numpy as np
 import pytest
 
 import metahotspot
-from metahotspot import macromodel as mm
+import legacy_embeddable as mm
+from metahotspot.macromodel.affine import BoundaryGroup, CellLayout
 from metahotspot.enums import Face
 from metahotspot.macromodel.geometry import CellGeometry
 
@@ -45,7 +54,7 @@ class _FakePortsModel:
         self._full = compiled
         self.geometry = CellGeometry(compiled.fields)
         self._ops = ops
-        self.cell_layout = mm.CellLayout(
+        self.cell_layout = CellLayout(
             centers=self.geometry.centers,
             half_sizes=self.geometry.half_sizes,
             conductivity=np.column_stack(
@@ -108,7 +117,7 @@ def test_enumerate_ports_excludes_declared_ambient_faces():
     for p in ports:
         assert np.all(p.g > 0.0)
 
-    model.boundary_groups = lambda: (mm.BoundaryGroup(model.geometry.surface(Face.ZP)),)
+    model.boundary_groups = lambda: (BoundaryGroup(model.geometry.surface(Face.ZP)),)
     ports = mm.enumerate_interface_ports(model, np.arange(compiled.cell_count))
     labels = {p.normal for p in ports}
     assert "z+" not in labels
@@ -129,3 +138,60 @@ def test_subdomain_cuts_remove_only_exterior_conductance():
         np.testing.assert_allclose(part.K.toarray(), expected, atol=1e-14)
         np.testing.assert_allclose(part.C.diagonal(), ops.C.diagonal()[cells])
         np.testing.assert_allclose(part.source[:, 0], ops.f[cells])
+
+@pytest.mark.parametrize("extract", [extract_rom, extract_interface_enriched_rom])
+def test_extracted_modal_rom_preserves_projected_operators(extract):
+    n = 24
+    K = sp.diags(
+        [-np.ones(n - 1), np.r_[1, np.full(n - 2, 2), 1], -np.ones(n - 1)],
+        [-1, 0, 1],
+        format="csc",
+    )
+    C = sp.diags(np.linspace(1, 2, n), format="csc")
+    H = sp.diags(np.r_[1.0, np.zeros(n - 1)], format="csc")
+    source = np.zeros((n, 1))
+    source[n // 2] = 1.0
+    port = FacePort(
+        label="z+",
+        axis=2,
+        direction=1,
+        cells=np.array([n - 1]),
+        areas=np.ones(1),
+        k=np.ones(1),
+        half=np.ones(1),
+        t1=0,
+        t2=1,
+        rects=np.array([[0.0, 1.0, 0.0, 1.0]]),
+    )
+    domain = Subdomain(
+        name="chain",
+        cells=np.arange(n),
+        K=K,
+        C=C,
+        source=source,
+        ports=[port],
+        boundary_ports=[port],
+        ambient_terms=[H],
+        ambient_ranges=np.array([[1.0, 10.0]]),
+        effective_p=np.array([2.0]),
+    )
+    rom = extract(domain, tolerance=1e-2, max_order=64, probe_rounds=2, seed=7)
+    V = rom.basis
+    assert_allclose(rom.C_hat.toarray(), V.T @ C @ V, atol=1e-12)
+    assert_allclose(rom.K0_hat.toarray(), V.T @ K @ V, atol=1e-12)
+    assert_allclose(rom.F_hat, V.T @ source, atol=1e-12)
+    assert_allclose(rom.ambient_hat[0].toarray(), V.T @ H @ V, atol=1e-12)
+    assert_allclose(rom.boundary_trace("z+"), V[port.cells])
+    assert_allclose(
+        rom.internal_operator().toarray(),
+        V.T @ (K + 2 * H) @ V,
+        atol=1e-12,
+    )
+
+    clone = clone_embeddable_rom(rom)
+    clone.F_hat[:] = 0
+    clone.ports[0].areas[:] = 3
+    clone.summary["per_port_plans"][0]["shifts_per_s"].append(-1)
+    assert_allclose(rom.F_hat, V.T @ source, atol=1e-12)
+    assert_allclose(rom.ports[0].areas, 1)
+    assert rom.summary["per_port_plans"][0]["shifts_per_s"][-1] > 0

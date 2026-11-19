@@ -11,7 +11,7 @@
 #include "definition.hpp"
 #include "face_region_parser.hpp"
 #include "io.hpp"
-#include "model/model_definition.hpp"
+#include "model/fom_definition.hpp"
 #include "xml_helpers.hpp"
 
 namespace mhs::app::pta {
@@ -100,12 +100,12 @@ namespace mhs::app::pta {
         return segs;
     }
 
-    static mhs::model::StudyType parse_study_type(const std::string& val)
+    static mhs::solver::StudyType parse_study_type(const std::string& val)
     {
         if (val == "Steady")
-            return mhs::model::StudyType::Steady;
+            return mhs::solver::StudyType::Steady;
         if (val == "Transient")
-            return mhs::model::StudyType::Transient;
+            return mhs::solver::StudyType::Transient;
         throw std::runtime_error("unknown StudyType: '" + val + "' (expected Steady or Transient)");
     }
 
@@ -135,7 +135,7 @@ namespace mhs::app::pta {
         }
 
         Definition def;
-        mhs::model::Study study;
+        mhs::solver::Study study;
         mhs::model::ThermalBoundary default_thermal_boundary = mhs::model::NeumannBoundary {};
 
         const XMLElement* root = doc.FirstChildElement("Structure");
@@ -166,13 +166,13 @@ namespace mhs::app::pta {
         if (const XMLElement* trans = root->FirstChildElement("TransientStudyDuration")) {
             study.duration = parse_double(get_text(trans));
         }
-        else if (study.type == mhs::model::StudyType::Transient) {
+        else if (study.type == mhs::solver::StudyType::Transient) {
             throw std::runtime_error("transient study requires <TransientStudyDuration>");
         }
         if (const XMLElement* step = root->FirstChildElement("TransientStudyTimeStep")) {
             study.output_interval = parse_double(get_text(step));
         }
-        else if (study.type == mhs::model::StudyType::Transient) {
+        else if (study.type == mhs::solver::StudyType::Transient) {
             throw std::runtime_error("transient study requires <TransientStudyTimeStep>");
         }
 

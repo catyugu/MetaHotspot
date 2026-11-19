@@ -7,7 +7,7 @@ material expressions use the FOM's local coordinates. Surface laws use the
 local quadrature point on each exposed patch.
 
 ```cpp
-#include "model/project.hpp"
+#include "compiler/project_compiler.hpp"
 #include "solver/solver.hpp"
 
 using namespace mhs::model;
@@ -17,12 +17,12 @@ ProjectDefinition input;
 input.components.push_back({10, {0, 0, 0}, package});
 input.components.push_back({20, {0.1, 0, 0}, package});
 input.components[1].powers[3] = [](double t) { return t < 0.1 ? 5.0 : 2.0; };
-auto project = compile_project(std::move(input));
-auto solution = mhs::solver::solve(project, {StudyType::Transient, 300, 2, 0.1});
-const auto* trace = solution.find_probe(20, 0);
+auto project = mhs::compiler::compile_project(std::move(input));
+auto solution = mhs::solver::solve(project, {mhs::solver::StudyType::Transient, 300, 2, 0.1});
+const auto* trace = solution.find_output(20, 0);
 ```
 
-Build a FOM with `mhs::compiler::build_model` and share the result as
+Build a FOM with `mhs::compiler::compile_fom` and share the result as
 `std::shared_ptr<const Fom>`. `Project::dof_offset` and `dof_size` identify a
 component's block in each state snapshot. FOM blocks store absolute cell
 temperatures. EROM blocks store modal states. `output_position` translates
@@ -32,14 +32,19 @@ The compiler locates opposing coplanar facets and couples their overlap by TPFA.
 `ProjectDefinition::contact_resistance` accepts area-specific contact
 resistances in m² K/W keyed by ascending component IDs. A connected patch
 replaces the environment over its covered area. The remaining area keeps the
-surface's environment. Contacts with untrained EROM surfaces generate a
+surface's environment. Geometric surface identity (`facet_surface`) is independent
+of FOM thermal-condition IDs (`facet_thermal_condition`). Instance overrides use
+SurfaceId. Contacts with untrained EROM surfaces generate a
 warning and leave the environment on both sides in effect. Fluid advection and
 hydraulic boundary terms operate within the individual FOM.
 
 The EROM asset stores an initial modal state and may include the mode response
 to a uniform change in initial temperature. If this response is absent, a
 transient study with a different initial temperature requires an explicit
-initial modal state. FOM and EROM instances share the same output timeline.
+initial modal state. FOM and EROM instances share the same output timeline. `Solution::output_traces`
+contains `OutputTrace` values keyed by component and output ID. Set the C++ option
+`store_snapshot_states=false` to retain these traces and the final state without
+storing every full state snapshot. The default preserves full histories.
 
 ## Standalone PTA extraction
 
@@ -103,7 +108,8 @@ Strings are UTF-8 bytes preceded by a 32-bit byte count.
 `n` is the modal order. The first `nb` facets correspond one-to-one to the
 rows of `Vb` and the positive area-specific half-cell resistances `R`. The
 remaining facets describe the outline for diagnostic contact detection. Every
-facet belongs to one surface. All HTC groups index the same `Vb` and `R`.
+facet belongs to one surface. All HTC groups index the same `Vb` and `R`. C++ stores their training ranges and
+default environment as `EromSurfaceTraining` in `Erom::surface_training`.
 The operators use `C dq/dt + Kq = BP + f_external`, with internal surface-side
 temperature `T_ref + Vb q` and output temperature `T_offset + L q`. The format
 stores no mesh or full-field basis. The native reader checks the version,
@@ -112,3 +118,29 @@ truncation, numeric values, dimensions and facet ownership.
 FloTHERM exports use a separate format. See
 [`bci_rom_testcase1`](../playground/bci_rom_testcase1/) and the archived
 [`simple_erom_case1`](../playground/archived/simple_erom_case1/) for comparisons.
+
+The old Python `FacePort` / `Subdomain` / `EmbeddableRom` interface and its
+research tests are archived under `playground/archived/legacy_*.py`. The package
+keeps the BCI numerics and the independent `macromodel.contour` flux training
+functions; native extraction does not import the archived interface.
+
+## Assembly measurements
+
+Synthetic comparison against `dev` commit `350e8a2`, GCC 14.2 Release, two
+OpenMP threads. Times are medians of seven workspace constructions; each
+workspace performs twenty assemblies. The FOM pair has 40³ cells per cube and
+1,600 contact patches. The EROM pair has 48 modes per asset and 400 patches.
+
+| Operation | Before | After |
+| --- | ---: | ---: |
+| 128,000-DOF FOM pair: workspace setup | 663 ms | 18.9 ms |
+| FOM pair: one assembly | 10.3 ms | 10.5 ms |
+| 96-DOF EROM pair: workspace setup | 0.141 ms | 1.71 ms |
+| EROM pair: one assembly | 1.83 ms | 0.0284 ms |
+
+The EROM cache moves constant contact work into setup and adds one CSR-sized
+coefficient array plus one load vector for reduced-only projects. Mixed
+projects keep dynamic FOM resistance evaluation without this cache. CSR
+structures match the baseline exactly; all K/C/load entries agree within
+`rtol=atol=1e-12`. These measurements cover assembly, not extraction or complete
+simulation time.

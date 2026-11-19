@@ -24,7 +24,7 @@ namespace mhs::model {
         SourceId source = core::invalid_id; // volume-average temperature for this source
     };
 
-    struct EromHtc {
+    struct EromSurfaceTraining {
         double minimum, maximum;
         double coefficient = 0; // default environment after embedding
         double ambient = 300;
@@ -35,7 +35,7 @@ namespace mhs::model {
         core::Vector<double> R;
         core::Vector<Facet> facets; // first Vb.rows() are connectable, the rest describe the outline
         core::Vector<Surface> surfaces;
-        core::Vector<std::optional<EromHtc>> htc; // parallel to surfaces
+        core::Vector<std::optional<EromSurfaceTraining>> surface_training; // parallel to surfaces
         core::Vector<EromSource> sources;
         core::Vector<EromOutput> outputs;
         double reference_temperature = 300;

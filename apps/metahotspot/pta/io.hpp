@@ -1,8 +1,8 @@
 #pragma once
 
 #include "core/vector.hpp"
-#include "model/model_definition.hpp"
-#include "solver/solution.hpp"
+#include "model/fom_definition.hpp"
+#include "solver/solver.hpp"
 
 #include <array>
 #include <span>
@@ -11,8 +11,8 @@
 namespace mhs::app::pta {
 
     struct Input {
-        mhs::model::Study study;
-        mhs::model::ModelDefinition model;
+        mhs::solver::Study study;
+        mhs::model::FomDefinition model;
         mhs::model::MeshSpec mesh;
     };
 
@@ -21,7 +21,7 @@ namespace mhs::app::pta {
     // Every trace follows observation_times. With no traces, omit Result0DTransient.
     void write_xml(const std::string& input_path, const std::string& output_path,
         const std::array<std::size_t, 3>& shape, std::span<const double> node_temperature,
-        const mhs::core::Vector<mhs::solver::ProbeTrace>& observation_traces = {},
+        const mhs::core::Vector<mhs::solver::OutputTrace>& observation_traces = {},
         std::span<const double> observation_times = {});
 
 } // namespace mhs::app::pta

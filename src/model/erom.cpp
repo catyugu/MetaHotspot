@@ -158,13 +158,13 @@ namespace mhs::model {
                 "invalid exterior facet geometry");
 
         std::set<SurfaceId> surfaces;
-        require(e.surfaces.size() == e.htc.size(), "surface and HTC counts differ");
+        require(e.surfaces.size() == e.surface_training.size(), "surface and HTC counts differ");
         core::Vector<bool> seen(e.facets.size(), false);
         for (std::size_t i = 0; i < e.surfaces.size(); ++i) {
             const auto& s = e.surfaces[i];
             require(s.id != core::invalid_id && surfaces.insert(s.id).second && !s.name.empty() && !s.facets.empty(),
                 "invalid or duplicate surface");
-            const auto& h = e.htc[i];
+            const auto& h = e.surface_training[i];
             if (h)
                 require(std::isfinite(h->minimum) && std::isfinite(h->maximum) && std::isfinite(h->coefficient)
                         && std::isfinite(h->ambient) && h->minimum >= 0 && h->maximum > 0 && h->maximum >= h->minimum
@@ -232,9 +232,10 @@ namespace mhs::model {
             const auto trained = reader.u32();
             require(trained <= 1, "invalid surface training flag");
             if (trained)
-                e->htc.push_back(EromHtc {reader.f64(), reader.f64(), reader.f64(), reader.f64()});
+                e->surface_training.push_back(
+                    EromSurfaceTraining {reader.f64(), reader.f64(), reader.f64(), reader.f64()});
             else
-                e->htc.push_back(std::nullopt);
+                e->surface_training.push_back(std::nullopt);
             const auto count = reader.u32();
             reader.check_count(count, 4);
             for (std::size_t f = 0; f < count; ++f)

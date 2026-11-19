@@ -1,4 +1,4 @@
-#include "model/project.hpp"
+#include "compiler/project_compiler.hpp"
 
 #include "core/csr_matrix.hpp"
 #include "logging/logger.hpp"
@@ -8,7 +8,8 @@
 #include <stdexcept>
 #include <tuple>
 
-namespace mhs::model {
+namespace mhs::compiler {
+    using namespace model;
     namespace {
         using Rect = std::array<double, 4>;
         using core::Vector;
@@ -19,13 +20,6 @@ namespace mhs::model {
             if (r[1] > r[0] && r[3] > r[2])
                 return r;
             return std::nullopt;
-        }
-
-        Vec3 translate(Vec3 point, const Vec3& offset)
-        {
-            for (std::size_t i = 0; i < point.size(); ++i)
-                point[i] += offset[i];
-            return point;
         }
 
         Rect translate(Rect r, Axis axis, const Vec3& offset)
@@ -107,7 +101,7 @@ namespace mhs::model {
             Vector<Node> nodes_;
         };
 
-        std::span<const Facet> facets(const Component& component)
+        std::span<const Facet> facets(const ComponentInstance& component)
         {
             if (const auto* model = std::get_if<std::shared_ptr<const Fom>>(&component.asset))
                 return (*model)->discrete.facets;
@@ -149,7 +143,7 @@ namespace mhs::model {
         Project project;
         project.components_ = std::move(definition.components);
         const auto components = project.components();
-        project.exposed_.resize(components.size());
+        project.uncovered_.resize(components.size());
         std::set<ComponentId> ids;
         std::set<const Erom*> validated;
         std::array<std::map<double, Vector<Face>>, 3> positive;
@@ -184,7 +178,7 @@ namespace mhs::model {
                     project.dof_offsets_.push_back(core::detail::checked_sparse_size(project.dof_count() + size));
                     auto is_open = [&](std::size_t s) {
                         if constexpr (reduced)
-                            return asset->htc[s].has_value();
+                            return asset->surface_training[s].has_value();
                         else
                             return true;
                     };
@@ -233,7 +227,7 @@ namespace mhs::model {
             for (std::size_t i = 0; i < local.size(); ++i)
                 if (cut[i] == side.rect[i])
                     local[i] = original.bounds[i];
-            auto [it, inserted] = project.exposed_[side.component].try_emplace(side.id);
+            auto [it, inserted] = project.uncovered_[side.component].try_emplace(side.id);
             if (inserted)
                 it->second.push_back(original);
             subtract(it->second, local, original);
@@ -264,27 +258,11 @@ namespace mhs::model {
                         cover(right, cut);
                         const auto resistance = resistances.find(std::minmax(l, r));
                         const double area = (cut[1] - cut[0]) * (cut[3] - cut[2]);
-                        project.connections_.push_back({left.component, right.component, left.id, right.id, cut, area,
+                        project.contacts_.push_back({left.component, right.component, left.id, right.id, cut, area,
                             resistance == resistances.end() ? 0.0 : resistance->second});
                     });
         }
         return project;
     }
 
-    std::optional<Vec3> Project::output_position(ComponentId component, OutputId output) const
-    {
-        for (const auto& c : components())
-            if (c.id == component) {
-                if (const auto* model = std::get_if<std::shared_ptr<const Fom>>(&c.asset)) {
-                    if (output < (*model)->point_probes.size())
-                        return translate((*model)->point_probes[output].point, c.offset);
-                }
-                else
-                    for (const auto& probe : std::get<std::shared_ptr<const Erom>>(c.asset)->outputs)
-                        if (probe.id == output)
-                            return probe.point ? std::optional {translate(*probe.point, c.offset)} : std::nullopt;
-                break;
-            }
-        throw std::out_of_range("unknown component output");
-    }
-} // namespace mhs::model
+} // namespace mhs::compiler

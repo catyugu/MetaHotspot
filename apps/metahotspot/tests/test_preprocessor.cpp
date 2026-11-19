@@ -1,5 +1,5 @@
 #include "expression/expression.hpp"
-#include "model/model_definition.hpp"
+#include "model/fom_definition.hpp"
 #include "pta_test_utils.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -90,7 +90,7 @@ static mhs::app::pta::Definition make_simple_io()
 
 TEST(PreprocessorTest, CartesianAdapterPreservesSIBounds)
 {
-    const auto model = test_pta::build_model(make_simple_io());
+    const auto model = test_pta::compile_fom(make_simple_io());
     ASSERT_EQ(model.discrete.cells.size(), 8u);
     const auto& first = model.discrete.cells.front();
     const auto& last = model.discrete.cells.back();
@@ -142,7 +142,7 @@ TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
     add_back.rect.height = "5";
     rects.push_back(add_back);
 
-    const auto model = test_pta::build_model(definition);
+    const auto model = test_pta::compile_fom(definition);
 
     EXPECT_NE(input_cell(model, definition.mesh, 0), mhs::core::invalid_id)
         << "The initial Add must keep the first cell";
@@ -228,7 +228,7 @@ TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)
 
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = test_pta::build_model(io);
+    auto model = test_pta::compile_fom(io);
 
     // Layer 0 occupies z=10..30 mm; the substrate occupies z=0..10 mm.
     const auto has_cell_with_min = [&](const Vec3& lower) {
@@ -283,7 +283,7 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
 
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = test_pta::build_model(io);
+    auto model = test_pta::compile_fom(io);
 
     // Face key "Z|E|0|0,50,50,100;50,100,0,50;50,100,50,100"
     // Rects: {x:0-50, y:50-100}, {x:50-100, y:0-50}, {x:50-100, y:50-100}
@@ -303,7 +303,7 @@ TEST(PreprocessorTest, StructuredZRegionAssignsDirichletBoundary)
 TEST(PreprocessorTest, DefaultBoundaryFallback)
 {
     auto io = make_simple_io();
-    auto model = test_pta::build_model(io);
+    auto model = test_pta::compile_fom(io);
 
     // With no explicit boundaries and a zero-flux default,
     // all faces on domain boundaries should have Neumann BC
@@ -374,7 +374,7 @@ TEST(PreprocessorTest, UsesSuppliedDomainAlignedControlVolumes)
 
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    const auto model = test_pta::build_model(io);
+    const auto model = test_pta::compile_fom(io);
     ASSERT_EQ(model.discrete.cells.size(), 12u);
     EXPECT_NEAR(model.discrete.cells.front().min[0], 0.025, 1e-12);
     EXPECT_NEAR(model.discrete.cells.back().max[0], 0.075, 1e-12);
@@ -439,7 +439,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
 
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = test_pta::build_model(io);
+    auto model = test_pta::compile_fom(io);
 
     const auto ny = (io.mesh.y_vertices.size() - 1);
     const auto nz = (io.mesh.z_vertices.size() - 1);
@@ -483,7 +483,7 @@ TEST(PreprocessorTest, LaterBoundaryOverridesEarlierBoundary)
     later.condition = mhs::model::ConvectionBoundary {"42", "280"};
     definition.model.thermal_boundaries.push_back(later);
 
-    const auto model = test_pta::build_model(definition);
+    const auto model = test_pta::compile_fom(definition);
     const auto cell = input_cell(model, definition.mesh, 0);
     ASSERT_NE(cell, mhs::core::invalid_id);
     const auto* condition = find_condition<Convection>(model, cell, FaceDir::ZM);
@@ -536,7 +536,7 @@ TEST(PreprocessorTest, StructuredYRegionAssignsYPBoundary)
 
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = test_pta::build_model(io);
+    auto model = test_pta::compile_fom(io);
 
     // Cells adjacent to the Y+ face at y=10mm have iy=1 (vertex_y[2] = 10).
     // Their YP face is exposed. mhs::app::pta::RectOperation: cx in [0,10], cz in [0,5].
@@ -607,7 +607,7 @@ TEST(PreprocessorTest, AppliesMultipleRegionsFromOneThermalBoundarySpec)
 
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = test_pta::build_model(io);
+    auto model = test_pta::compile_fom(io);
 
     const auto ny = (io.mesh.y_vertices.size() - 1);
     const auto nz = (io.mesh.z_vertices.size() - 1);
@@ -675,5 +675,5 @@ TEST(PreprocessorTest, RejectsNonConformalBlockCoverage)
 
     io.model.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    EXPECT_THROW(test_pta::build_model(io), std::invalid_argument);
+    EXPECT_THROW(test_pta::compile_fom(io), std::invalid_argument);
 }

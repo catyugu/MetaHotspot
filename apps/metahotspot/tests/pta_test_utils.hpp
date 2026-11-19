@@ -1,6 +1,6 @@
 #pragma once
 // Existing PTA fixtures exercise translation, compilation and presentation together.
-#include "compiler/model_compiler.hpp"
+#include "compiler/fom_compiler.hpp"
 
 #include "postprocess.hpp"
 #include "pta/definition.hpp"
@@ -19,10 +19,10 @@ namespace test_pta {
             std::array<std::size_t, 3> cartesian_shape {};
         } output;
     };
-    inline Model build_model(const mhs::model::ModelDefinition& d, const mhs::model::MeshSpec& mesh)
+    inline Model compile_fom(const mhs::model::FomDefinition& d, const mhs::model::MeshSpec& mesh)
     {
         Model m;
-        static_cast<mhs::model::Fom&>(m) = mhs::compiler::build_model(d, mesh);
+        static_cast<mhs::model::Fom&>(m) = mhs::compiler::compile_fom(d, mesh);
         m.sampling_grid = mesh;
         m.output.cartesian_shape = {mesh.x_vertices.size(), mesh.y_vertices.size(), mesh.z_vertices.size()};
         for (double x : mesh.x_vertices)
@@ -31,12 +31,12 @@ namespace test_pta {
                     m.output.points.push_back({x, y, z});
         return m;
     }
-    inline Model build_model(mhs::app::pta::Definition d)
+    inline Model compile_fom(mhs::app::pta::Definition d)
     {
         mhs::app::pta::normalize(d);
-        return build_model(d.model, d.mesh);
+        return compile_fom(d.model, d.mesh);
     }
-    inline Model build_model(const mhs::app::pta::Input& input) { return build_model(input.model, input.mesh); }
+    inline Model compile_fom(const mhs::app::pta::Input& input) { return compile_fom(input.model, input.mesh); }
     inline auto interpolate_cell_to_node(const Model& m, std::span<const double> t, double time)
     {
         return mhs::app::postprocess::interpolate_cell_to_node(m, m.sampling_grid, t, time);

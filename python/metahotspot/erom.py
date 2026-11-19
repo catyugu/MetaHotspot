@@ -16,7 +16,7 @@ import scipy.linalg
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
-from metahotspot.macromodel.interface_enrichment import contour_training_sources
+from metahotspot.macromodel.contour import contour_training_sources
 from metahotspot.macromodel.utils import (
     build_parametric_basis,
     normalized_operators,

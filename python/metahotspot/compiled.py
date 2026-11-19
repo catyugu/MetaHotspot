@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from metahotspot.fom import Study
+    from metahotspot.solution import Study
 
 from metahotspot._compiled_data import CompiledFields, Operators
 from metahotspot._error import check

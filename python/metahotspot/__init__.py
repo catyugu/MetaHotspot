@@ -16,9 +16,9 @@ from metahotspot._compiled_data import Operators
 from metahotspot._error import MetaHotspotError
 from metahotspot._lib import library_version
 from metahotspot.compiled import Compiled, SolveOptions
-from metahotspot.fom import Fom, Study, SurfaceRegion
+from metahotspot.fom import Fom, SurfaceRegion
 from metahotspot.logging import get_log_level, set_log_level
-from metahotspot.solution import Solution
+from metahotspot.solution import Solution, Study
 
 # Reported by the library this module binds, so it can never drift from it.
 __version__ = library_version()

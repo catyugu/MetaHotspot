@@ -41,7 +41,8 @@ from metahotspot.macromodel.affine import (
     BoundaryGroup,
     SourcePort,
 )
-from metahotspot.macromodel.embeddable import (
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from legacy_embeddable import (
     build_subdomain,
     extract_rom,
 )

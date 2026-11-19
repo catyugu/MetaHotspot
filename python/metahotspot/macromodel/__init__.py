@@ -20,14 +20,13 @@ Modules:
   :class:`~metahotspot.macromodel.geometry.CellGeometry` geometry view.
   Concrete models subclass the base from playground adapters; the library
   itself ships no concrete model.
-* :mod:`embeddable` — the subdomain extraction tools used by the research
-  adapters. The native C++ Project API assembles and solves mixed projects.
+* :mod:`contour` — polynomial flux directions for native EROM extraction.
 
 All algorithms consume plain numpy/scipy data or the ``metahotspot`` bindings'
 generic ``Operators`` / ``CompiledFields`` contracts — never a named case.
 """
 
-from metahotspot.macromodel import affine, embeddable, utils
+from metahotspot.macromodel import affine, utils
 
 # Re-export the stable public surface.
 from metahotspot.macromodel.affine import (
@@ -36,14 +35,6 @@ from metahotspot.macromodel.affine import (
     BoundaryGroup,
     CellLayout,
     SourcePort,
-)
-from metahotspot.macromodel.embeddable import (
-    EmbeddableRom,
-    FacePort,
-    Subdomain,
-    build_subdomain,
-    enumerate_interface_ports,
-    extract_rom,
 )
 from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
 
@@ -54,14 +45,7 @@ __all__ = [
     "BoundarySurface",
     "CellGeometry",
     "CellLayout",
-    "EmbeddableRom",
-    "FacePort",
     "SourcePort",
-    "Subdomain",
     "affine",
-    "build_subdomain",
-    "embeddable",
-    "enumerate_interface_ports",
-    "extract_rom",
     "utils",
 ]
