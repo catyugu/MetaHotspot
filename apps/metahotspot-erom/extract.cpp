@@ -2,46 +2,42 @@
 #include "compiler/fom_compiler.hpp"
 #include "solver/thermal_physics.hpp"
 
+#include <Eigen/Cholesky>
 #include <algorithm>
 #include <cmath>
 #include <sstream>
 #include <stdexcept>
 
 namespace mhs::app::erom {
-    HtcOperators::HtcOperators(const Prepared& project, std::size_t group_count)
-        : asset(project.asset)
-        , group_count(group_count)
-        , cells(project.boundary_cells.begin(), project.boundary_cells.end())
+    void Prepared::set_conductances(Eigen::Ref<Vector> values, const Vector& h) const
     {
-        std::ranges::sort(cells);
-        cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
-        facet_rows.reserve(project.boundary_cells.size());
-        for (const auto cell : project.boundary_cells)
-            facet_rows.push_back(std::ranges::lower_bound(cells, cell) - cells.begin());
+        for (Eigen::Index id = 0; id < values.size(); ++id)
+            values[id]
+                = solver::convection_conductance(asset.facets[id].area(), h[asset.facet_surface[id]], asset.R[id]);
     }
 
-    void HtcOperators::add_conductance(Eigen::Ref<Vector> diagonal, std::size_t group, double h) const
+    Vector Prepared::parameters(double model::EromSurfaceTraining::* field) const
     {
-        if (h == 0)
-            return;
-        for (const auto id : asset.surfaces[group].facets)
-            diagonal[facet_rows[id]] += solver::convection_conductance(asset.facets[id].area(), h, asset.R[id]);
+        const auto end = std::ranges::find_if_not(
+            asset.surfaces, [](const auto& surface) { return surface.training.has_value(); });
+        Vector values(end - asset.surfaces.begin());
+        for (Eigen::Index i = 0; i < values.size(); ++i)
+            values[i] = (*asset.surfaces[i].training).*field;
+        return values;
     }
 
-    Vector HtcOperators::diagonal(const Vector& h) const
+    std::ranges::iota_view<Eigen::Index, Eigen::Index> Prepared::surface_facets(model::SurfaceId surface) const
     {
-        Vector result = Vector::Zero(static_cast<Eigen::Index>(cells.size()));
-        for (std::size_t i = 0; i < group_count; ++i)
-            add_conductance(result, i, h[static_cast<Eigen::Index>(i)]);
-        return result;
+        // prepare() appends facets in surface order.
+        const auto& owners = asset.facet_surface;
+        const auto ids = std::ranges::equal_range(owners, surface);
+        return std::views::iota(ids.begin() - owners.begin(), ids.end() - owners.begin());
     }
 
-    Vector HtcOperators::parameters(double model::EromSurfaceTraining::* field) const
+    void Prepared::add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const
     {
-        Vector result(static_cast<Eigen::Index>(group_count));
-        for (std::size_t i = 0; i < group_count; ++i)
-            result[static_cast<Eigen::Index>(i)] = (*asset.surface_training[i]).*field;
-        return result;
+        for (std::size_t i = 0; i < boundary_cells.size(); ++i)
+            cells[boundary_cells[i]] += facets[static_cast<Eigen::Index>(i)];
     }
 
     namespace {
@@ -68,77 +64,88 @@ namespace mhs::app::erom {
             return region;
         }
 
-        double validate_outputs(const Prepared& project, const HtcOperators& htc, const Matrix& basis,
-            const Matrix& stiffness, const Matrix& B, const Matrix& L, double tolerance,
-            const core::Vector<int>& regions)
+        bool covers_regions(const Prepared& project, const core::Vector<int>& regions, const Vector& h)
+        {
+            core::Vector<bool> anchored(static_cast<std::size_t>(*std::ranges::max_element(regions) + 1), false);
+            for (Eigen::Index i = 0; i < h.size(); ++i)
+                if (h[i] > 0)
+                    anchored[regions[project.boundary_cells[i]]] = true;
+            return std::ranges::find(anchored, false) == anchored.end();
+        }
+
+        double validate_outputs(const Prepared& project, const Matrix& boundary, const Matrix& stiffness,
+            const Matrix& B, const Matrix& L, double tolerance, const core::Vector<int>& regions)
         {
             if (project.asset.outputs.empty())
                 return 0;
-            const Matrix boundary = basis(htc.cells, Eigen::placeholders::all);
-            const auto ng = static_cast<Eigen::Index>(htc.group_count);
-            const Vector lower = htc.parameters(&model::EromSurfaceTraining::minimum);
-            const Vector upper = htc.parameters(&model::EromSurfaceTraining::maximum);
-            core::Vector<Vector> cases {lower, lower.cwiseSqrt().cwiseProduct(upper.cwiseSqrt()), upper};
+            const Vector lower = project.parameters(&model::EromSurfaceTraining::minimum);
+            const Vector upper = project.parameters(&model::EromSurfaceTraining::maximum);
+            const auto n = project.K.rows(), ng = lower.size();
+            Vector closure(static_cast<Eigen::Index>(project.boundary_cells.size())), rhs(n);
+            double worst = 0;
+            auto check = [&](const Vector& h, bool defaults = false) {
+                project.set_conductances(closure, h);
+                if (defaults && !covers_regions(project, regions, closure))
+                    return;
+                Vector diagonal = Vector::Zero(n);
+                project.add_boundary(diagonal, closure);
+                const Sparse matrix = add_diagonal(project.K, diagonal);
+                ReusableAmg solver(matrix, std::min(1e-8, tolerance * 1e-3));
+                const Matrix reduced = stiffness + boundary.transpose() * (closure.asDiagonal() * boundary);
+                Eigen::LLT<Matrix> factor(reduced);
+                if (factor.info() != Eigen::Success)
+                    throw std::runtime_error("reduced operator is not positive definite");
+
+                auto compare = [&](const auto& load) {
+                    const Vector approximate = L * factor.solve(load);
+                    const Vector exact = project.L * solver.solve(matrix, rhs, Vector::Zero(n));
+                    const Vector error = (exact - approximate).cwiseAbs().array() / exact.cwiseAbs().array().max(1.0);
+                    if (!error.allFinite())
+                        throw std::runtime_error("nonfinite validation temperature");
+                    worst = std::max(worst, error.maxCoeff());
+                };
+                Vector load(B.rows());
+                if (defaults) {
+                    Vector powers(B.cols());
+                    for (Eigen::Index i = 0; i < powers.size(); ++i)
+                        powers[i] = project.asset.sources[i].default_power;
+                    rhs.noalias() = project.B * powers;
+                    load.noalias() = B * powers;
+                }
+                else
+                    for (Eigen::Index i = 0; i < B.cols(); ++i) {
+                        rhs = project.B.col(i);
+                        compare(B.col(i));
+                    }
+                for (Eigen::Index i = 0; i < ng; ++i) {
+                    if (!defaults) {
+                        rhs.setZero();
+                        load.setZero();
+                    }
+                    const auto& surface = project.asset.surfaces[i];
+                    const double delta = defaults ? surface.training->ambient - project.asset.reference_temperature : 1;
+                    for (const auto id : project.surface_facets(static_cast<model::SurfaceId>(i))) {
+                        const double power = closure[id] * delta;
+                        rhs[project.boundary_cells[id]] += power;
+                        load.noalias() += power * boundary.row(id).transpose();
+                    }
+                    if (!defaults)
+                        compare(load);
+                }
+                if (defaults)
+                    compare(load);
+            };
+            check(lower);
+            check(lower.cwiseSqrt().cwiseProduct(upper.cwiseSqrt()));
+            check(upper);
             if (ng > 1)
                 for (int alternate = 0; alternate < 2; ++alternate) {
                     Vector h(ng);
                     for (Eigen::Index i = 0; i < ng; ++i)
-                        h[i] = cases[static_cast<std::size_t>((i + alternate) % 2) * 2][i];
-                    cases.push_back(std::move(h));
+                        h[i] = (i + alternate) % 2 ? upper[i] : lower[i];
+                    check(h);
                 }
-            cases.push_back(htc.parameters(&model::EromSurfaceTraining::coefficient));
-            double worst = 0;
-            for (std::size_t index = 0; index < cases.size(); ++index) {
-                const bool is_default = index + 1 == cases.size();
-                const auto n = project.K.rows();
-                Matrix ambient = Matrix::Zero(boundary.rows(), ng);
-                for (Eigen::Index i = 0; i < ng; ++i)
-                    htc.add_conductance(ambient.col(i), static_cast<std::size_t>(i), cases[index][i]);
-                const Vector closure = ambient.rowwise().sum();
-                if (is_default) {
-                    core::Vector<bool> anchored(
-                        static_cast<std::size_t>(*std::ranges::max_element(regions) + 1), false);
-                    for (std::size_t i = 0; i < htc.cells.size(); ++i)
-                        if (closure[static_cast<Eigen::Index>(i)] > 0)
-                            anchored[regions[htc.cells[i]]] = true;
-                    if (std::ranges::find(anchored, false) != anchored.end())
-                        continue;
-                }
-                Vector diagonal = Vector::Zero(n);
-                diagonal(htc.cells) = closure;
-                const Sparse matrix = add_diagonal(project.K, diagonal);
-                ReusableAmg solver(matrix, std::min(1e-8, tolerance * 1e-3));
-                Matrix loads = Matrix::Zero(n, is_default ? 1 : project.B.cols() + ng);
-                Matrix reduced_loads;
-                if (is_default) {
-                    Vector powers(static_cast<Eigen::Index>(project.asset.sources.size()));
-                    for (std::size_t i = 0; i < project.asset.sources.size(); ++i)
-                        powers[static_cast<Eigen::Index>(i)] = project.asset.sources[i].default_power;
-                    loads.col(0) = project.B * powers;
-                    const Vector delta = htc.parameters(&model::EromSurfaceTraining::ambient).array()
-                        - project.asset.reference_temperature;
-                    loads.col(0)(htc.cells) += ambient * delta;
-                    reduced_loads = basis.transpose() * loads;
-                }
-                else {
-                    loads.leftCols(project.B.cols()) = project.B;
-                    loads.rightCols(ng)(htc.cells, Eigen::placeholders::all) = ambient;
-                    reduced_loads.resize(basis.cols(), loads.cols());
-                    reduced_loads.leftCols(B.cols()) = B;
-                    reduced_loads.rightCols(ng) = boundary.transpose() * ambient;
-                }
-                const Matrix reduced_matrix = stiffness + boundary.transpose() * (closure.asDiagonal() * boundary);
-                const Matrix approximate = L * solve_positive(reduced_matrix, reduced_loads);
-                for (Eigen::Index i = 0; i < loads.cols(); ++i) {
-                    const Vector full = solver.solve(matrix, Vector(loads.col(i)), Vector::Zero(n));
-                    const Vector exact = project.L * full;
-                    const Vector error
-                        = (exact - approximate.col(i)).cwiseAbs().array() / exact.cwiseAbs().array().max(1.0);
-                    if (!error.allFinite())
-                        throw std::runtime_error("nonfinite validation temperature");
-                    worst = std::max(worst, error.maxCoeff());
-                }
-            }
+            check(project.parameters(&model::EromSurfaceTraining::coefficient), true);
             if (worst > tolerance) {
                 std::ostringstream message;
                 message << "output validation error " << worst << " exceeds tolerance " << tolerance;
@@ -171,17 +178,13 @@ namespace mhs::app::erom {
         auto project = prepare(compiler::compile_fom(definition, mesh), definition, ranges);
         if (!project.capacity.allFinite() || (project.capacity.array() <= 0).any())
             throw std::invalid_argument("EROM extraction requires finite positive cell capacities");
-        const HtcOperators htc(project, ranges.size());
         const auto regions = connected_regions(project.K);
-        core::Vector<bool> anchored(static_cast<std::size_t>(*std::ranges::max_element(regions) + 1), false);
-        for (const auto cell : htc.cells)
-            anchored[regions[cell]] = true;
-        if (std::ranges::find(anchored, false) != anchored.end())
+        if (!covers_regions(project, regions, Vector::Ones(static_cast<Eigen::Index>(project.boundary_cells.size()))))
             throw std::invalid_argument("each thermally disconnected FOM region needs an HTC training surface");
 
         Extraction result;
         auto& e = project.asset;
-        const Matrix basis = build_basis(project, htc, regions, tolerance, result.statistics);
+        const Matrix basis = build_basis(project, regions, tolerance, result.statistics);
         Matrix C = basis.transpose() * (project.capacity.asDiagonal() * basis);
         Matrix K = basis.transpose() * (project.K * basis);
         C = ((C + C.transpose()) * 0.5).eval();
@@ -190,16 +193,14 @@ namespace mhs::app::erom {
         const Matrix B = basis.transpose() * project.B, L = project.L * basis;
         const Vector rhs = basis.transpose() * project.capacity;
         const Vector uniform = solve_positive(C, rhs);
-        result.statistics.output_error = validate_outputs(project, htc, basis, K, B, L, tolerance, regions);
+        const Matrix boundary = basis(project.boundary_cells, Eigen::placeholders::all);
+        result.statistics.output_error = validate_outputs(project, boundary, K, B, L, tolerance, regions);
         e.K = native(K);
         e.C = native(C);
         e.B = native(B);
         e.L = native(L);
         e.uniform_temperature_mode.assign(uniform.begin(), uniform.end());
-        e.Vb = core::Matrix<double>(project.boundary_cells.size(), static_cast<std::size_t>(basis.cols()));
-        for (std::size_t i = 0; i < project.boundary_cells.size(); ++i)
-            for (Eigen::Index j = 0; j < basis.cols(); ++j)
-                e.Vb(i, static_cast<std::size_t>(j)) = basis(project.boundary_cells[i], j);
+        e.Vb = native(boundary);
         model::validate_erom(e);
         result.asset = std::move(e);
         return result;

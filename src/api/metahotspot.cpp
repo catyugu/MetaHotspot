@@ -6,6 +6,7 @@
 #include "model/fom_definition.hpp"
 #include "solver/assembler.hpp"
 #include "solver/solver.hpp"
+#include "solver/thermal_physics.hpp"
 
 #include "core/vector.hpp"
 #include <algorithm>
@@ -625,9 +626,10 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
         const auto& term = model.source_terms[id];
         fields->projection_cell[id] = term.cell;
         fields->projection_source[id] = term.source;
-        fields->projection_volume[id] = term.weight;
-        for (size_t a = 0; a < 3; ++a)
-            fields->projection_center[3 * id + a] = term.point[a];
+        const auto& cell = model.discrete.cells[term.cell];
+        fields->projection_volume[id] = cell.volume();
+        const auto center = cell.center();
+        std::ranges::copy(center, fields->projection_center + 3 * id);
     }
     mhs_detail_clear_last_error();
     return MHS_OK;
@@ -647,9 +649,7 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
             throw std::invalid_argument("source projection buffer size mismatch");
         for (size_t i = 0; i < projection_count; ++i) {
             const auto& term = model.source_terms[i];
-            const auto& p = term.point;
-            powers[i]
-                = term.weight * model.heat_source_table[term.source].eval({p[0], p[1], p[2], state[term.cell], time});
+            powers[i] = mhs::solver::source_power(model, term, state[term.cell], time);
         }
     });
 }

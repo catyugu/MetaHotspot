@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <string>
+#include <variant>
 
 namespace mhs::model {
     struct EromSource {
@@ -16,8 +18,7 @@ namespace mhs::model {
     struct EromOutput {
         OutputId id;
         std::string name;
-        std::optional<Vec3> point;
-        SourceId source = core::invalid_id; // volume-average temperature for this source
+        std::variant<Vec3, SourceId> location = core::invalid_id; // point or source-volume average
     };
 
     struct EromSurfaceTraining {
@@ -26,12 +27,18 @@ namespace mhs::model {
         double ambient = 300;
     };
 
+    struct EromSurface {
+        SurfaceId id = core::invalid_id;
+        std::string name;
+        std::optional<EromSurfaceTraining> training;
+    };
+
     struct Erom {
         core::Matrix<double> K, C, B, L, Vb;
         core::Vector<double> R;
         core::Vector<Facet> facets; // first Vb.rows() are connectable, the rest describe the outline
-        core::Vector<Surface> surfaces;
-        core::Vector<std::optional<EromSurfaceTraining>> surface_training; // parallel to surfaces
+        core::Vector<SurfaceId> facet_surface; // facet → index in surfaces
+        core::Vector<EromSurface> surfaces;
         core::Vector<EromSource> sources;
         core::Vector<EromOutput> outputs;
         double reference_temperature = 300;

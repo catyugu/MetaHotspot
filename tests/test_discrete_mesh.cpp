@@ -75,7 +75,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         const mhs::core::Vector<double> state {350};
         for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
             const auto& facet = model.discrete.facets[id];
-            const auto& condition = model.boundary_conditions[model.facet_surface[id]];
+            const auto& condition = model.surfaces[model.facet_surface[id]].condition;
             const auto center = facet.center();
             const double d = model.discrete.cells[model.discrete.cell_facets[id].owner()]
                                  .size()[static_cast<std::size_t>(facet.axis)]
@@ -148,7 +148,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
         const auto& facet = model.discrete.facets[id];
         if (facet.normal == 0)
             continue;
-        const auto& condition = model.boundary_conditions[model.facet_surface[id]];
+        const auto& condition = model.surfaces[model.facet_surface[id]].condition;
         const auto& flux = std::get<mhs::model::Neumann>(condition).heat_flux;
         const auto center = facet.center();
         if (flux.eval({center[0], center[1], center[2], 300, 0}) == 10.0)
@@ -180,8 +180,8 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossConformalCells)
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
     ASSERT_EQ(model.discrete.cells.size(), 2u);
     ASSERT_EQ(model.source_terms.size(), 2u);
-    EXPECT_NEAR(model.source_terms[0].weight, 0.25, 1e-14);
-    EXPECT_NEAR(model.source_terms[1].weight, 0.75, 1e-14);
+    EXPECT_NEAR(model.discrete.cells[model.source_terms[0].cell].volume(), 0.25, 1e-14);
+    EXPECT_NEAR(model.discrete.cells[model.source_terms[1].cell].volume(), 0.75, 1e-14);
 }
 
 TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)

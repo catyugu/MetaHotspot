@@ -1,16 +1,16 @@
 #include "solver/assembler.hpp"
 
 #include "contact.hpp"
+#include "core/csr_ops.hpp"
 #include "thermal_physics.hpp"
 #include <cmath>
-#include <numeric>
-#include <set>
 #include <stdexcept>
 
 namespace mhs::solver {
+    using namespace model;
+    using core::Vector;
+
     namespace {
-        using namespace model;
-        using core::Vector;
 
         std::size_t slot(const core::CSRMatrix<double>& matrix, std::size_t row, std::size_t col)
         {
@@ -22,18 +22,18 @@ namespace mhs::solver {
 
         void add_block(core::CSRMatrix<double>& matrix, const Side& rows, const Side& cols, double scale)
         {
-            for (std::size_t i = 0; i < rows.dofs.count; ++i) {
-                const auto idx = slot(matrix, rows.dofs.first + i, cols.dofs.first);
+            for (std::size_t i = 0; i < rows.count(); ++i) {
+                const auto idx = slot(matrix, rows.first + i, cols.first);
                 const auto factor = scale * rows.value(i);
-                for (std::size_t j = 0; j < cols.dofs.count; ++j)
+                for (std::size_t j = 0; j < cols.count(); ++j)
                     matrix.values()[idx + j] += factor * cols.value(j);
             }
         }
 
         void add_load(Vector<double>& rhs, const Side& rows, double scale)
         {
-            for (std::size_t i = 0; i < rows.dofs.count; ++i)
-                rhs[rows.dofs.first + i] += scale * rows.value(i);
+            for (std::size_t i = 0; i < rows.count(); ++i)
+                rhs[rows.first + i] += scale * rows.value(i);
         }
 
         void copy_sparse(const core::CSRMatrix<double>& local, core::CSRMatrix<double>& global, std::size_t offset)
@@ -57,209 +57,182 @@ namespace mhs::solver {
         }
     } // namespace
 
-    struct ProjectAssembler::Workspace {
-        explicit Workspace(const Project& source) : project(source)
-        {
-            for (const auto& component : project.components()) {
-                const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&component.asset);
-                thermal.push_back(fom ? std::make_unique<ThermalAssembler>(**fom) : nullptr);
-            }
-            if (thermal.size() == 1 && thermal.front())
-                return;
-            operators = {core::CSRMatrix<double>(pattern(false)), core::CSRMatrix<double>(pattern(true)),
-                Vector<double>(project.dof_count())};
-            for (std::size_t i = 0; i < thermal.size(); ++i)
-                if (!thermal[i])
-                    copy_dense(erom(i).C, operators.C, project.dof_offset(i));
-            // Only reduced-only projects cache a global contact operator: a mixed
-            // project's FOM rows would otherwise allocate a mostly empty copy.
-            if (!project.contacts().empty()
-                && std::ranges::none_of(thermal, [](const auto& assembler) { return bool(assembler); })) {
-                assemble_contacts();
-                cached_contact_K.assign(operators.K.values().begin(), operators.K.values().end());
-                cached_contact_f = operators.f;
-            }
-        }
-
-        void assemble_contacts()
-        {
-            for (const auto& c : project.contacts()) {
-                const auto left = contact_side(project, c.left, c.left_facet);
-                const auto right = contact_side(project, c.right, c.right_facet);
-                const auto g = c.area()
-                    / contact_resistance(
-                        resistance(c.left, c.left_facet), resistance(c.right, c.right_facet), c.resistance);
-                add_block(operators.K, left, left, g);
-                add_block(operators.K, right, right, g);
-                add_block(operators.K, left, right, -g);
-                add_block(operators.K, right, left, -g);
-                const auto load = g * (right.reference - left.reference);
-                add_load(operators.f, left, load);
-                add_load(operators.f, right, -load);
-            }
-        }
-
-        std::shared_ptr<const core::CSRPattern> pattern(bool capacity) const
-        {
-            using core::SparseIndex;
-            const auto size = project.dof_count();
-            // Count and fill one flat buffer; avoid a synchronized pool allocation per row.
-            auto visit_columns = [&](const auto& append) {
-                auto dense = [&](Dofs rows, Dofs cols) {
-                    for (auto i = rows.first; i < rows.first + rows.count; ++i)
-                        for (auto j = cols.first; j < cols.first + cols.count; ++j)
-                            append(i, static_cast<SparseIndex>(j));
-                };
-                for (std::size_t i = 0; i < thermal.size(); ++i) {
-                    const auto offset = project.dof_offset(i);
-                    if (const auto& assembler = thermal[i]) {
-                        const auto& matrix = capacity ? assembler->operators().C : assembler->operators().K;
-                        for (std::size_t r = 0; r < matrix.rows(); ++r)
-                            for (auto j = matrix.row_ptr()[r]; j < matrix.row_ptr()[r + 1]; ++j)
-                                append(offset + r, static_cast<SparseIndex>(offset) + matrix.col_idx()[j]);
-                    }
-                    else {
-                        const Dofs modes {offset, project.dof_size(i)};
-                        dense(modes, modes);
-                    }
-                }
-                if (!capacity) {
-                    std::set<std::array<std::size_t, 4>> seen;
-                    for (const auto& c : project.contacts()) {
-                        const auto l = contact_side(project, c.left, c.left_facet).dofs;
-                        const auto r = contact_side(project, c.right, c.right_facet).dofs;
-                        if (seen.insert({l.first, l.count, r.first, r.count}).second) {
-                            dense(l, r);
-                            dense(r, l);
-                        }
-                    }
-                }
-            };
-            Vector<SparseIndex> ptr(size + 1);
-            visit_columns([&](std::size_t row, SparseIndex) {
-                ptr[row + 1] = static_cast<SparseIndex>(
-                    core::detail::checked_sparse_size(static_cast<std::size_t>(ptr[row + 1]) + 1));
-            });
-            for (std::size_t i = 0; i < size; ++i)
-                ptr[i + 1] = static_cast<SparseIndex>(
-                    core::detail::checked_sparse_size(static_cast<std::size_t>(ptr[i]) + ptr[i + 1]));
-            Vector<SparseIndex> indices(ptr.back());
-            auto cursor = ptr;
-            visit_columns([&](std::size_t row, SparseIndex col) { indices[cursor[row]++] = col; });
-            SparseIndex first = 0, count = 0;
-            for (std::size_t i = 0; i < size; ++i) {
-                const auto last = ptr[i + 1];
-                auto begin = indices.begin() + first, end = indices.begin() + last;
-                std::sort(begin, end);
-                end = std::unique(begin, end);
-                ptr[i] = count;
-                for (auto it = begin; it != end; ++it)
-                    indices[count++] = *it;
-                first = last;
-            }
-            ptr.back() = count;
-            indices.resize(count);
-            return std::make_shared<const core::CSRPattern>(size, size, std::move(ptr), std::move(indices));
-        }
-
-        const Erom& erom(std::size_t i) const
-        {
-            return *std::get<std::shared_ptr<const Erom>>(project.components()[i].asset);
-        }
-
-        double resistance(std::size_t i, FacetId facet) const
-        {
-            return thermal[i] ? thermal[i]->resistance(facet) : erom(i).R[facet];
-        }
-
-        void erom_environment(std::size_t i, FacetId id, const Erom& e, const EromSurfaceTraining& training,
-            const BoundaryCondition* law, std::span<const double> state, double time)
-        {
-            const auto side = contact_side(project, i, id);
-            const double r = e.R[id];
-            const double temperature = law ? side.temperature(state) : 0;
-            const auto [conductance, load]
-                = boundary_terms(project.facet_contacts(i), id, e.facets[id], [&](const Facet& patch) {
-                      if (law)
-                          return evaluate_boundary(*law, patch, temperature, time, r);
-                      const double g = convection_conductance(patch.area(), training.coefficient, r);
-                      return BoundaryTrace {0, g, g * training.ambient};
-                  });
-            if (conductance != 0)
-                add_block(operators.K, side, side, conductance);
-            if (const double rhs = load - conductance * side.reference; rhs != 0)
-                add_load(operators.f, side, rhs);
-        }
-
-        const Operators& assemble(std::span<const double> state, double time)
-        {
-            if (state.size() != project.dof_count())
-                throw std::invalid_argument("project assembly: state size differs from DOF count");
-            if (thermal.size() == 1 && thermal.front())
-                return thermal.front()->assemble(state, time, {}, project.components().front().boundaries);
-
-            std::ranges::fill(operators.K.values(), 0.0);
-            std::ranges::fill(operators.f, 0.0);
-            for (std::size_t i = 0; i < thermal.size(); ++i) {
-                const auto& component = project.components()[i];
-                const auto offset = project.dof_offset(i);
-                if (const auto& assembler = thermal[i]) {
-                    const auto& local = assembler->assemble(state.subspan(offset, project.dof_size(i)), time,
-                        project.facet_contacts(i), component.boundaries);
-                    copy_sparse(local.K, operators.K, offset);
-                    copy_sparse(local.C, operators.C, offset);
-                    std::ranges::copy(local.f, operators.f.begin() + offset);
-                    continue;
-                }
-
-                const auto& e = erom(i);
-                copy_dense(e.K, operators.K, offset);
-                for (std::size_t s = 0; s < e.sources.size(); ++s) {
-                    const auto& source = e.sources[s];
-                    const auto it = component.powers.find(source.id);
-                    const double power = it == component.powers.end() ? source.default_power : it->second(time);
-                    if (!std::isfinite(power))
-                        throw std::invalid_argument("EROM power must be finite");
-                    for (std::size_t j = 0; j < e.K.rows(); ++j)
-                        operators.f[offset + j] += e.B(j, s) * power;
-                }
-                for (std::size_t s = 0; s < e.surfaces.size(); ++s)
-                    if (const auto& training = e.surface_training[s]) {
-                        const auto& surface = e.surfaces[s];
-                        const auto it = component.boundaries.find(surface.id);
-                        const auto* law = it == component.boundaries.end() ? nullptr : &it->second;
-                        if (law ? is_adiabatic(*law) : training->coefficient == 0)
-                            continue;
-                        for (const auto id : surface.facets)
-                            erom_environment(i, id, e, *training, law, state, time);
-                    }
-            }
-
-            if (cached_contact_K.empty())
-                assemble_contacts();
-            else {
-                for (std::size_t j = 0; j < cached_contact_K.size(); ++j)
-                    operators.K.values()[j] += cached_contact_K[j];
-                for (std::size_t j = 0; j < cached_contact_f.size(); ++j)
-                    operators.f[j] += cached_contact_f[j];
-            }
-            return operators;
-        }
-
-        const Project& project;
-        Vector<std::unique_ptr<ThermalAssembler>> thermal;
-        Operators operators;
-        Vector<double> cached_contact_K, cached_contact_f;
-    };
-
-    ProjectAssembler::ProjectAssembler(const model::Project& project) : workspace_(std::make_unique<Workspace>(project))
+    ProjectAssembler::ProjectAssembler(const Project& project)
+        : project_(project), thermal_(project.components().size())
     {
+        for (std::size_t i = 0; i < thermal_.size(); ++i)
+            if (const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&project_.components()[i].asset))
+                thermal_[i].emplace(**fom);
+        if (thermal_.size() == 1 && thermal_.front())
+            return;
+        operators_ = make_operators();
+        const bool reduced_only = std::ranges::none_of(thermal_, [](const auto& assembler) { return bool(assembler); });
+        for (std::size_t i = 0; i < thermal_.size(); ++i)
+            if (!thermal_[i]) {
+                const auto offset = project_.dof_offset(i);
+                const auto& e = *std::get<std::shared_ptr<const Erom>>(project_.components()[i].asset);
+                std::copy_n(e.C.data(), e.C.rows() * e.C.cols(),
+                    operators_.C.values().begin() + operators_.C.row_ptr()[offset]);
+                if (reduced_only)
+                    copy_dense(e.K, operators_.K, offset);
+            }
+        if (reduced_only) {
+            assemble_contacts();
+            fixed_K_.assign(operators_.K.values().begin(), operators_.K.values().end());
+            fixed_f_ = operators_.f;
+        }
     }
-    ProjectAssembler::~ProjectAssembler() = default;
+
+    void ProjectAssembler::assemble_contacts()
+    {
+        for (const auto& c : project_.contacts()) {
+            const auto left = contact_side(project_, c.left, c.left_facet);
+            const auto right = contact_side(project_, c.right, c.right_facet);
+            auto resistance = [&](std::size_t i, FacetId facet) {
+                return thermal_[i] ? thermal_[i]->resistance(facet)
+                                   : std::get<std::shared_ptr<const Erom>>(project_.components()[i].asset)->R[facet];
+            };
+            const auto g = c.area()
+                / contact_resistance(
+                    resistance(c.left, c.left_facet), resistance(c.right, c.right_facet), c.resistance);
+            add_block(operators_.K, left, left, g);
+            add_block(operators_.K, right, right, g);
+            add_block(operators_.K, left, right, -g);
+            add_block(operators_.K, right, left, -g);
+            const auto load = g * (right.reference - left.reference);
+            add_load(operators_.f, left, load);
+            add_load(operators_.f, right, -load);
+        }
+    }
+
+    Operators ProjectAssembler::make_operators() const
+    {
+        using core::SparseIndex;
+        const auto size = project_.dof_count();
+        // Build adjacency over contact blocks before expanding dense modal columns.
+        Vector<core::Triplet<double>> edges;
+        edges.reserve(2 * project_.contacts().size());
+        for (const auto& c : project_.contacts()) {
+            const auto left = static_cast<SparseIndex>(contact_side(project_, c.left, c.left_facet).first);
+            const auto right = static_cast<SparseIndex>(contact_side(project_, c.right, c.right_facet).first);
+            edges.push_back({left, right, 0});
+            edges.push_back({right, left, 0});
+        }
+        const auto adjacency = core::build_csr(size, size, std::move(edges));
+        const auto contact_offsets = adjacency.row_ptr(), contact_blocks = adjacency.col_idx();
+        Vector<SparseIndex> block_width(size, 1);
+        std::size_t stiffness_nnz = 0, capacity_nnz = 0;
+        for (std::size_t i = 0; i < thermal_.size(); ++i) {
+            const auto order = project_.dof_size(i);
+            if (!thermal_[i])
+                block_width[project_.dof_offset(i)] = static_cast<SparseIndex>(order);
+            stiffness_nnz += thermal_[i] ? thermal_[i]->operators().K.nnz() : order * order;
+            capacity_nnz += thermal_[i] ? order : order * order;
+        }
+        for (std::size_t i = 0; i < size; ++i)
+            for (auto j = contact_offsets[i]; j < contact_offsets[i + 1]; ++j)
+                stiffness_nnz += static_cast<std::size_t>(block_width[i]) * block_width[contact_blocks[j]];
+
+        Vector<SparseIndex> k_offsets(size + 1), c_offsets(size + 1), k_columns, c_columns;
+        k_columns.reserve(core::detail::checked_sparse_size(stiffness_nnz));
+        c_columns.reserve(core::detail::checked_sparse_size(capacity_nnz));
+        auto dense = [](Vector<SparseIndex>& columns, SparseIndex start, SparseIndex count) {
+            for (auto c = start; c < start + count; ++c)
+                columns.push_back(c);
+        };
+        for (std::size_t i = 0; i < thermal_.size(); ++i) {
+            const auto offset = static_cast<SparseIndex>(project_.dof_offset(i));
+            const auto* local = thermal_[i] ? &thermal_[i]->operators().K : nullptr;
+            for (std::size_t r = 0; r < project_.dof_size(i); ++r) {
+                const auto row = offset + static_cast<SparseIndex>(r);
+                const auto block = local ? row : offset;
+                auto edge = contact_offsets[block];
+                const auto last = contact_offsets[block + 1];
+                for (; edge < last && contact_blocks[edge] < offset; ++edge)
+                    dense(k_columns, contact_blocks[edge], block_width[contact_blocks[edge]]);
+                if (local)
+                    for (auto j = local->row_ptr()[r]; j < local->row_ptr()[r + 1]; ++j)
+                        k_columns.push_back(offset + local->col_idx()[j]);
+                else
+                    dense(k_columns, block, block_width[block]);
+                for (; edge < last; ++edge)
+                    dense(k_columns, contact_blocks[edge], block_width[contact_blocks[edge]]);
+                dense(c_columns, block, block_width[block]);
+                k_offsets[row + 1] = static_cast<SparseIndex>(k_columns.size());
+                c_offsets[row + 1] = static_cast<SparseIndex>(c_columns.size());
+            }
+        }
+        return {{size, size, std::move(k_offsets), std::move(k_columns), Vector<double>(stiffness_nnz)},
+            {size, size, std::move(c_offsets), std::move(c_columns), Vector<double>(capacity_nnz)},
+            Vector<double>(size)};
+    }
 
     const Operators& ProjectAssembler::assemble(std::span<const double> state, double time)
     {
-        return workspace_->assemble(state, time);
+        if (state.size() != project_.dof_count())
+            throw std::invalid_argument("project assembly: state size differs from DOF count");
+        if (thermal_.size() == 1 && thermal_.front())
+            return thermal_.front()->assemble(state, time, {}, project_.components().front().boundaries);
+
+        if (fixed_K_.empty()) {
+            std::ranges::fill(operators_.K.values(), 0.0);
+            std::ranges::fill(operators_.f, 0.0);
+        }
+        else {
+            std::ranges::copy(fixed_K_, operators_.K.values().begin());
+            std::ranges::copy(fixed_f_, operators_.f.begin());
+        }
+        for (std::size_t i = 0; i < thermal_.size(); ++i) {
+            const auto& component = project_.components()[i];
+            const auto offset = project_.dof_offset(i);
+            if (auto& assembler = thermal_[i]) {
+                const auto& local = assembler->assemble(state.subspan(offset, project_.dof_size(i)), time,
+                    project_.facet_contacts(i), component.boundaries);
+                copy_sparse(local.K, operators_.K, offset);
+                std::ranges::copy(local.C.values(), operators_.C.values().begin() + operators_.C.row_ptr()[offset]);
+                std::ranges::copy(local.f, operators_.f.begin() + offset);
+                continue;
+            }
+
+            const auto& e = *std::get<std::shared_ptr<const Erom>>(component.asset);
+            if (fixed_K_.empty())
+                copy_dense(e.K, operators_.K, offset);
+            for (std::size_t s = 0; s < e.sources.size(); ++s) {
+                const auto& source = e.sources[s];
+                const auto it = component.powers.find(source.id);
+                const double power = it == component.powers.end() ? source.default_power : it->second(time);
+                if (!std::isfinite(power))
+                    throw std::invalid_argument("EROM power must be finite");
+                for (std::size_t j = 0; j < e.K.rows(); ++j)
+                    operators_.f[offset + j] += e.B(j, s) * power;
+            }
+            const auto& contacts = project_.facet_contacts(i);
+            for (std::size_t f = 0; f < e.Vb.rows(); ++f) {
+                const auto id = static_cast<FacetId>(f);
+                const auto& surface = e.surfaces[e.facet_surface[id]];
+                const auto& training = *surface.training;
+                const auto it = component.boundaries.find(surface.id);
+                const auto* law = it == component.boundaries.end() ? nullptr : &it->second;
+                if (law ? is_adiabatic(*law) : training.coefficient == 0)
+                    continue;
+                const Side side {offset, e.Vb.row(id), e.reference_temperature};
+                const double temperature = law ? side.temperature(state) : 0;
+                const auto [g, load] = boundary_terms(contacts, id, e.facets[id], [&](const Facet& patch) {
+                    if (law)
+                        return evaluate_boundary(*law, patch, temperature, time, e.R[id]);
+                    const double g = convection_conductance(patch.area(), training.coefficient, e.R[id]);
+                    return BoundaryEvaluation {.conductance = g, .load = g * training.ambient};
+                });
+                if (g != 0)
+                    add_block(operators_.K, side, side, g);
+                if (const double rhs = load - g * side.reference; rhs != 0)
+                    add_load(operators_.f, side, rhs);
+            }
+        }
+
+        if (fixed_K_.empty())
+            assemble_contacts();
+        return operators_;
     }
 
 } // namespace mhs::solver

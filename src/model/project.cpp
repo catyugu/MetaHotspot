@@ -21,8 +21,10 @@ namespace mhs::model {
                 }
                 else
                     for (const auto& probe : std::get<std::shared_ptr<const Erom>>(c.asset)->outputs)
-                        if (probe.id == output)
-                            return probe.point ? std::optional {translate(*probe.point, c.offset)} : std::nullopt;
+                        if (probe.id == output) {
+                            const auto* point = std::get_if<Vec3>(&probe.location);
+                            return point ? std::optional {translate(*point, c.offset)} : std::nullopt;
+                        }
                 break;
             }
         throw std::out_of_range("unknown component output");

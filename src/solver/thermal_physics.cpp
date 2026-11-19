@@ -68,7 +68,7 @@ namespace mhs::solver {
 
     } // namespace
 
-    BoundaryTrace evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
+    BoundaryEvaluation evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
         double cell_temperature, double time, double resistance)
     {
         using namespace mhs::model;
@@ -76,13 +76,13 @@ namespace mhs::solver {
         const double area = patch.area(), conductive = area / resistance;
         auto context = [&](double trace) { return expression::FieldContext {p[0], p[1], p[2], trace, time}; };
         return std::visit(
-            [&](const auto& law) -> BoundaryTrace {
+            [&](const auto& law) -> BoundaryEvaluation {
                 using C = std::decay_t<decltype(law)>;
                 if constexpr (std::is_same_v<C, Dirichlet>) {
                     // The compiler rejects temperature-dependent Dirichlet data,
                     // so the prescribed trace is evaluated once.
                     const double trace = law.temperature.eval(context(cell_temperature));
-                    return {trace, conductive, conductive * trace};
+                    return {trace, conductive, conductive * trace, true};
                 }
                 else if constexpr (std::is_same_v<C, Neumann>) {
                     auto flux = [&](double trace) { return law.heat_flux.eval(context(trace)); };

@@ -1,5 +1,6 @@
 #pragma once
 #include <optional>
+#include <span>
 
 #include "model/fom.hpp"
 #include "model/fom_definition.hpp"
@@ -24,8 +25,8 @@ namespace mhs::compiler {
 
     // Partition exterior facets once against the union of thermal and fluid regions,
     // before building incidence and assigning physics-specific boundary conditions.
-    void refine_exterior_facets(
-        mhs::model::DiscreteMesh& mesh, const mhs::core::Vector<mhs::model::SurfaceRegion>& regions);
+    void refine_exterior_facets(mhs::model::DiscreteMesh& mesh, std::span<const TaggedSurfaceRegion> thermal,
+        std::span<const TaggedSurfaceRegion> fluid);
 
     // Later regions take precedence. Interior facets always have the invalid tag.
     mhs::core::Vector<SurfaceTag> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,

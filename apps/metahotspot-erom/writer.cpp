@@ -1,6 +1,6 @@
 #include "erom/extraction.hpp"
+#include "model/erom_codec.hpp"
 
-#include <bit>
 #include <fstream>
 #include <limits>
 #include <random>
@@ -20,42 +20,29 @@ namespace mhs::app::erom {
             explicit Writer(const std::filesystem::path& path) : output_(path, std::ios::binary)
             {
                 output_.exceptions(std::ios::badbit | std::ios::failbit);
-                output_.write("MHEROM\r\n", 8);
+                output_.write(
+                    model::erom_codec::magic.data(), static_cast<std::streamsize>(model::erom_codec::magic.size()));
             }
             void count(std::size_t value)
             {
                 if (value > std::numeric_limits<std::uint32_t>::max())
                     throw std::length_error("EROM exceeds 32-bit counts");
-                integer(static_cast<std::uint32_t>(value));
+                scalar(static_cast<std::uint32_t>(value));
             }
-            void scalar(double value) { integer(std::bit_cast<std::uint64_t>(value)); }
             void name(std::string_view value)
             {
                 count(value.size());
                 output_.write(value.data(), static_cast<std::streamsize>(value.size()));
             }
-            void values(std::span<const double> values)
+            template <typename T> void scalar(const T value) { values(std::span(&value, 1)); }
+            template <typename T> void values(std::span<const T> data)
             {
-                if constexpr (std::endian::native == std::endian::little) {
-                    if (!values.empty())
-                        output_.write(reinterpret_cast<const char*>(values.data()),
-                            static_cast<std::streamsize>(values.size_bytes()));
-                }
-                else
-                    for (const double value : values)
-                        scalar(value);
+                model::erom_codec::transfer(
+                    data, [this](const char* p, std::size_t n) { output_.write(p, static_cast<std::streamsize>(n)); });
             }
-            void matrix(const core::Matrix<double>& matrix) { values({matrix.data(), matrix.rows() * matrix.cols()}); }
             void close() { output_.close(); }
 
         private:
-            template <typename T> void integer(T value)
-            {
-                std::array<std::uint8_t, sizeof(T)> bytes {};
-                for (std::size_t i = 0; i < bytes.size(); ++i)
-                    bytes[i] = static_cast<std::uint8_t>(value >> (i * 8));
-                output_.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-            }
             std::ofstream output_;
         };
 
@@ -80,32 +67,35 @@ namespace mhs::app::erom {
         } while (std::filesystem::exists(temporary));
         const Temporary cleanup {temporary};
         Writer writer(temporary);
-        writer.count(2);
+        writer.count(model::erom_codec::version);
         for (const auto count :
             {e.K.rows(), e.sources.size(), e.outputs.size(), e.Vb.rows(), e.facets.size(), e.surfaces.size()})
             writer.count(count);
         writer.scalar(e.reference_temperature);
         for (const auto* matrix : {&e.K, &e.C, &e.B, &e.L, &e.Vb})
-            writer.matrix(*matrix);
-        writer.values(e.R);
-        writer.values(e.uniform_temperature_mode);
+            writer.values(model::erom_codec::elements(*matrix));
+        writer.values(std::span<const double>(e.R));
+        writer.values(std::span<const double>(e.uniform_temperature_mode));
         for (const auto& facet : e.facets) {
             writer.count(static_cast<std::uint32_t>(facet.axis));
             writer.count(facet.normal > 0);
             writer.scalar(facet.coordinate);
-            writer.values(facet.bounds);
+            writer.values(std::span<const double>(facet.bounds));
         }
+        core::Vector<core::Vector<model::FacetId>> facets_by_surface(e.surfaces.size());
+        for (std::size_t id = 0; id < e.facet_surface.size(); ++id)
+            facets_by_surface[e.facet_surface[id]].push_back(static_cast<model::FacetId>(id));
         for (std::size_t i = 0; i < e.surfaces.size(); ++i) {
             const auto& surface = e.surfaces[i];
             writer.count(surface.id);
             writer.name(surface.name);
-            const auto& h = e.surface_training[i];
+            const auto& h = surface.training;
             writer.count(h.has_value());
             if (h)
                 for (const double value : {h->minimum, h->maximum, h->coefficient, h->ambient})
                     writer.scalar(value);
-            writer.count(surface.facets.size());
-            for (const auto id : surface.facets)
+            writer.count(facets_by_surface[i].size());
+            for (const auto id : facets_by_surface[i])
                 writer.count(id);
         }
         for (const auto& source : e.sources) {
@@ -116,9 +106,12 @@ namespace mhs::app::erom {
         for (const auto& output : e.outputs) {
             writer.count(output.id);
             writer.name(output.name);
-            writer.count(output.source);
-            if (output.point)
-                writer.values(*output.point);
+            if (const auto* point = std::get_if<model::Vec3>(&output.location)) {
+                writer.count(core::invalid_id);
+                writer.values(std::span<const double>(*point));
+            }
+            else
+                writer.count(std::get<model::SourceId>(output.location));
         }
         writer.close();
 #ifdef _WIN32

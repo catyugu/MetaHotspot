@@ -1,6 +1,5 @@
 #include "project_output.hpp"
 #include "contact.hpp"
-#include "thermal_physics.hpp"
 #include "thermal_reconstruction.hpp"
 
 namespace mhs::solver {
@@ -16,26 +15,13 @@ namespace mhs::solver {
             const auto& contacts = project.facet_contacts(i);
             if (contacts.empty() && component.boundaries.empty())
                 return sample_point(m, local, time, probe.cell, probe.point);
-            auto sample_r = [&](std::size_t index, FacetId id) {
-                const auto& asset = project.components()[index].asset;
-                if (const auto* erom = std::get_if<std::shared_ptr<const Erom>>(&asset))
-                    return (*erom)->R[id];
-                const auto& fom = *std::get<std::shared_ptr<const Fom>>(asset);
-                const auto axis = static_cast<std::size_t>(fom.discrete.facets[id].axis);
-                const auto cell = fom.discrete.cell_facets[id].owner();
-                const auto temperature = state[project.dof_offset(index) + cell];
-                return boundary_resistance(fom, id, cell_conductivity(fom, cell, axis, temperature, time));
-            };
-            BoundarySampler sample = [&](FacetId id, const Vec3* point) -> BoundarySample {
+            BoundarySampler sample = [&](FacetId id, const Vec3* point) -> BoundaryEvaluation {
                 const auto& facet = m.discrete.facets[id];
-                const auto r = sample_r(i, id);
-                const double temperature = contact_side(project, i, id).temperature(state);
+                const double temperature = local[m.discrete.cell_facets[id].owner()];
+                const double r = boundary_resistance(m, id, temperature, time);
                 const auto surface = m.facet_surface[id];
-                const auto& law = boundary_override(component.boundaries, surface, m.boundary_conditions[surface]);
-                auto ambient = [&](const Facet& patch) {
-                    const auto t = evaluate_boundary(law, patch, temperature, time, r);
-                    return BoundarySample {t.temperature, std::holds_alternative<Dirichlet>(law)};
-                };
+                const auto& law = boundary_override(component.boundaries, surface, m.surfaces[surface].condition);
+                auto ambient = [&](const Facet& patch) { return evaluate_boundary(law, patch, temperature, time, r); };
                 const auto record = contacts.find(id);
                 if (record == contacts.end())
                     return ambient(facet);
@@ -44,15 +30,19 @@ namespace mhs::solver {
                     const auto& c = project.contacts()[index];
                     const auto other = c.left == i ? c.right : c.left;
                     const auto other_id = c.left == i ? c.right_facet : c.left_facet;
-                    const auto difference = contact_side(project, other, other_id).temperature(state) - temperature;
-                    const auto t
-                        = temperature + difference * r / contact_resistance(r, sample_r(other, other_id), c.resistance);
+                    const double other_temperature = contact_side(project, other, other_id).temperature(state);
+                    const auto& asset = project.components()[other].asset;
+                    const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&asset);
+                    const double other_r = fom ? boundary_resistance(**fom, other_id, other_temperature, time)
+                                               : std::get<std::shared_ptr<const Erom>>(asset)->R[other_id];
+                    const auto t = temperature
+                        + (other_temperature - temperature) * r / contact_resistance(r, other_r, c.resistance);
                     if (point) {
                         const auto u = facet.axis == Axis::X ? 1 : 0, v = facet.axis == Axis::Z ? 1 : 2;
                         const auto a = (*point)[u] + component.offset[u], b = (*point)[v] + component.offset[v];
                         if (a >= c.overlap[0] - geometry_eps && a <= c.overlap[1] + geometry_eps
                             && b >= c.overlap[2] - geometry_eps && b <= c.overlap[3] + geometry_eps)
-                            return {t, false};
+                            return {.temperature = t};
                     }
                     integral += c.area() * t;
                 }
@@ -62,12 +52,18 @@ namespace mhs::solver {
                         return trace;
                     integral += patch.area() * trace.temperature;
                 }
-                return {integral / facet.area(), false};
+                return {.temperature = integral / facet.area()};
             };
             return sample_point(m, local, time, probe.cell, probe.point, sample);
         }
 
     } // namespace
+
+    void append_fom_traces(core::Vector<OutputTrace>& traces, const Fom& fom, ComponentId component)
+    {
+        for (std::size_t p = 0; p < fom.point_probes.size(); ++p)
+            traces.push_back({fom.point_probes[p].name, {}, component, static_cast<OutputId>(p)});
+    }
 
     core::Vector<OutputTrace> project_outputs(const Project& project)
     {
@@ -76,10 +72,8 @@ namespace mhs::solver {
             std::visit(
                 [&](const auto& asset) {
                     using Asset = typename std::decay_t<decltype(asset)>::element_type;
-                    if constexpr (std::is_same_v<Asset, const Fom>) {
-                        for (std::size_t p = 0; p < asset->point_probes.size(); ++p)
-                            traces.push_back({asset->point_probes[p].name, {}, c.id, static_cast<OutputId>(p)});
-                    }
+                    if constexpr (std::is_same_v<Asset, const Fom>)
+                        append_fom_traces(traces, *asset, c.id);
                     else
                         for (const auto& output : asset->outputs)
                             traces.push_back({output.name, {}, c.id, output.id});

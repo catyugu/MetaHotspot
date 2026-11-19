@@ -6,6 +6,7 @@
 #include <numeric>
 #include <set>
 #include <stdexcept>
+#include <string_view>
 #include <tuple>
 
 namespace mhs::compiler {
@@ -34,21 +35,30 @@ namespace mhs::compiler {
         struct Face {
             std::size_t component;
             FacetId id;
-            const Surface* surface;
             const Facet* facet;
-            bool connectable;
-            double plane;
+            const EromSurface* surface;
             Rect rect;
         };
 
         // Index the positive faces on one plane by their two tangential bounds.
         class Plane {
         public:
-            explicit Plane(Vector<Face>& faces) { build(faces); }
+            Vector<Face> faces;
+            void index() { build(faces); }
 
-            template <typename Match> void search(const Rect& rect, const Match& match) const
+            template <typename Match> void search(const Rect& rect, const Match& match, std::size_t index = 0) const
             {
-                search(0, rect, match);
+                const auto& node = nodes_[index];
+                if (!overlap(rect, node.rect))
+                    return;
+                if (node.right) {
+                    search(rect, match, index + 1);
+                    search(rect, match, node.right);
+                    return;
+                }
+                for (const auto& face : node.leaf)
+                    if (const auto hit = overlap(rect, face.rect))
+                        match(face, *hit);
             }
 
         private:
@@ -58,10 +68,10 @@ namespace mhs::compiler {
                 std::size_t right = 0;
             };
 
-            std::size_t build(std::span<Face> faces)
+            std::size_t build(std::span<Face> range)
             {
-                auto rect = faces.front().rect;
-                for (const auto& face : faces) {
+                auto rect = range.front().rect;
+                for (const auto& face : range) {
                     rect[0] = std::min(rect[0], face.rect[0]);
                     rect[1] = std::max(rect[1], face.rect[1]);
                     rect[2] = std::min(rect[2], face.rect[2]);
@@ -69,41 +79,33 @@ namespace mhs::compiler {
                 }
                 const auto index = nodes_.size();
                 nodes_.push_back({rect, {}});
-                if (faces.size() <= 8) {
-                    nodes_[index].leaf = faces;
+                if (range.size() <= 8) {
+                    nodes_[index].leaf = range;
                     return index;
                 }
                 const int t = rect[1] - rect[0] >= rect[3] - rect[2] ? 0 : 2;
-                const auto half = faces.size() / 2;
-                std::nth_element(faces.begin(), faces.begin() + half, faces.end(), [t](const auto& a, const auto& b) {
+                const auto half = range.size() / 2;
+                std::nth_element(range.begin(), range.begin() + half, range.end(), [t](const auto& a, const auto& b) {
                     return std::midpoint(a.rect[t], a.rect[t + 1]) < std::midpoint(b.rect[t], b.rect[t + 1]);
                 });
-                build(faces.first(half));
-                const auto right = build(faces.subspan(half));
+                build(range.first(half));
+                const auto right = build(range.subspan(half));
                 nodes_[index].right = right;
                 return index;
-            }
-
-            template <typename Match> void search(std::size_t index, const Rect& rect, const Match& match) const
-            {
-                const auto& node = nodes_[index];
-                if (!overlap(rect, node.rect))
-                    return;
-                if (node.right) {
-                    search(index + 1, rect, match);
-                    search(node.right, rect, match);
-                    return;
-                }
-                for (const auto& face : node.leaf)
-                    if (const auto hit = overlap(rect, face.rect))
-                        match(face, *hit);
             }
 
             Vector<Node> nodes_;
         };
 
-        void subtract(Vector<Facet>& exposed, const Rect& cut, const Facet& original)
+        void cover(FacetContact& record, const Face& side, const Rect& cut, const Vec3& offset, std::size_t contact)
         {
+            const auto& original = *side.facet;
+            auto local = translate(cut, original.axis, {-offset[0], -offset[1], -offset[2]});
+            for (std::size_t i = 0; i < local.size(); ++i)
+                if (cut[i] == side.rect[i])
+                    local[i] = original.bounds[i];
+            if (record.contacts.empty())
+                record.exposed.push_back(original);
             Vector<Facet> remainder;
             auto append = [&](const Rect& r) {
                 if (r[1] > r[0] && r[3] > r[2]) {
@@ -113,9 +115,9 @@ namespace mhs::compiler {
                 }
             };
             double removed = 0;
-            for (const auto& patch : exposed) {
+            for (const auto& patch : record.exposed) {
                 const auto& r = patch.bounds;
-                if (const auto x = overlap(r, cut)) {
+                if (const auto x = overlap(r, local)) {
                     removed += ((*x)[1] - (*x)[0]) * ((*x)[3] - (*x)[2]);
                     append({r[0], (*x)[0], r[2], r[3]});
                     append({(*x)[1], r[1], r[2], r[3]});
@@ -125,10 +127,11 @@ namespace mhs::compiler {
                 else
                     remainder.push_back(patch);
             }
-            const double area = (cut[1] - cut[0]) * (cut[3] - cut[2]);
+            const double area = (local[1] - local[0]) * (local[3] - local[2]);
             if (removed < area * (1 - 1e-8))
                 throw std::invalid_argument("overlapping thermal contacts on one component facet");
-            exposed = std::move(remainder);
+            record.exposed = std::move(remainder);
+            record.contacts.push_back(contact);
         }
     } // namespace
 
@@ -140,7 +143,7 @@ namespace mhs::compiler {
         project.facet_contacts_.resize(components.size());
         std::set<ComponentId> ids;
         std::set<const Erom*> validated;
-        std::array<std::map<double, Vector<Face>>, 3> positive;
+        std::array<std::map<double, Plane>, 3> positive;
         std::array<Vector<Face>, 3> negative;
         for (std::size_t i = 0; i < components.size(); ++i) {
             const auto& component = components[i];
@@ -170,43 +173,40 @@ namespace mhs::compiler {
                             throw std::invalid_argument("FOM source laws belong to the model");
                     }
                     project.dof_offsets_.push_back(core::detail::checked_sparse_size(project.dof_count() + size));
-                    auto is_open = [&](std::size_t s) {
-                        if constexpr (reduced)
-                            return asset->surface_training[s].has_value();
-                        else
-                            return true;
-                    };
                     for (const auto& [id, law] : component.boundaries) {
-                        bool found = false;
-                        for (std::size_t s = 0; s < asset->surfaces.size(); ++s)
-                            found |= asset->surfaces[s].id == id && is_open(s);
-                        if (!found)
+                        const bool known = [&] {
+                            if constexpr (reduced)
+                                return std::ranges::any_of(asset->surfaces,
+                                    [id](const auto& surface) { return surface.id == id && surface.training; });
+                            else
+                                return id < asset->surfaces.size();
+                        }();
+                        if (!known)
                             throw std::invalid_argument("unknown or non-connectable component surface ID");
                     }
                     if (components.size() <= 1)
                         return;
-                    const auto& geometry = [&]() -> const Vector<Facet>& {
-                        if constexpr (reduced)
-                            return asset->facets;
-                        else
-                            return asset->discrete.facets;
-                    }();
-                    for (std::size_t s = 0; s < asset->surfaces.size(); ++s)
-                        for (const auto id : asset->surfaces[s].facets) {
-                            const auto& f = geometry[id];
-                            const auto axis = static_cast<std::size_t>(f.axis);
-                            const auto plane = f.coordinate + component.offset[axis];
-                            const auto rect = translate(f.bounds, f.axis, component.offset);
-                            if (!std::isfinite(plane)
-                                || !std::ranges::all_of(rect, [](double x) { return std::isfinite(x); })
-                                || rect[0] >= rect[1] || rect[2] >= rect[3])
-                                throw std::invalid_argument("component translation exceeds facet precision");
-                            Face face {i, id, &asset->surfaces[s], &f, is_open(s), plane, rect};
-                            if (f.normal > 0)
-                                positive[axis][plane].push_back(face);
-                            else
-                                negative[axis].push_back(face);
-                        }
+                    auto append = [&](FacetId id, const Facet& f, const EromSurface* surface = nullptr) {
+                        const auto axis = static_cast<std::size_t>(f.axis);
+                        const auto plane = f.coordinate + component.offset[axis];
+                        const auto rect = translate(f.bounds, f.axis, component.offset);
+                        if (!std::isfinite(plane)
+                            || !std::ranges::all_of(rect, [](double x) { return std::isfinite(x); })
+                            || rect[0] >= rect[1] || rect[2] >= rect[3])
+                            throw std::invalid_argument("component translation exceeds facet precision");
+                        auto& faces = f.normal > 0 ? positive[axis][plane].faces : negative[axis];
+                        faces.push_back({i, id, &f, surface, rect});
+                    };
+                    if constexpr (reduced) {
+                        for (std::size_t id = 0; id < asset->facets.size(); ++id)
+                            append(static_cast<FacetId>(id), asset->facets[id],
+                                &asset->surfaces[asset->facet_surface[id]]);
+                    }
+                    else {
+                        for (std::size_t id = 0; id < asset->facet_surface.size(); ++id)
+                            if (asset->facet_surface[id] != core::invalid_id)
+                                append(static_cast<FacetId>(id), asset->discrete.facets[id]);
+                    }
                 },
                 component.asset);
         }
@@ -219,45 +219,43 @@ namespace mhs::compiler {
                     "contact resistance requires two valid sorted component IDs and a finite nonnegative value");
 
         std::set<std::tuple<ComponentId, SurfaceId, ComponentId, SurfaceId>> warned;
-        auto cover = [&](const Face& side, const Rect& cut) {
-            const auto& original = *side.facet;
-            const auto& offset = components[side.component].offset;
-            auto local = translate(cut, original.axis, {-offset[0], -offset[1], -offset[2]});
-            for (std::size_t i = 0; i < local.size(); ++i)
-                if (cut[i] == side.rect[i])
-                    local[i] = original.bounds[i];
-            auto [it, inserted] = project.facet_contacts_[side.component].try_emplace(side.id);
-            auto& record = it->second;
-            if (inserted)
-                record.exposed.push_back(original);
-            subtract(record.exposed, local, original);
-            record.contacts.push_back(project.contacts_.size());
+        auto surface_info = [&](const Face& side) -> std::pair<SurfaceId, std::string_view> {
+            if (side.surface)
+                return {side.surface->id, side.surface->name};
+            const auto& fom = *std::get<std::shared_ptr<const Fom>>(components[side.component].asset);
+            const auto id = fom.facet_surface[side.id];
+            return {id, fom.surfaces[id].name};
         };
         for (std::size_t axis = 0; axis < positive.size(); ++axis) {
-            std::map<double, Plane> index;
-            for (auto& [coordinate, group] : positive[axis])
-                index.try_emplace(coordinate, group);
-            for (const auto& right : negative[axis])
-                for (auto it = index.lower_bound(right.plane - geometry_eps);
-                    it != index.end() && it->first <= right.plane + geometry_eps; ++it)
+            auto& index = positive[axis];
+            for (auto& [coordinate, group] : index)
+                group.index();
+            for (const auto& right : negative[axis]) {
+                const auto plane = right.facet->coordinate + components[right.component].offset[axis];
+                for (auto it = index.lower_bound(plane - geometry_eps);
+                    it != index.end() && it->first <= plane + geometry_eps; ++it)
                     it->second.search(right.rect, [&](const Face& left, const Rect& cut) {
                         if (left.component == right.component)
                             return;
                         const auto l = components[left.component].id, r = components[right.component].id;
-                        if (!left.connectable || !right.connectable) {
-                            const auto key = std::tuple {l, left.surface->id, r, right.surface->id};
+                        if ((left.surface && !left.surface->training) || (right.surface && !right.surface->training)) {
+                            const auto [left_id, left_name] = surface_info(left);
+                            const auto [right_id, right_name] = surface_info(right);
+                            const auto key = std::tuple {l, left_id, r, right_id};
                             if (warned.insert(key).second)
                                 MHS_LOG_WARN("Components {} ({}) and {} ({}): EROM surface is not connectable; thermal "
                                              "contact is ignored",
-                                    l, left.surface->name, r, right.surface->name);
+                                    l, left_name, r, right_name);
                             return;
                         }
-                        cover(left, cut);
-                        cover(right, cut);
+                        for (const auto* side : {&left, &right})
+                            cover(project.facet_contacts_[side->component][side->id], *side, cut,
+                                components[side->component].offset, project.contacts_.size());
                         const auto resistance = resistances.find(std::minmax(l, r));
                         project.contacts_.push_back({left.component, right.component, left.id, right.id, cut,
                             resistance == resistances.end() ? 0.0 : resistance->second});
                     });
+            }
         }
         return project;
     }

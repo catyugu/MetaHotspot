@@ -3,6 +3,7 @@
 #include "solver/linear_system.hpp"
 
 #include "model/project.hpp"
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -32,12 +33,16 @@ namespace mhs::solver {
     class ProjectAssembler {
     public:
         explicit ProjectAssembler(const model::Project& project);
-        ~ProjectAssembler();
         const Operators& assemble(std::span<const double> state, double time);
 
     private:
-        struct Workspace;
-        std::unique_ptr<Workspace> workspace_;
+        Operators make_operators() const;
+        void assemble_contacts();
+
+        const model::Project& project_;
+        core::Vector<std::optional<ThermalAssembler>> thermal_;
+        Operators operators_;
+        core::Vector<double> fixed_K_, fixed_f_;
     };
 
     // Owning export for the C API and standalone operator inspection.

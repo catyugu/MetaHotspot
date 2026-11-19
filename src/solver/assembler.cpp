@@ -90,12 +90,8 @@ namespace mhs::solver {
                 }
             }
         }
-        for (const auto& term : model.source_terms) {
-            const auto row = term.cell;
-            const auto& p = term.point;
-            rhs[row]
-                += term.weight * model.heat_source_table[term.source].eval({p[0], p[1], p[2], temperature[row], time});
-        }
+        for (const auto& term : model.source_terms)
+            rhs[term.cell] += source_power(model, term, temperature[term.cell], time);
         auto fluid_index = [&](CellId c) {
             return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
         };
@@ -153,7 +149,7 @@ namespace mhs::solver {
             const auto surface = model_.facet_surface[i];
             if (surface == core::invalid_id)
                 continue;
-            const auto& law = boundary_override(overrides, surface, model_.boundary_conditions[surface]);
+            const auto& law = boundary_override(overrides, surface, model_.surfaces[surface].condition);
             if (is_adiabatic(law))
                 continue;
             const auto id = static_cast<model::FacetId>(i);
