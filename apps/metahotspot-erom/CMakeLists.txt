@@ -1,20 +1,31 @@
-add_executable(metahotspot-erom-prepare prepare.cpp)
-target_link_libraries(metahotspot-erom-prepare PRIVATE metahotspot_frontend mhs_options)
-target_include_directories(metahotspot-erom-prepare PRIVATE ${PROJECT_SOURCE_DIR}/src)
-mhs_stage_runtime(metahotspot-erom-prepare)
+add_executable(metahotspot-erom
+    main.cpp
+    prepare.cpp
+    extract.cpp
+    basis.cpp
+    spectrum.cpp
+    compression.cpp
+    amg_solver.cpp
+    writer.cpp
+)
+target_link_libraries(metahotspot-erom PRIVATE
+    metahotspot_frontend mhs_options Eigen3::Eigen amgcl::amgcl OpenMP::OpenMP_CXX)
+target_include_directories(metahotspot-erom PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_definitions(metahotspot-erom PRIVATE AMGCL_NO_BOOST)
+set_source_files_properties(amg_solver.cpp PROPERTIES COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/wd4701>")
+mhs_stage_runtime(metahotspot-erom)
 if(APPLE)
-    set_property(TARGET metahotspot-erom-prepare PROPERTY INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
+    set_property(TARGET metahotspot-erom PROPERTY INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
 elseif(UNIX)
-    set_property(TARGET metahotspot-erom-prepare PROPERTY INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+    set_property(TARGET metahotspot-erom PROPERTY INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
 endif()
 
-option(MHS_TEST_EROM_EXTRACTION "Test standalone EROM extraction with NumPy, SciPy and PyAMG" OFF)
-if(MHS_BUILD_TESTS AND MHS_TEST_EROM_EXTRACTION)
+if(MHS_BUILD_TESTS)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_executable(mhs_erom_check tests/check_embed.cpp)
     target_link_libraries(mhs_erom_check PRIVATE metahotspot_frontend mhs_options)
     mhs_stage_runtime(mhs_erom_check)
     add_test(NAME mhs.erom.ExtractionRoundTrip
         COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/tests/round_trip.py"
-        $<TARGET_FILE:metahotspot-erom-prepare> $<TARGET_FILE:mhs_erom_check>)
+        $<TARGET_FILE:metahotspot-erom> $<TARGET_FILE:mhs_erom_check>)
 endif()

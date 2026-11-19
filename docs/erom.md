@@ -48,16 +48,18 @@ storing every full state snapshot. The default preserves full histories.
 
 ## Standalone PTA extraction
 
-Install the Python package and build the native helper with the CMake option
-`MHS_BUILD_APPS=ON`. The helper uses the same PTA XML reader as the existing CLI.
+Build with `MHS_BUILD_APPS=ON`. The standalone C++ executable uses the same PTA
+XML reader as the simulation CLI. Model preparation, extraction, validation and
+atomic `.mherom` writing run in one process, with no Python runtime or temporary
+operator exchange file.
 
 ```sh
-metahotspot-erom model.xml --list-surfaces --prepare build/apps/metahotspot-erom/metahotspot-erom-prepare
+metahotspot-erom model.xml --list-surfaces
 metahotspot-erom model.xml package.mherom --htc 0 5 200 --htc 1 10 500 \
-  --probe junction --prepare build/apps/metahotspot-erom/metahotspot-erom-prepare
+  --probe junction
 ```
 
-After a native install, the helper can be discovered on `PATH`. Each `--htc`
+The native SDK installs `metahotspot-erom` in `bin/`. Each `--htc`
 argument gives a surface ID and positive lower and upper HTC limits in
 W/(m² K). All surfaces with nonzero ambient HTC must be selected. A selected
 adiabatic surface becomes connectable with a zero default environment HTC.
@@ -79,11 +81,36 @@ Neumann laws can be applied to a trained EROM surface in the receiving project.
 Use the C++ SDK to load and run the output. Existing PTA applications continue
 to handle their usual XML studies.
 
-Extraction reuses the BCI response-space algorithm and interface contour
-excitation. Each training group uses an affine approximation between the exact
+Extraction uses the Extended-FANTASTIC response-space algorithm, implemented
+privately in `apps/metahotspot-erom`. By default the physical heat-source columns
+drive training. A thermally disconnected region with no heat source uses its physical
+ambient-temperature inputs on selected HTC surfaces, evaluated at the HTC lower
+bounds, so passive dynamics are retained. No additional boundary enrichment is
+performed. Global
+capacity-scaled spectral estimates use a preconditioned low-end Rayleigh–Ritz
+iteration and restarted, reorthogonalized high-end Krylov iteration. Both require
+a checked eigenpair residual. Elliptic matching points are positive real shifts,
+evaluated with arithmetic-geometric means using the complementary modulus.
+Each source keeps its own response space and incremental Galerkin matrices.
+Ten successful log-uniform HTC residual probes advance each source to the next
+shift. The fixed C++ random seed gives reproducible native runs; sampling and
+basis coordinates may differ from the former Python implementation.
+
+The application-local `ReusableAmg` owns an AMGCL smoothed-aggregation/SPAI0
+hierarchy separately from CG. At most one lower-HTC hierarchy is built per active
+shift and shared by all ports, HTC samples and response warm starts at that shift.
+CG receives the current matrix explicitly; each solve checks its true relative
+residual. The solid-only extraction operators are symmetric positive definite
+after training HTC closure. Final compression uses centered, normalized responses,
+thin QR and a small SVD, then preserves the uniform-temperature mode.
+`--max-order` bounds response solves before compression. The CLI reports response solves,
+response AMG setups and CG iterations.
+
+Each training group uses an affine approximation between the exact
 endpoint TPFA conductances. The extractor validates temperature outputs by
-solving the FOM with exact TPFA conductances at several settings in the
-training range and at the default environment when anchored. `--output-error`
+solving the FOM with AMG-CG (true relative residual at most the smaller of `1e-8`
+and `--output-error / 1000`) and exact TPFA conductances at several settings in
+the training range and at the default environment when anchored. `--output-error`
 bounds the sampled error divided by the larger of one kelvin and the magnitude
 of the reference temperature rise. The output reports the measured maximum.
 Accuracy after embedding depends on the attached geometry and loads.
@@ -119,9 +146,9 @@ FloTHERM exports use a separate format. See
 [`bci_rom_testcase1`](../playground/bci_rom_testcase1/) and the archived
 [`simple_erom_case1`](../playground/archived/simple_erom_case1/) for comparisons.
 
-The package provides the BCI numerics and the independent `macromodel.contour`
-flux training functions. Component coupling uses the C++ Project API. The old
-Python coupling interface, its tests and dependent experiments have been removed.
+The native extractor and writer live only in `apps/metahotspot-erom`. Python
+`macromodel` utilities remain available for independent research workflows.
+Component coupling uses the C++ Project API.
 
 ## Assembly measurements
 

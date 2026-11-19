@@ -105,7 +105,7 @@ solution = compiled.solve(opts=SolveOptions(
 
 - 语言：C++20
 - 构建系统：CMake
-- 命名空间：SDK 使用 `mhs::core`、`mhs::expression`、`mhs::model`、`mhs::linear`、`mhs::compiler`、`mhs::solver` 和 `mhs::logger`。CLI 兼容层统一位于 `mhs::app::{cli,pta,output,postprocess}`，不随 SDK 导出。单文件私有实现使用匿名命名空间。
+- 命名空间：SDK 使用 `mhs::core`、`mhs::expression`、`mhs::model`、`mhs::linear`、`mhs::compiler`、`mhs::solver` 和 `mhs::logger`。应用实现位于 `mhs::app::{cli,pta,output,postprocess,erom}`，不随 SDK 导出。单文件私有实现使用匿名命名空间。
 - 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
@@ -181,5 +181,6 @@ metahotspot --output-vtu /tmp/out.vtu \
 
 ### FOM–EROM 混合工程
 
-C++ SDK 支持通过表面接触连接详细模型与可复用的 EROM。独立提取工具读取 PTA XML，
-生成原生 `.mherom` 资产。使用方式和文件布局见[混合工程与 EROM 提取文档](docs/erom.md)。
+C++ SDK 支持通过表面接触连接详细模型与可复用的 EROM。原生 `metahotspot-erom` 读取 PTA XML，
+在一个 C++ 进程中完成提取、校验和 `.mherom` 写出，无需 Python。
+使用方式和文件布局见[混合工程与 EROM 提取文档](docs/erom.md)。

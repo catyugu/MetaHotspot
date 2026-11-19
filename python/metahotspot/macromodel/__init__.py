@@ -20,7 +20,6 @@ Modules:
   :class:`~metahotspot.macromodel.geometry.CellGeometry` geometry view.
   Concrete models subclass the base from playground adapters; the library
   itself ships no concrete model.
-* :mod:`contour` — polynomial flux directions for native EROM extraction.
 
 All algorithms consume plain numpy/scipy data or the ``metahotspot`` bindings'
 generic ``Operators`` / ``CompiledFields`` contracts — never a named case.

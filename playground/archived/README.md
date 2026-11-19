@@ -29,4 +29,4 @@
 旧 Python 子域、面端口、ROM 接口富集和耦合实现及其测试已直接删除，不再保留归档副本。
 依赖这些接口的非共形界面和简单立方体耦合脚本一并删除，历史源码可在提交
 [`cd40271`](https://github.com/catyugu/MetaHotspot/tree/cd40271cdc3ec0d50def9691b366b12af57ddf69/playground/archived) 中查看。
-现行提取器只依赖 `macromodel.utils` 与 `macromodel.contour` 的通用数值算法，运行期耦合由 C++ Project API 完成。
+现行提取流程全部位于 `apps/metahotspot-erom`；运行期耦合由 C++ Project API 完成。

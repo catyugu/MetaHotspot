@@ -9,21 +9,14 @@ from pathlib import Path
 
 
 def main():
-    prepare, check = sys.argv[1:]
+    extractor, check = sys.argv[1:]
     folder = Path(__file__).resolve().parent
     xml = folder / "three_cells.xml"
     env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join(
-        filter(None, (str(folder.parents[2] / "python"), env.get("PYTHONPATH")))
-    )
     env.update(OMP_NUM_THREADS="2", OPENBLAS_NUM_THREADS="2")
     extract = [
-        sys.executable,
-        "-m",
-        "metahotspot.erom",
+        extractor,
         str(xml),
-        "--prepare",
-        prepare,
         "--htc",
         "0",
         "1",
@@ -32,8 +25,6 @@ def main():
         "1",
         "2",
         "9",
-        "--contour-degree",
-        "0",
         "--tolerance",
         "1e-6",
     ]
@@ -41,7 +32,7 @@ def main():
         native = Path(tmp) / "test.mherom"
 
         rejected = subprocess.run(
-            [*extract[:4], str(native), *extract[4:]],
+            [*extract[:2], str(native), *extract[2:]],
             env=env,
             text=True,
             capture_output=True,
@@ -53,7 +44,7 @@ def main():
         assert not native.exists()
 
         subprocess.run(
-            [*extract[:4], str(native), *extract[4:], "--probe", "off center"],
+            [*extract[:2], str(native), *extract[2:], "--probe", "off center"],
             env=env,
             check=True,
         )
@@ -89,7 +80,7 @@ def main():
         )
         modified.write_text(source_free, encoding="utf-8")
         subprocess.run(
-            [*extract[:3], str(modified), str(bad), *extract[4:], "--no-point-probes"],
+            [*extract[:1], str(modified), str(bad), *extract[2:], "--no-point-probes"],
             env=env,
             check=True,
         )
@@ -104,7 +95,7 @@ def main():
             encoding="utf-8",
         )
         rejected = subprocess.run(
-            [*extract[:3], str(modified), str(bad), *extract[4:], "--no-point-probes"],
+            [*extract[:1], str(modified), str(bad), *extract[2:], "--no-point-probes"],
             env=env,
             text=True,
             capture_output=True,
