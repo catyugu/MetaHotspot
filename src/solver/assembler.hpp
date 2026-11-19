@@ -32,12 +32,21 @@ namespace mhs::solver {
     class ProjectAssembler {
     public:
         explicit ProjectAssembler(const model::Project& project);
-        ~ProjectAssembler();
         const Operators& assemble(std::span<const double> state, double time);
 
     private:
-        struct Workspace;
-        std::unique_ptr<Workspace> workspace_;
+        std::shared_ptr<const core::CSRPattern> pattern(bool capacity) const;
+        const model::Erom& erom(std::size_t component) const;
+        double resistance(std::size_t component, model::FacetId facet) const;
+        void assemble_contacts();
+        void erom_environment(std::size_t component, model::FacetId facet, const model::Erom& erom,
+            const model::EromSurfaceTraining& training, const model::BoundaryCondition* law,
+            std::span<const double> state, double time);
+
+        const model::Project& project_;
+        core::Vector<std::unique_ptr<ThermalAssembler>> thermal_;
+        Operators operators_;
+        core::Vector<double> fixed_K_, fixed_f_;
     };
 
     // Owning export for the C API and standalone operator inspection.

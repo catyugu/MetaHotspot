@@ -170,17 +170,15 @@ namespace mhs::compiler {
                             throw std::invalid_argument("FOM source laws belong to the model");
                     }
                     project.dof_offsets_.push_back(core::detail::checked_sparse_size(project.dof_count() + size));
-                    auto is_open = [&](std::size_t s) {
+                    auto is_open = [](const auto& surface) {
                         if constexpr (reduced)
-                            return asset->surface_training[s].has_value();
+                            return surface.training.has_value();
                         else
                             return true;
                     };
                     for (const auto& [id, law] : component.boundaries) {
-                        bool found = false;
-                        for (std::size_t s = 0; s < asset->surfaces.size(); ++s)
-                            found |= asset->surfaces[s].id == id && is_open(s);
-                        if (!found)
+                        if (std::ranges::none_of(asset->surfaces,
+                                [&](const auto& surface) { return surface.id == id && is_open(surface); }))
                             throw std::invalid_argument("unknown or non-connectable component surface ID");
                     }
                     if (components.size() <= 1)
@@ -191,8 +189,8 @@ namespace mhs::compiler {
                         else
                             return asset->discrete.facets;
                     }();
-                    for (std::size_t s = 0; s < asset->surfaces.size(); ++s)
-                        for (const auto id : asset->surfaces[s].facets) {
+                    for (const auto& surface : asset->surfaces)
+                        for (const auto id : surface.facets) {
                             const auto& f = geometry[id];
                             const auto axis = static_cast<std::size_t>(f.axis);
                             const auto plane = f.coordinate + component.offset[axis];
@@ -201,7 +199,7 @@ namespace mhs::compiler {
                                 || !std::ranges::all_of(rect, [](double x) { return std::isfinite(x); })
                                 || rect[0] >= rect[1] || rect[2] >= rect[3])
                                 throw std::invalid_argument("component translation exceeds facet precision");
-                            Face face {i, id, &asset->surfaces[s], &f, is_open(s), plane, rect};
+                            Face face {i, id, &surface, &f, is_open(surface), plane, rect};
                             if (f.normal > 0)
                                 positive[axis][plane].push_back(face);
                             else

@@ -16,20 +16,11 @@ namespace mhs::app::erom {
         Matrix B;
         model::Erom asset;
         core::Vector<model::CellId> boundary_cells; // indexed by connectable FacetId
-    };
-
-    // Conductance vectors use compact indices into the distinct boundary cells.
-    struct HtcOperators {
-        HtcOperators(const Prepared& project, std::size_t group_count);
-
-        void add_conductance(Eigen::Ref<Vector> diagonal, std::size_t group, double h) const;
-        Vector diagonal(const Vector& h) const;
+        // Conductances are indexed by the same connectable FacetIds.
+        void set_conductances(Eigen::Ref<Vector> values, Eigen::Index group, double h) const;
+        Vector conductances(const Vector& h) const;
         Vector parameters(double model::EromSurfaceTraining::* field) const;
-
-        const model::Erom& asset;
-        std::size_t group_count;
-        core::Vector<Eigen::Index> cells;
-        core::Vector<Eigen::Index> facet_rows;
+        void add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const;
     };
 
     Prepared prepare(const model::Fom& fom, const model::FomDefinition& definition, const HtcRanges& ranges);
@@ -38,6 +29,6 @@ namespace mhs::app::erom {
     Sparse add_diagonal(const Sparse& matrix, const Vector& diagonal);
     Vector solve_positive(const Matrix& matrix, const Vector& rhs);
     Matrix solve_positive(const Matrix& matrix, const Matrix& rhs);
-    Matrix build_basis(const Prepared& project, const HtcOperators& htc, const core::Vector<int>& regions,
-        double tolerance, Statistics& statistics);
+    Matrix build_basis(
+        const Prepared& project, const core::Vector<int>& regions, double tolerance, Statistics& statistics);
 } // namespace mhs::app::erom

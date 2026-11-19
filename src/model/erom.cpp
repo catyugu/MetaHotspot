@@ -1,15 +1,12 @@
 #include "model/erom.hpp"
+#include "erom_codec.hpp"
 
 #include <Eigen/Cholesky>
 #include <algorithm>
-#include <bit>
 #include <cmath>
-#include <cstdint>
 #include <fstream>
-#include <limits>
 #include <set>
 #include <stdexcept>
-#include <string_view>
 
 namespace mhs::model {
     namespace {
@@ -50,13 +47,8 @@ namespace mhs::model {
                 return value;
             }
 
-            std::uint32_t u32() { return static_cast<std::uint32_t>(integer<4>()); }
-
-            double f64()
-            {
-                static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559);
-                return std::bit_cast<double>(integer<8>());
-            }
+            std::uint32_t u32() { return scalar<std::uint32_t>(); }
+            double f64() { return std::bit_cast<double>(scalar<std::uint64_t>()); }
 
             std::string name() { return bytes(u32()); }
 
@@ -98,15 +90,12 @@ namespace mhs::model {
                 remaining_ -= count;
             }
 
-            template <std::size_t N> std::uint64_t integer()
+            template <typename T> T scalar()
             {
-                check_count(N, 1);
-                std::array<std::uint8_t, N> bytes {};
-                read(reinterpret_cast<char*>(bytes.data()), N);
-                std::uint64_t result = 0;
-                for (std::size_t i = 0; i < N; ++i)
-                    result |= static_cast<std::uint64_t>(bytes[i]) << (i * 8);
-                return result;
+                check_count(1, sizeof(T));
+                T value;
+                read(reinterpret_cast<char*>(&value), sizeof(T));
+                return erom_codec::little_endian(value);
             }
 
             std::ifstream input_;
@@ -154,13 +143,11 @@ namespace mhs::model {
                 "invalid exterior facet geometry");
 
         std::set<SurfaceId> surfaces;
-        require(e.surfaces.size() == e.surface_training.size(), "surface and HTC counts differ");
         core::Vector<bool> seen(e.facets.size(), false);
-        for (std::size_t i = 0; i < e.surfaces.size(); ++i) {
-            const auto& s = e.surfaces[i];
+        for (const auto& s : e.surfaces) {
             require(s.id != core::invalid_id && surfaces.insert(s.id).second && !s.name.empty() && !s.facets.empty(),
                 "invalid or duplicate surface");
-            const auto& h = e.surface_training[i];
+            const auto& h = s.training;
             if (h)
                 require(std::isfinite(h->minimum) && std::isfinite(h->maximum) && std::isfinite(h->coefficient)
                         && std::isfinite(h->ambient) && h->minimum >= 0 && h->maximum > 0 && h->maximum >= h->minimum
@@ -188,8 +175,8 @@ namespace mhs::model {
     std::shared_ptr<const Erom> read_erom(const std::filesystem::path& path)
     {
         Reader reader(path);
-        require(reader.bytes(8) == std::string_view("MHEROM\r\n"), "invalid magic");
-        require(reader.u32() == 2, "unsupported version");
+        require(reader.bytes(erom_codec::magic.size()) == erom_codec::magic, "invalid magic");
+        require(reader.u32() == erom_codec::version, "unsupported version");
         const auto n = reader.u32(), ns = reader.u32(), no = reader.u32(), nb = reader.u32(), nf = reader.u32(),
                    ng = reader.u32();
         require(n > 0 && nb <= nf, "invalid record counts");
@@ -216,14 +203,11 @@ namespace mhs::model {
         }
         reader.check_count(ng, 16);
         for (std::size_t i = 0; i < ng; ++i) {
-            Surface surface {reader.u32(), reader.name(), {}};
+            EromSurface surface {{reader.u32(), reader.name(), {}}, std::nullopt};
             const auto trained = reader.u32();
             require(trained <= 1, "invalid surface training flag");
             if (trained)
-                e->surface_training.push_back(
-                    EromSurfaceTraining {reader.f64(), reader.f64(), reader.f64(), reader.f64()});
-            else
-                e->surface_training.push_back(std::nullopt);
+                surface.training = EromSurfaceTraining {reader.f64(), reader.f64(), reader.f64(), reader.f64()};
             const auto count = reader.u32();
             reader.check_count(count, 4);
             for (std::size_t f = 0; f < count; ++f)

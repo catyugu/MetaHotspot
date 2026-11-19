@@ -21,11 +21,6 @@ namespace mhs::app::erom {
             return e.constant_value();
         }
 
-        struct Source {
-            double density = 0, volume = 0;
-            int column = 0;
-        };
-
         void project_probe(
             const Fom& model, const HtcRanges& ranges, OutputId id, core::Vector<double>& state, Weights& weights)
         {
@@ -150,9 +145,9 @@ namespace mhs::app::erom {
                 const auto range = ranges.find(surface.id);
                 if (surface.facets.empty() || trained != (range != ranges.end()))
                     continue;
-                auto& training = asset.surface_training.emplace_back();
+                EromSurface target {{surface.id, surface.name, {}}, std::nullopt};
                 if (trained)
-                    training = EromSurfaceTraining {
+                    target.training = EromSurfaceTraining {
                         range->second.minimum, range->second.maximum, 0, asset.reference_temperature};
                 const auto& condition = model.boundary_conditions[surface.id];
                 if (const auto* htc = std::get_if<Convection>(&condition)) {
@@ -161,8 +156,8 @@ namespace mhs::app::erom {
                         throw std::invalid_argument(
                             "surface " + std::to_string(surface.id) + " has an untrained or negative HTC");
                     if (trained) {
-                        training->coefficient = h;
-                        training->ambient = constant(htc->ambient_temperature, "Ambient temperature");
+                        target.training->coefficient = h;
+                        target.training->ambient = constant(htc->ambient_temperature, "Ambient temperature");
                     }
                 }
                 else if (const auto* flux = std::get_if<Neumann>(&condition);
@@ -170,7 +165,6 @@ namespace mhs::app::erom {
                     throw std::invalid_argument("surface " + std::to_string(surface.id)
                         + " has a Dirichlet or nonzero Neumann condition unsupported by EROM extraction");
 
-                Surface target {surface.id, surface.name, {}};
                 auto append = [&](const Facet& facet) {
                     target.facets.push_back(static_cast<FacetId>(asset.facets.size()));
                     asset.facets.push_back(facet);
@@ -200,34 +194,32 @@ namespace mhs::app::erom {
             asset.outputs.push_back({id, model.point_probes[i].name, model.point_probes[i].point});
         }
 
-        std::map<SourceId, Source> sources;
-        for (const auto& term : model.source_terms) {
-            auto [it, inserted] = sources.try_emplace(term.source);
-            if (inserted)
-                it->second.density = constant(model.heat_source_table[term.source], "Volumetric source");
-            it->second.volume += term.weight;
-        }
-        for (auto& [id, source] : sources) {
-            if (source.density == 0)
+        core::Vector<double> volumes(model.heat_source_table.size());
+        for (const auto& term : model.source_terms)
+            volumes[term.source] += term.weight;
+        core::Vector<SourceId> columns(volumes.size(), core::invalid_id);
+        for (SourceId id = 0; id < volumes.size(); ++id) {
+            if (volumes[id] == 0)
                 continue;
-            auto name = model.source_names.empty() ? std::string {} : model.source_names[id];
+            const double density = constant(model.heat_source_table[id], "Volumetric source");
+            if (density == 0)
+                continue;
+            auto name = definition.source_names.empty() ? std::string {} : definition.source_names[id];
             if (name.empty())
                 name = "source " + std::to_string(id);
-            source.column = static_cast<int>(asset.sources.size());
+            columns[id] = static_cast<SourceId>(asset.sources.size());
             asset.outputs.push_back(
                 {static_cast<OutputId>(asset.outputs.size()), name + " temperature", std::nullopt, id});
-            asset.sources.push_back({id, std::move(name), source.density * source.volume});
+            asset.sources.push_back({id, std::move(name), density * volumes[id]});
         }
 
         result.B = Matrix::Zero(n, static_cast<Eigen::Index>(asset.sources.size()));
-        for (const auto& term : model.source_terms) {
-            const auto& source = sources.at(term.source);
-            if (source.density != 0) {
-                const double weight = term.weight / source.volume;
-                result.B(term.cell, source.column) += weight;
-                weights.emplace_back(model.point_probes.size() + source.column, term.cell, weight);
+        for (const auto& term : model.source_terms)
+            if (const auto col = columns[term.source]; col != core::invalid_id) {
+                const double weight = term.weight / volumes[term.source];
+                result.B(term.cell, col) += weight;
+                weights.emplace_back(model.point_probes.size() + col, term.cell, weight);
             }
-        }
         result.L.resize(static_cast<Eigen::Index>(asset.outputs.size()), n);
         result.L.setFromTriplets(weights.begin(), weights.end());
         return result;

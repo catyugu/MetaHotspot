@@ -60,7 +60,6 @@ namespace mhs::model {
         mhs::core::Vector<SourceTerm> source_terms;
         mhs::core::Vector<SurfaceId> facet_surface; // geometric identity, independent of the thermal law
         mhs::core::Vector<Surface> surfaces;
-        mhs::core::Vector<std::string> source_names;
         FluidModel fluid;
 
         double reference_temperature = 300.0;

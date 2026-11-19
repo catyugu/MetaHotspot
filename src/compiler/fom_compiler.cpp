@@ -70,7 +70,6 @@ namespace mhs::compiler {
         model.reference_temperature = definition.reference_temperature;
         if (!definition.source_names.empty() && definition.source_names.size() != definition.sources.size())
             throw std::invalid_argument("source names must match the source table");
-        model.source_names = definition.source_names;
 
         mhs::expression::SymbolTable symbols;
         register_all_functions(symbols, definition.functions);

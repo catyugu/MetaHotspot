@@ -26,12 +26,15 @@ namespace mhs::model {
         double ambient = 300;
     };
 
+    struct EromSurface : Surface {
+        std::optional<EromSurfaceTraining> training;
+    };
+
     struct Erom {
         core::Matrix<double> K, C, B, L, Vb;
         core::Vector<double> R;
         core::Vector<Facet> facets; // first Vb.rows() are connectable, the rest describe the outline
-        core::Vector<Surface> surfaces;
-        core::Vector<std::optional<EromSurfaceTraining>> surface_training; // parallel to surfaces
+        core::Vector<EromSurface> surfaces;
         core::Vector<EromSource> sources;
         core::Vector<EromOutput> outputs;
         double reference_temperature = 300;

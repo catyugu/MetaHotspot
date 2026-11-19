@@ -84,12 +84,6 @@ namespace mhs::solver {
             return state;
         }
 
-        void append_fom_traces(core::Vector<OutputTrace>& traces, const model::Fom& model, model::ComponentId id)
-        {
-            for (std::size_t p = 0; p < model.point_probes.size(); ++p)
-                traces.push_back({model.point_probes[p].name, {}, id, static_cast<model::OutputId>(p)});
-        }
-
         mhs::solver::Solution solve_steady(const SystemAssembler& assemble, mhs::core::Vector<double> state,
             mhs::linear::SolverPtr& solver, const NonLinearConfig& nl_config, const StateObserver& observe,
             bool store_states)

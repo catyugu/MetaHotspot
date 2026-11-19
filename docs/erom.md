@@ -141,7 +141,7 @@ Strings are UTF-8 bytes preceded by a 32-bit byte count.
 rows of `Vb` and the positive area-specific half-cell resistances `R`. The
 remaining facets describe the outline for diagnostic contact detection. Every
 facet belongs to one surface. All HTC groups index the same `Vb` and `R`. C++ stores their training ranges and
-default environment as `EromSurfaceTraining` in `Erom::surface_training`.
+default environment as `EromSurfaceTraining` in `EromSurface::training`.
 The operators use `C dq/dt + Kq = BP + f_external`, with internal surface-side
 temperature `T_ref + Vb q` and output temperature `T_ref + L q`. The format
 stores no mesh or full-field basis. The native reader checks the version,

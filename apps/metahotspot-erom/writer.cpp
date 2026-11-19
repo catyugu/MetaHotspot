@@ -1,6 +1,6 @@
 #include "erom/extraction.hpp"
+#include "model/erom_codec.hpp"
 
-#include <bit>
 #include <fstream>
 #include <limits>
 #include <random>
@@ -20,7 +20,8 @@ namespace mhs::app::erom {
             explicit Writer(const std::filesystem::path& path) : output_(path, std::ios::binary)
             {
                 output_.exceptions(std::ios::badbit | std::ios::failbit);
-                output_.write("MHEROM\r\n", 8);
+                output_.write(
+                    model::erom_codec::magic.data(), static_cast<std::streamsize>(model::erom_codec::magic.size()));
             }
             void count(std::size_t value)
             {
@@ -51,10 +52,8 @@ namespace mhs::app::erom {
         private:
             template <typename T> void integer(T value)
             {
-                std::array<std::uint8_t, sizeof(T)> bytes {};
-                for (std::size_t i = 0; i < bytes.size(); ++i)
-                    bytes[i] = static_cast<std::uint8_t>(value >> (i * 8));
-                output_.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+                value = model::erom_codec::little_endian(value);
+                output_.write(reinterpret_cast<const char*>(&value), sizeof(T));
             }
             std::ofstream output_;
         };
@@ -80,7 +79,7 @@ namespace mhs::app::erom {
         } while (std::filesystem::exists(temporary));
         const Temporary cleanup {temporary};
         Writer writer(temporary);
-        writer.count(2);
+        writer.count(model::erom_codec::version);
         for (const auto count :
             {e.K.rows(), e.sources.size(), e.outputs.size(), e.Vb.rows(), e.facets.size(), e.surfaces.size()})
             writer.count(count);
@@ -95,11 +94,10 @@ namespace mhs::app::erom {
             writer.scalar(facet.coordinate);
             writer.values(facet.bounds);
         }
-        for (std::size_t i = 0; i < e.surfaces.size(); ++i) {
-            const auto& surface = e.surfaces[i];
+        for (const auto& surface : e.surfaces) {
             writer.count(surface.id);
             writer.name(surface.name);
-            const auto& h = e.surface_training[i];
+            const auto& h = surface.training;
             writer.count(h.has_value());
             if (h)
                 for (const double value : {h->minimum, h->maximum, h->coefficient, h->ambient})

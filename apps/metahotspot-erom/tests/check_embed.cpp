@@ -54,7 +54,7 @@ namespace {
     {
         check(e.K.rows() == 3 && e.C.rows() == 3 && e.Vb.rows() == 4 && e.B.cols() == 2 && e.L.rows() == 3,
             "wrong matrix dimensions");
-        check(e.surfaces.size() == 3 && e.surface_training[0] && e.surface_training[1] && !e.surface_training[2],
+        check(e.surfaces.size() == 3 && e.surfaces[0].training && e.surfaces[1].training && !e.surfaces[2].training,
             "wrong HTC groups");
         check(e.surfaces[0].id == 0 && e.surfaces[0].name == "upstream"
                 && e.surfaces[0].facets == core::Vector<FacetId> {0, 1} && e.surfaces[1].id == 1
@@ -65,8 +65,8 @@ namespace {
             "wrong source or output identity");
         near(e.sources[0].default_power, 5);
         near(e.sources[1].default_power, 8);
-        near(e.surface_training[0]->maximum, 1e4);
-        near(e.surface_training[1]->maximum, 9);
+        near(e.surfaces[0].training->maximum, 1e4);
+        near(e.surfaces[1].training->maximum, 9);
         near(e.reference_temperature, 295);
         for (double r : e.R)
             near(r, 0.25);

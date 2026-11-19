@@ -49,7 +49,7 @@ namespace mhs::app::erom {
                 return basis * solve_positive(reduced, rhs);
             }
 
-            void append(Vector vector, const Prepared& project, const HtcOperators& htc, const Vector* g)
+            void append(Vector vector, const Prepared& project, const Vector* g)
             {
                 const double original = vector.norm();
                 for (int pass = 0; pass < 2; ++pass)
@@ -75,20 +75,20 @@ namespace mhs::app::erom {
                 basis.conservativeResize(Eigen::NoChange, r + 1);
                 basis.col(r) = vector;
                 boundary.conservativeResize(Eigen::NoChange, r + 1);
-                boundary.col(r) = vector(htc.cells);
+                boundary.col(r) = vector(project.boundary_cells);
             }
         };
 
         // Regions without power inputs train against physical ambient inputs, one per HTC group and region.
-        core::Vector<std::pair<std::size_t, int>> passive_inputs(
-            const Prepared& project, const HtcOperators& htc, const core::Vector<int>& regions)
+        core::Vector<std::pair<Eigen::Index, int>> passive_inputs(
+            const Prepared& project, Eigen::Index groups, const core::Vector<int>& regions)
         {
             core::Vector<bool> driven(static_cast<std::size_t>(*std::ranges::max_element(regions) + 1), false);
             for (Eigen::Index cell = 0; cell < project.B.rows(); ++cell)
                 if (project.B.row(cell).squaredNorm() > 0)
                     driven[regions[cell]] = true;
-            std::set<std::pair<std::size_t, int>> inputs;
-            for (std::size_t i = 0; i < htc.group_count; ++i)
+            std::set<std::pair<Eigen::Index, int>> inputs;
+            for (Eigen::Index i = 0; i < groups; ++i)
                 for (const auto id : project.asset.surfaces[i].facets)
                     if (const auto region = regions[project.boundary_cells[id]]; !driven[region])
                         inputs.emplace(i, region);
@@ -96,24 +96,25 @@ namespace mhs::app::erom {
         }
     } // namespace
 
-    Matrix build_basis(const Prepared& project, const HtcOperators& htc, const core::Vector<int>& regions,
-        double tolerance, Statistics& statistics)
+    Matrix build_basis(
+        const Prepared& project, const core::Vector<int>& regions, double tolerance, Statistics& statistics)
     {
         constexpr std::size_t max_responses = 512;
         const auto& K = project.K;
         const auto& capacity = project.capacity;
         const auto n = K.rows();
-        const auto nb = static_cast<Eigen::Index>(htc.cells.size());
-        const Vector lower = htc.parameters(&model::EromSurfaceTraining::minimum);
-        const Vector upper = htc.parameters(&model::EromSurfaceTraining::maximum);
+        const auto nb = static_cast<Eigen::Index>(project.boundary_cells.size());
+        const Vector lower = project.parameters(&model::EromSurfaceTraining::minimum);
+        const Vector upper = project.parameters(&model::EromSurfaceTraining::maximum);
         const Vector log_lower = lower.array().log(), log_upper = upper.array().log();
         Vector diagonal = Vector::Zero(n);
-        diagonal(htc.cells) = htc.diagonal(lower);
+        project.add_boundary(diagonal, project.conductances(lower));
         const Sparse minimum = add_diagonal(K, diagonal);
-        diagonal(htc.cells) = htc.diagonal(upper);
+        diagonal.setZero();
+        project.add_boundary(diagonal, project.conductances(upper));
         const Sparse maximum = add_diagonal(K, diagonal);
         const auto shifts = matching_shifts(minimum, maximum, capacity, tolerance, statistics);
-        const auto passive = passive_inputs(project, htc, regions);
+        const auto passive = passive_inputs(project, lower.size(), regions);
         const auto powered = static_cast<std::size_t>(project.B.cols());
         core::Vector<ResponseSpace> spaces;
         for (std::size_t port = 0; port < powered + passive.size(); ++port)
@@ -136,18 +137,19 @@ namespace mhs::app::erom {
                     for (Eigen::Index i = 0; i < h.size(); ++i)
                         h[i] = std::clamp(
                             std::exp(std::lerp(log_lower[i], log_upper[i], uniform(random))), lower[i], upper[i]);
-                    const Vector closure = htc.diagonal(h);
+                    const Vector closure = project.conductances(h);
                     diagonal = shifted_capacity;
-                    diagonal(htc.cells) += closure;
+                    project.add_boundary(diagonal, closure);
                     if (is_passive) {
                         const auto [group, region] = passive[port - powered];
                         ambient.setZero();
-                        htc.add_conductance(ambient, group, h[static_cast<Eigen::Index>(group)]);
+                        project.set_conductances(ambient, group, h[group]);
                         for (Eigen::Index row = 0; row < nb; ++row)
-                            if (regions[htc.cells[row]] != region)
+                            if (regions[project.boundary_cells[row]] != region)
                                 ambient[row] = 0;
-                        g(htc.cells) = ambient;
-                        norm = ambient.norm();
+                        g.setZero();
+                        project.add_boundary(g, ambient);
+                        norm = g.norm();
                     }
                     Vector initial = Vector::Zero(n);
                     if (space.basis.cols()) {
@@ -167,7 +169,7 @@ namespace mhs::app::erom {
                     Vector response = solver->solve(add_diagonal(K, diagonal), g, std::move(initial));
                     ++statistics.response_solves;
                     snapshots.push_back(response);
-                    space.append(std::move(response), project, htc, is_passive ? nullptr : &g);
+                    space.append(std::move(response), project, is_passive ? nullptr : &g);
                     accepted = 0;
                 }
             }

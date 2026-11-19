@@ -69,6 +69,12 @@ namespace mhs::solver {
 
     } // namespace
 
+    void append_fom_traces(core::Vector<OutputTrace>& traces, const Fom& fom, ComponentId component)
+    {
+        for (std::size_t p = 0; p < fom.point_probes.size(); ++p)
+            traces.push_back({fom.point_probes[p].name, {}, component, static_cast<OutputId>(p)});
+    }
+
     core::Vector<OutputTrace> project_outputs(const Project& project)
     {
         core::Vector<OutputTrace> traces;
@@ -76,10 +82,8 @@ namespace mhs::solver {
             std::visit(
                 [&](const auto& asset) {
                     using Asset = typename std::decay_t<decltype(asset)>::element_type;
-                    if constexpr (std::is_same_v<Asset, const Fom>) {
-                        for (std::size_t p = 0; p < asset->point_probes.size(); ++p)
-                            traces.push_back({asset->point_probes[p].name, {}, c.id, static_cast<OutputId>(p)});
-                    }
+                    if constexpr (std::is_same_v<Asset, const Fom>)
+                        append_fom_traces(traces, *asset, c.id);
                     else
                         for (const auto& output : asset->outputs)
                             traces.push_back({output.name, {}, c.id, output.id});

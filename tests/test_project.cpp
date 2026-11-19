@@ -49,9 +49,9 @@ namespace {
         Facet left {Axis::X, -1, 0, {0, 1, 0, 1}};
         Facet right {Axis::X, 1, 1, {0, 1, 0, 1}};
         e->facets = left_open ? core::Vector<Facet> {left, right} : core::Vector<Facet> {right, left};
-        e->surfaces = {{7, "left", {left_open ? 0u : 1u}}, {9, "right", {left_open ? 1u : 0u}}};
-        e->surface_training = {left_open ? std::optional {EromSurfaceTraining {1, 10, 2, 310}} : std::nullopt,
-            EromSurfaceTraining {1, 10, 1, 330}};
+        e->surfaces = {{{7, "left", {left_open ? 0u : 1u}},
+                           left_open ? std::optional {EromSurfaceTraining {1, 10, 2, 310}} : std::nullopt},
+            {{9, "right", {left_open ? 1u : 0u}}, EromSurfaceTraining {1, 10, 1, 330}}};
         e->reference_temperature = reference;
         e->uniform_temperature_mode = {1};
         e->sources = {{3, "first", 0}, {5, "second", 1}};
@@ -161,12 +161,20 @@ TEST(Project, EromContactUsesModalOuterProductsAndInstanceSchedules)
 {
     auto left = modal(280);
     auto right = modal(310);
-    left->Vb(1, 0) = 2;
+    // Two contact patches share the same pair of modal blocks.
+    auto split = left->facets[1];
+    left->facets[1].bounds[1] = split.bounds[0] = 0.5;
+    left->facets.push_back(split);
+    left->surfaces[1].facets.push_back(2);
+    left->R.push_back(0.25);
+    left->Vb = core::Matrix<double>(3, 1);
+    left->Vb(0, 0) = 1;
+    left->Vb(1, 0) = left->Vb(2, 0) = 2;
     right->Vb(0, 0) = -3;
     auto l = instance(1, left), r = instance(2, right, {1, 0, 0});
     l.powers[3] = [](double t) { return 7 * t; };
     const auto project = mhs::compiler::compile_project({{l, r}, {}});
-    ASSERT_EQ(project.contacts().size(), 1u);
+    ASSERT_EQ(project.contacts().size(), 2u);
     EXPECT_EQ(project.dof_count(), 2u);
     const core::Vector<double> state {0, 0};
     solver::ProjectAssembler assembler(project);
@@ -178,6 +186,11 @@ TEST(Project, EromContactUsesModalOuterProductsAndInstanceSchedules)
     EXPECT_NEAR(ops.K.coeff(1, 1), 18 + 0.8, 1e-13);
     EXPECT_NEAR(ops.f[0], 16 + 30 * (4.0 / 3 + 4), 1e-12);
     EXPECT_NEAR(ops.f[1], 2 + 20 * 0.8 + 30 * 6, 1e-12);
+    const auto& next = assembler.assemble(state, 3);
+    EXPECT_EQ(next.K.nnz(), 4u);
+    EXPECT_DOUBLE_EQ(next.K.coeff(0, 1), 12);
+    EXPECT_NEAR(next.f[0], 23 + 30 * (4.0 / 3 + 4), 1e-12);
+    EXPECT_NEAR(next.f[1], 2 + 20 * 0.8 + 30 * 6, 1e-12);
 }
 
 TEST(Project, UntrainedContactWarnsAndKeepsTheEnvironment)
