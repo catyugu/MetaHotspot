@@ -119,10 +119,9 @@ FloTHERM exports use a separate format. See
 [`bci_rom_testcase1`](../playground/bci_rom_testcase1/) and the archived
 [`simple_erom_case1`](../playground/archived/simple_erom_case1/) for comparisons.
 
-The old Python `FacePort` / `Subdomain` / `EmbeddableRom` interface and its
-research tests are archived under `playground/archived/legacy_*.py`. The package
-keeps the BCI numerics and the independent `macromodel.contour` flux training
-functions; native extraction does not import the archived interface.
+The package provides the BCI numerics and the independent `macromodel.contour`
+flux training functions. Component coupling uses the C++ Project API. The old
+Python coupling interface, its tests and dependent experiments have been removed.
 
 ## Assembly measurements
 

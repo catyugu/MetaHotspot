@@ -9,10 +9,10 @@
 | `hdim/`                    | 2026-10-20 | ISEDA 2025 层级分解复现封存，不再维护                               |
 | `nonlinear_interface_rom/` | 2026-10-26 | 瞬态非线性界面 ROM 沙箱封存，结论保留、代码不再维护                 |
 | `cms_prototype/`           | 2026-10-28 | 带空腔封装的部件 ROM + TIM/lid FOM 原型封存，结论保留、代码不再维护 |
-| [`interface_nc_correction/`](interface_nc_correction/) | 2026-11-19 | 非共形界面的 TPFA 与非正交通量校正对比 |
-| [`simple_erom_case1/`](simple_erom_case1/) | 2026-11-19 | 简单立方体 EROM 耦合实验及 FloTHERM 对比基线 |
+| [`interface_nc_correction/`](interface_nc_correction/) | 2026-11-19 | 非共形界面研究的历史入口；旧耦合原型及依赖脚本已删除 |
+| [`simple_erom_case1/`](simple_erom_case1/) | 2026-11-19 | 保留简单立方体 FloTHERM 导出、独立读取脚本及对比基线 |
 
-`simple_erom_case1/` 同时保留原 `connecting_mor_models` 中依赖该案例的 FloTHERM 对比脚本 `compare_flotherm.py` 及其基线。
+`simple_erom_case1/` 中依赖旧 Python 耦合接口的实验脚本已删除；参考几何、FloTHERM 导出、独立读取脚本 `demonstrate_current_erom.py` 与对比基线保留。
 
 `adaptive_bci_sampling/` 从提交 `c776a7552366b322ad1cd043dff622c7e449dba6` 原样迁入。内部 README 的“维护中”状态、运行命令和旧路径属于历史记录，不代表当前维护承诺；迁移后不修补其运行环境或路径。
 
@@ -26,6 +26,7 @@
 
 后续研究在独立工作区开展，不导入或重新启用本目录下的脚本。
 
-`legacy_embeddable.py`、`legacy_interface_enrichment.py` 与 `test_legacy_embeddable.py`
-于 2026-11-19 从 Python 包迁入，保留旧子域/FacePort 研究实现和对应验证。
-现行提取器只依赖 `macromodel.utils` 与 `macromodel.contour` 的通用数值算法。
+旧 Python 子域、面端口、ROM 接口富集和耦合实现及其测试已直接删除，不再保留归档副本。
+依赖这些接口的非共形界面和简单立方体耦合脚本一并删除，历史源码可在提交
+[`cd40271`](https://github.com/catyugu/MetaHotspot/tree/cd40271cdc3ec0d50def9691b366b12af57ddf69/playground/archived) 中查看。
+现行提取器只依赖 `macromodel.utils` 与 `macromodel.contour` 的通用数值算法，运行期耦合由 C++ Project API 完成。
