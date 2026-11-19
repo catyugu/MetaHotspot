@@ -1,9 +1,9 @@
 /* Implementation of the MetaHotspot C API. */
 #include "metahotspot_c_api.h"
 
-#include "compiler/model_compiler.hpp"
+#include "compiler/fom_compiler.hpp"
 #include "logging/logger.hpp"
-#include "model/model_definition.hpp"
+#include "model/fom_definition.hpp"
 #include "solver/assembler.hpp"
 #include "solver/solver.hpp"
 
@@ -67,7 +67,7 @@ mhs::solver::SolveOptions to_solve_options(const mhs_solve_options_t* opts);
 /* ------------------------------------------------------------------ */
 
 struct mhs_model_t {
-    mhs::model::ModelDefinition def;
+    mhs::model::FomDefinition def;
     mhs::model::MeshSpec mesh;
 };
 
@@ -517,7 +517,7 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     CHECK_NULL(m);
     MHS_TRY({
         auto c = std::make_unique<mhs_compiled_t>();
-        c->model = mhs::compiler::build_model(m->def, m->mesh);
+        c->model = mhs::compiler::compile_fom(m->def, m->mesh);
         *out = c.release();
     });
 }
@@ -781,14 +781,14 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study
     CHECK_NULL(c);
     MHS_TRY({
         auto so = to_solve_options(opts);
-        mhs::model::Study run;
+        mhs::solver::Study run;
         if (study) {
             switch (study->type) {
             case MHS_STUDY_STEADY:
-                run.type = mhs::model::StudyType::Steady;
+                run.type = mhs::solver::StudyType::Steady;
                 break;
             case MHS_STUDY_TRANSIENT:
-                run.type = mhs::model::StudyType::Transient;
+                run.type = mhs::solver::StudyType::Transient;
                 break;
             default:
                 throw std::invalid_argument("invalid study type");
@@ -820,7 +820,7 @@ MHS_API mhs_status_t mhs_solution_get_info(const mhs_solution_t* s, mhs_solution
     CHECK_NULL(out);
     out->state_count = s->sol.state.size();
     out->record_count = s->sol.snapshot_times.size();
-    out->probe_count = s->sol.probe_traces.size();
+    out->probe_count = s->sol.output_traces.size();
     out->time = s->sol.time;
     out->converged = s->sol.converged ? 1 : 0;
     mhs_detail_clear_last_error();
@@ -855,11 +855,11 @@ MHS_API mhs_status_t mhs_solution_probe_get_info(
     CHECK_NULL(s);
     CHECK_NULL(name_size);
     CHECK_NULL(record_count);
-    if (index >= s->sol.probe_traces.size()) {
+    if (index >= s->sol.output_traces.size()) {
         SET_ERR("probe index out of range");
         return MHS_ERROR;
     }
-    const auto& tr = s->sol.probe_traces[index];
+    const auto& tr = s->sol.output_traces[index];
     *name_size = tr.name.size() + 1;
     *record_count = s->sol.snapshot_times.size();
     mhs_detail_clear_last_error();
@@ -871,11 +871,11 @@ MHS_API mhs_status_t mhs_solution_copy_probe(
 {
     CHECK_NULL(s);
     CHECK_NULL(name);
-    if (index >= s->sol.probe_traces.size()) {
+    if (index >= s->sol.output_traces.size()) {
         SET_ERR("probe index out of range");
         return MHS_ERROR;
     }
-    const auto& tr = s->sol.probe_traces[index];
+    const auto& tr = s->sol.output_traces[index];
     if (name_size != tr.name.size() + 1 || record_count != s->sol.snapshot_times.size()) {
         SET_ERR("probe buffer sizes do not match probe data");
         return MHS_ERROR;

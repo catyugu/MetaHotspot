@@ -1,9 +1,25 @@
 #pragma once
 
-#include "model/fom.hpp"
+#include "model/project.hpp"
 #include <utility>
 
 namespace mhs::solver {
+
+    inline const model::BoundaryCondition& boundary_override(
+        const model::BoundaryOverrides& overrides, model::SurfaceId surface, const model::BoundaryCondition& fallback)
+    {
+        const auto it = overrides.find(surface);
+        return it == overrides.end() ? fallback : it->second;
+    }
+
+    inline std::span<const model::Facet> uncovered_patches(
+        const model::UncoveredPatches& exposed, model::FacetId id, const model::Facet& facet)
+    {
+        const auto it = exposed.find(id);
+        if (it != exposed.end())
+            return it->second;
+        return {&facet, 1};
+    }
 
     // Unit-area Fourier conduction resistance; no fluid/interface model involved.
     inline double side_thermal_resistance(double d, double k) { return d / k; }

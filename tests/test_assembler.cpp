@@ -1,7 +1,7 @@
-#include "compiler/model_compiler.hpp"
+#include "compiler/fom_compiler.hpp"
 #include "core/vector.hpp"
 #include "model/fom.hpp"
-#include "model/model_definition.hpp"
+#include "model/fom_definition.hpp"
 #include "solver/assembler.hpp"
 #include <gtest/gtest.h>
 
@@ -10,10 +10,10 @@ using namespace mhs::compiler;
 
 static mhs::model::MeshSpec cube_mesh() { return {{0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}}; }
 
-// Helper: build a minimal SI ModelDefinition for a simple uniform cube
-static mhs::model::ModelDefinition make_simple_cube_io()
+// Helper: build a minimal SI FomDefinition for a simple uniform cube
+static mhs::model::FomDefinition make_simple_cube_io()
 {
-    mhs::model::ModelDefinition io;
+    mhs::model::FomDefinition io;
 
     io.sources = {"0"};
     io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
@@ -32,7 +32,7 @@ static mhs::model::ModelDefinition make_simple_cube_io()
 TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
 {
     auto io = make_simple_cube_io();
-    auto model = mhs::compiler::build_model(io, cube_mesh());
+    auto model = mhs::compiler::compile_fom(io, cube_mesh());
 
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
@@ -54,7 +54,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 {
     // Material k is T-dependent in this case ("100 + T"). Different T should
     // produce different K.
-    mhs::model::ModelDefinition io;
+    mhs::model::FomDefinition io;
 
     io.sources = {"0"};
     io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
@@ -65,7 +65,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 
     io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = mhs::compiler::build_model(io, cube_mesh());
+    auto model = mhs::compiler::compile_fom(io, cube_mesh());
 
     int N = static_cast<int>(model.cell_material.size());
 
@@ -82,7 +82,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
 {
     auto io = make_simple_cube_io();
-    auto model = mhs::compiler::build_model(io, cube_mesh());
+    auto model = mhs::compiler::compile_fom(io, cube_mesh());
 
     int N = static_cast<int>(model.cell_material.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);

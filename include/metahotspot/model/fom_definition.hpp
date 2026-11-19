@@ -150,7 +150,7 @@ namespace mhs::model {
     using FluidBoundaryCondition = std::variant<PressureInlet, MassFlowInlet, PressureOutlet>;
     using FluidBoundarySpec = SurfaceConditionSpec<FluidBoundaryCondition>;
 
-    struct ModelDefinition {
+    struct FomDefinition {
         double reference_temperature = 300.0;
         mhs::core::Vector<NamedFunction> functions;
         mhs::core::Vector<NamedMaterial> materials;

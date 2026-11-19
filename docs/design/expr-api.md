@@ -77,7 +77,7 @@ namespace mhs::expression {
 ### 典型用法
 
 ```cpp
-// build_model：构造仅含运行时 native 函数的本地 SymbolTable
+// compile_fom：构造仅含运行时 native 函数的本地 SymbolTable
 mhs::expression::SymbolTable symbols;
 // 编译器内部将 typed Function 注册为 FieldEvaluator。
 
@@ -93,7 +93,7 @@ double v = k.eval({0.01, 0.02, 0.0, 350.0, 1.0});   // (x, y, z, T, t)
 | `parse()` / `register_all_functions()` | setup 阶段使用本地 `SymbolTable` |
 | `CompiledExpression::eval()` | 每线程独立 AST，无应用层互斥锁 |
 
-`SymbolTable` 是 setup 期间单线程构造的本地值；运行时（`CompiledExpression::eval`）无任何全局状态访问，因此多个 `build_model()` 调用互不干扰。
+`SymbolTable` 是 setup 期间单线程构造的本地值；运行时（`CompiledExpression::eval`）无任何全局状态访问，因此多个 `compile_fom()` 调用互不干扰。
 
 TBB 并行 `assemble()` 内部：所有工作线程首次 `tls.local()` 时懒构造自己线程专属的 muparser 实例；之后复用该线程的解析器；常数句柄直接返回数值。
 

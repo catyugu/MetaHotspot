@@ -3,10 +3,9 @@ add_library(mhs_compiler STATIC
     conformal_mesh.cpp
     fluid_preprocessor.cpp
     geometry_compiler.cpp
-    model_compiler.cpp
+    fom_compiler.cpp
     model_functions.cpp
-    project.cpp
-    erom.cpp
+    project_compiler.cpp
 )
 target_link_libraries(mhs_compiler
     PUBLIC mhs_model

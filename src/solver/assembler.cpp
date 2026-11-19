@@ -146,20 +146,21 @@ namespace mhs::solver {
     }
 
     const Operators& ThermalAssembler::assemble(std::span<const double> temperature, double time,
-        const model::ExposedFacets& exposed, const BoundaryOverrides& overrides)
+        const model::UncoveredPatches& exposed, const model::BoundaryOverrides& overrides)
     {
         assemble_internal(temperature, time);
         for (std::size_t i = 0; i < model_.facet_thermal_condition.size(); ++i) {
             const auto condition = model_.facet_thermal_condition[i];
             if (condition == core::invalid_id)
                 continue;
-            const auto& law = boundary_override(overrides, condition, model_.boundary_conditions[condition]);
+            const auto& law
+                = boundary_override(overrides, model_.facet_surface[i], model_.boundary_conditions[condition]);
             if (is_adiabatic(law))
                 continue;
             const auto id = static_cast<model::FacetId>(i);
             const auto cell = model_.discrete.cell_facets[id].owner();
             const auto r = resistance(id);
-            for (const auto& patch : exposed_patches(exposed, id, model_.discrete.facets[id])) {
+            for (const auto& patch : uncovered_patches(exposed, id, model_.discrete.facets[id])) {
                 const auto trace = evaluate_boundary(law, patch, temperature[cell], time, r);
                 operators_.K.values()[diagonal_positions_[cell]] += trace.conductance;
                 operators_.f[cell] += trace.load;

@@ -26,7 +26,7 @@ namespace mhs::app::pta {
 
     // PTA uses a generic formal variable named x for several unrelated
     // physical laws. Normalize that front-end convention before the model
-    // reaches the compiler; ModelDefinition expressions are canonical.
+    // reaches the compiler; FomDefinition expressions are canonical.
     std::string rewrite_formal_argument(const std::string& expression, std::string_view replacement)
     {
         auto is_id_start = [](char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_'; };

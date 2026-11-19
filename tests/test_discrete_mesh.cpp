@@ -1,5 +1,5 @@
+#include "compiler/fom_compiler.hpp"
 #include "compiler/geometry_compiler.hpp"
-#include "compiler/model_compiler.hpp"
 #include "core/vector.hpp"
 #include "model/discrete_mesh.hpp"
 #include "solver/assembler.hpp"
@@ -13,7 +13,7 @@
 using namespace mhs::core;
 using namespace mhs::model;
 
-struct CubeDefinition : mhs::model::ModelDefinition {
+struct CubeDefinition : mhs::model::FomDefinition {
     mhs::model::MeshSpec mesh;
 };
 
@@ -30,7 +30,7 @@ static CubeDefinition cube_definition()
     return d;
 }
 
-static mhs::model::Fom build_fixture(const CubeDefinition& d) { return mhs::compiler::build_model(d, d.mesh); }
+static mhs::model::Fom build_fixture(const CubeDefinition& d) { return mhs::compiler::compile_fom(d, d.mesh); }
 
 TEST(DiscreteMesh, CartesianTopologyHasUniqueFacesAndClosedCellIncidence)
 {

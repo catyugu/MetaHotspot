@@ -6,7 +6,7 @@
 | -------------------------------------------- | --------------------------------------------- |
 | [data-flow.md](data-flow.md)                 | 端到端数据流、阶段输入输出和热循环行为        |
 | [expr-api.md](expr-api.md)                   | 表达式编译、求值上下文和线程模型              |
-| [io-structure.md](io-structure.md)           | `ModelDefinition` authoring model 及 XML 边界 |
+| [io-structure.md](io-structure.md)           | `FomDefinition` authoring model 及 XML 边界 |
 | [project-structure.md](project-structure.md) | 构建目标、源码归属和命名空间规则              |
 
 ## 决策记录

@@ -14,13 +14,13 @@ PTA layer, block, rectangle, and probe coordinate expressions are input-format d
 
 The runtime expression system accepts field expressions in the canonical context `x/y/z/T/t` and supports registered native functions. It has no geometry variables or geometry-evaluation entry point.
 
-`ModelDefinition` holds numerical geometry and a table of runtime function specifications. The compiler builds a local `SymbolTable` containing only native function bindings; it parses material laws, heat sources, and thermal boundary laws into `CompiledExpression` handles.
+`FomDefinition` holds numerical geometry and a table of runtime function specifications. The compiler builds a local `SymbolTable` containing only native function bindings; it parses material laws, heat sources, and thermal boundary laws into `CompiledExpression` handles.
 
 PTA geometry arithmetic is handled entirely in `apps/metahotspot/pta` by a small evaluator, independently of the runtime expression system. Variables are resolved in input order, each referring only to previously defined variables. The evaluator supports numeric literals, identifiers, parentheses, unary signs, `+ - * / ^`, and yields a `double`. Geometry is converted to SI units by the PTA adapter.
 
 ### Thread safety
 
-- No global registry is used. Each `build_model()` constructs and passes a local native-function symbol table.
+- No global registry is used. Each `compile_fom()` constructs and passes a local native-function symbol table.
 - `parse()` validates the formula by constructing the creating thread's `MuCompiled` and returns a `CompiledExpression` that reuses this parser.
 - Each nonconstant expression contains a `shared_ptr<MuCompiledTLS>` with a value-copy of the native-function table. A TBB `enumerable_thread_specific<std::unique_ptr<MuCompiled>>` gives each evaluating thread a private parser.
 - `MuCompiled` keeps its `FieldContext` and the native-function callback slots at stable addresses; the parser updates the context before each evaluation.
@@ -32,7 +32,7 @@ PTA geometry arithmetic is handled entirely in `apps/metahotspot/pta` by a small
 
 ### Native functions
 
-`SymbolTable::natives` contains callbacks and their temperature-dependency metadata. The compiler registers `ModelDefinition::functions` using `register_all_functions()`. Muparser evaluates callback arguments, then calls `native_fn_bridge` with the bound `NativeFnCtx` and the active `FieldContext`.
+`SymbolTable::natives` contains callbacks and their temperature-dependency metadata. The compiler registers `FomDefinition::functions` using `register_all_functions()`. Muparser evaluates callback arguments, then calls `native_fn_bridge` with the bound `NativeFnCtx` and the active `FieldContext`.
 
 ## Rationale
 

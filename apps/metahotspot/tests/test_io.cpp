@@ -1,5 +1,5 @@
 #include "core/vector.hpp"
-#include "model/model_definition.hpp"
+#include "model/fom_definition.hpp"
 #include "pta/io.hpp"
 #include "pta_test_utils.hpp"
 #include <filesystem>
@@ -193,8 +193,8 @@ TEST(IoTest, WriteXmlEmitsResult0DTransient)
     model.output.cartesian_shape[2] = 2;
     mhs::core::Vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
-    mhs::core::Vector<mhs::solver::ProbeTrace> traces;
-    mhs::solver::ProbeTrace t1;
+    mhs::core::Vector<mhs::solver::OutputTrace> traces;
+    mhs::solver::OutputTrace t1;
     t1.name = "probe_a";
     const mhs::core::Vector<double> times {0.0, 1.0, 2.0};
     t1.values = {300.0, 310.0, 320.0};
@@ -265,7 +265,7 @@ TEST(IoTest, WriteXmlEmptyTracesLeavesNoProbeBlocks)
     model.output.cartesian_shape[2] = 2;
     mhs::core::Vector<double> node_temperature = {300.0, 301.0, 302.0, 303.0, 304.0, 305.0, 306.0, 307.0};
 
-    mhs::core::Vector<mhs::solver::ProbeTrace> traces;
+    mhs::core::Vector<mhs::solver::OutputTrace> traces;
     const mhs::core::Vector<double> times;
     mhs::app::pta::write_xml(
         in_path.string(), out_path.string(), model.output.cartesian_shape, node_temperature, traces, times);

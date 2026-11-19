@@ -1,4 +1,4 @@
-#include "compiler/model_compiler.hpp"
+#include "compiler/fom_compiler.hpp"
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/geometry_compiler.hpp"
 #include "compiler/model_functions.hpp"
@@ -58,7 +58,7 @@ namespace mhs::compiler {
             return compiled;
         }
 
-        void validate_surface_regions(const mhs::model::ModelDefinition& definition)
+        void validate_surface_regions(const mhs::model::FomDefinition& definition)
         {
             auto check = [](const mhs::model::SurfaceRegion& region) {
                 const auto& r = region.rectangle;
@@ -77,7 +77,7 @@ namespace mhs::compiler {
 
     } // namespace
 
-    mhs::model::Fom build_model(const mhs::model::ModelDefinition& definition, const mhs::model::MeshSpec& mesh)
+    mhs::model::Fom compile_fom(const mhs::model::FomDefinition& definition, const mhs::model::MeshSpec& mesh)
     {
         if (!std::isfinite(definition.reference_temperature))
             throw std::invalid_argument("reference temperature must be finite");
@@ -94,7 +94,7 @@ namespace mhs::compiler {
         for (const auto& p : definition.point_probes)
             model.point_probes.push_back({p.name, {p.x, p.y, p.z}});
 
-        // Compile material properties in ModelDefinition::materials order.
+        // Compile material properties in FomDefinition::materials order.
         model.material_table.resize(definition.materials.size());
         mhs::core::Vector<double> initial_viscosity(definition.materials.size());
 
@@ -136,11 +136,10 @@ namespace mhs::compiler {
 
         // Compile boundary patches.
         auto& boundary_conditions = model.boundary_conditions;
-        auto compiled_boundaries
-            = compile_thermal_boundaries(definition.thermal_boundaries, boundary_conditions, symbols);
-
-        auto default_thermal_boundary
+        const auto default_thermal_boundary
             = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
+        const auto compiled_boundaries
+            = compile_thermal_boundaries(definition.thermal_boundaries, boundary_conditions, symbols);
 
         compile_conformal_mesh(model, mesh, definition.volumes);
         for (const auto material : model.cell_material)
@@ -163,19 +162,21 @@ namespace mhs::compiler {
         model.facet_thermal_condition
             = assign_exterior_regions(model.discrete, compiled_boundaries, default_thermal_boundary);
 
-        for (std::size_t i = 0; i < model.boundary_conditions.size(); ++i) {
+        mhs::core::Vector<TaggedSurfaceRegion> surface_regions;
+        for (std::size_t i = 0; i < definition.thermal_boundaries.size(); ++i) {
+            const auto& boundary = definition.thermal_boundaries[i];
             const auto id = static_cast<mhs::model::SurfaceId>(i);
-            std::string name = "default";
-            if (i != default_thermal_boundary) {
-                name = definition.thermal_boundaries[i].name;
-                if (name.empty())
-                    name = "boundary " + std::to_string(i);
-            }
+            auto name = boundary.name.empty() ? "boundary " + std::to_string(i) : boundary.name;
             model.surfaces.push_back({id, std::move(name), {}});
+            for (const auto& region : boundary.regions)
+                surface_regions.push_back({region, id});
         }
-        for (std::size_t i = 0; i < model.facet_thermal_condition.size(); ++i)
-            if (const auto condition = model.facet_thermal_condition[i]; condition != mhs::core::invalid_id)
-                model.surfaces[condition].facets.push_back(static_cast<mhs::model::FacetId>(i));
+        const auto fallback_surface = static_cast<mhs::model::SurfaceId>(model.surfaces.size());
+        model.surfaces.push_back({fallback_surface, "default", {}});
+        model.facet_surface = assign_exterior_regions(model.discrete, surface_regions, fallback_surface);
+        for (std::size_t i = 0; i < model.facet_surface.size(); ++i)
+            if (const auto surface = model.facet_surface[i]; surface != mhs::core::invalid_id)
+                model.surfaces[surface].facets.push_back(static_cast<mhs::model::FacetId>(i));
 
         // Hydraulic boundary assignments share the same canonical FacetIds.
         auto fluid_tags = assign_exterior_regions(model.discrete, fluid_regions);

@@ -14,14 +14,15 @@ thermal conditions must be evaluated at physical surface temperature.
 ## Decision
 
 `DiscreteMesh::facets` is the unique collection of rectangular flux integration
-regions. `Facet` stores adjacent cells (one invalid for an exterior surface), normal
-axis, plane coordinate and tangential bounds. It supplies area, center, owner,
-outward sign and membership. `FacetId` identifies one canonical integration region.
+regions. `Facet` stores the normal axis, outward sign, plane coordinate and tangential
+bounds, and supplies area, center and membership. `CellFacet` stores the adjacent
+cells (one invalid for an exterior surface) and supplies the owning cell. `FacetId` identifies one canonical integration region.
 
 The geometry compiler partitions exterior facets against the union of thermal and
 fluid boundary region cuts **before** building cell-facet incidence. A partially
 covered rectangle creates several Facets, including uncovered pieces. The compiler
-then independently binds thermal conditions to `Fom::facet_thermal_condition`
+then binds geometric surface IDs to `Fom::facet_surface`, thermal conditions
+independently to `Fom::facet_thermal_condition`
 and fluid boundaries to those same FacetIds. Later regions take precedence within
 each physics. The default thermal condition applies to uncovered exterior facets.
 Internal facet geometry does not depend on exterior boundary assignments.

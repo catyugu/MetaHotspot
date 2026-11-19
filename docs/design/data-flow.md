@@ -4,10 +4,13 @@
 
 | 对象 | 职责 | 生命周期 |
 | --- | --- | --- |
-| `ModelDefinition` | 几何、材料、热源、边界、探针和参考温度 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
-| `mhs::model::Fom` | 显式网格、材料与积分数据、编译表达式和冻结流场 | `build_model` 的独立结果；供重复装配和求解使用 |
+| `FomDefinition` | 几何、材料、热源、边界、探针和参考温度 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
+| `mhs::model::Fom` | 显式网格、材料与积分数据、编译表达式和冻结流场 | `compile_fom` 的独立结果；供重复装配和求解使用 |
 | `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；重复装配只刷新数值，单次导出独立拥有 |
-| `Solution` | 最终单元状态、状态历史和探针记录 | 独立拥有求解结果 |
+| `Erom` | 模态算子、HTC 训练表面、物理源、输出恢复和初态 | `.mherom` 读取后不可变、可共享 |
+| `ProjectDefinition` | FOM/EROM 资产实例、平移、源功率与表面条件覆盖、接触热阻 | 可变工程输入 |
+| `Project` | 只读实例、自由度偏移、`ContactPatch` 与 `UncoveredPatches` | `compiler::compile_project` 的独立结果 |
+| `Solution` | 最终混合状态、可选状态历史和 `OutputTrace` | 独立拥有求解结果 |
 
 `compile` 不修改输入；`assemble` 和 `solve` 不修改编译模型。C opaque handle 和 Python wrapper 负责所有权与转换。Python 返回的 NumPy/SciPy 数据在 native handle 销毁后仍有效。
 
@@ -34,15 +37,27 @@
 
 ## 求解与输出
 
-公开 C++ 入口 `mhs::solver::solve(model, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 同时提供线性、非线性求解参数以及时间容差和最大步长配置。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
+公开 C++ 入口 `mhs::solver::solve(fom_or_project, study, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 同时提供线性、非线性求解参数以及时间容差和最大步长配置。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
 
-探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，历史快照只保存单元状态。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
+探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，FOM 历史保存单元温度，EROM 历史保存模态坐标。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
+
+## 混合工程
+
+编译后的 FOM 用 `facet_surface` 标识几何表面，用 `facet_thermal_condition` 指向边界条件表；两者按同一 FacetId 索引，内部面均为 invalid。SurfaceId 与 BoundaryConditionId 属于不同表，不能互换。PTA 与 C/Python 输入仍可在一次调用中同时指定区域和热学条件，编译结果保留独立的几何身份和物理绑定。
+
+`ComponentInstance` 保存 `shared_ptr<const Fom/Erom>` variant、稳定 ID、平移和实例覆盖。FOM 的源表达式归资产；EROM 的 `powers` 以 SourceId 替换指定源的默认瓦数，其他源保持默认值，覆盖不叠加。`boundaries` 以 SurfaceId 替换未被接触覆盖部分的环境条件，不修改共享资产。
+
+`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面，只持久化接触交集、面积和面积比热阻。`UncoveredPatches` 只记录发生接触的 Facet；缺少条目表示整片外露，空条目表示整片被覆盖。未训练的 EROM 表面仍参与几何诊断，接触只报警告并忽略，双方保留环境条件。
+
+`ThermalAssembler` 组装 FOM 内部与剩余外边界，`ProjectAssembler` 合并组件算子并用两侧温度映射装配接触。FOM 外部接触采用法向半单元 `d/k`，内部流固面另用冻结流场的膜阻；跨组件接触不承担水力连通或流固膜模型推断。单 FOM 工程直接返回局部装配结果。全局 CSR 模式用连续缓冲区两遍构建；纯 EROM 工程缓存不随状态、时间变化的接触算子，混合工程保留逐次求值的 FOM 热阻。
+
+观察量在 `project_output.cpp` 单独计算，不读取装配器上次求值的状态。初态转换区分 FOM 的绝对温度与 EROM 的模态坐标，缺少均匀温度响应且初温改变时，瞬态必须提供完整初态。所有 `OutputTrace` 共用 `snapshot_times`，由 `(ComponentId, OutputId)` 查询。C++ 的 `SolveOptions::store_snapshot_states=false` 可只保留时间、输出轨迹和最终状态；默认仍保存全状态历史，C/Python 结果契约不变。
 
 ## 输入与数组约定
 
 - C++ 的 `MeshSpec`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Fom.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
 - C/Python 网格导出使用 `facet_minus`、`facet_plus`、`facet_axis`、`facet_coordinate` 和 `facet_bounds`。前四者为 `(facet_count,)`，bounds 为 `(facet_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量由 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
-- Facet 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 `facet_coordinate` 给出，外法向由缺失的一侧确定。一个 cell side 可有多个外边界 Facet。跨子域非匹配连接尚未实现。单元至 Facet 只保留一套 CSR 关联索引。
+- Facet 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 `facet_coordinate` 给出，外法向由缺失的一侧确定。一个 cell side 可有多个外边界 Facet。跨组件非匹配表面通过共面矩形交集建立 `ContactPatch`。单元至 Facet 只保留一套 CSR 关联索引。
 - 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。
 - `Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。`SourcePort` 必须且只能指定 `source_ids` 或物理 `cells` 选择器之一。
 - `BoundaryGroup(surface=geometry.surface(Face.ZP), h_range=...)` 使用实际 FacetId 和投影面积，同一控制体上的面片贡献累加。Robin 参数采用组平均的有效仿射系数，并非物理 HTC 的精确仿射表示。
@@ -60,7 +75,7 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 
 ## C API 契约
 
-- 不接受外部 `DiscreteMesh`；C++ 编译器通过 `build_model(definition, mesh)` 分别接收物理定义和 Cartesian 网格规格。
+- 不接受外部 `DiscreteMesh`；C++ 编译器通过 `compile_fom(definition, mesh)` 分别接收物理定义和 Cartesian 网格规格。
 - PTA XML 网格读取留在 CLI 应用侧，通过独立的 `MeshSpec` 传给编译器；PTA 文件格式与导入逻辑不进入内核或公开 API。
 - `mhs_compiled_copy_fields` 导出单元、Facet 及热源投影数据；`mhs_operators_copy_k/c` 直接复制 CSR，布局为 `row_ptr[state_count+1]`、`col_idx[nnz]`、`values[nnz]`；Python `assemble()` 返回 SciPy CSR，需要 CSC 的算法自行转换。
 - `mhs_solution_info_t.converged` 和 Python `Solution.converged` 暴露求解收敛结果。API 成功表示调用完成，收敛状态由该字段判断。

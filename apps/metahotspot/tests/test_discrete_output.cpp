@@ -7,7 +7,7 @@
 #include <gtest/gtest.h>
 using namespace mhs::core;
 using namespace mhs::model;
-struct CubeDefinition : mhs::model::ModelDefinition {
+struct CubeDefinition : mhs::model::FomDefinition {
     mhs::model::MeshSpec mesh;
 };
 
@@ -27,7 +27,7 @@ static CubeDefinition cube_definition()
 TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
 {
     auto definition = cube_definition();
-    auto model = test_pta::build_model(definition, definition.mesh);
+    auto model = test_pta::compile_fom(definition, definition.mesh);
     const mhs::core::Vector<std::size_t> order {7, 5, 3, 1, 6, 4, 2, 0};
     auto mesh = model.discrete;
     mhs::core::Vector<std::size_t> inverse(order.size());
@@ -41,7 +41,7 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
         if (face.plus != invalid_id)
             face.plus = inverse[face.plus];
     }
-    auto imported = test_pta::build_model(definition, definition.mesh);
+    auto imported = test_pta::compile_fom(definition, definition.mesh);
     imported.discrete = std::move(mesh);
     mhs::compiler::build_cell_facet_incidence(imported.discrete);
     for (size_t c = 0; c < order.size(); ++c)
@@ -86,7 +86,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
     for (size_t kind = 0; kind < conditions.size(); ++kind) {
         SCOPED_TRACE(kind);
         d.thermal_boundaries = {{{{mhs::model::Axis::X, 1, {0, 1, 0, 1}}}, conditions[kind]}};
-        const auto model = test_pta::build_model(d, d.mesh);
+        const auto model = test_pta::compile_fom(d, d.mesh);
         // All other faces share the compiled zero-flux default condition.
         ASSERT_EQ(model.boundary_conditions.size(), 2u);
         ASSERT_EQ(model.discrete.facets.size(), 6u);

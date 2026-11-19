@@ -58,9 +58,10 @@ field comparisons and independent source/shift transfer checks are written to
 is selected. Reference-run settings and reported limitations are in
 [baseline/metahotspot/README.md](baseline/metahotspot/README.md).
 
-Conservative non-conforming common-patch coupling is provided separately by
-`mor_common.py` and `metahotspot.macromodel.embeddable`; `pop.py` compares whole-PoP
-operators rather than connecting a reduced bottom package to a detailed top.
+Native conservative contact coupling is provided by the C++ Project API.
+`pop.py` compares whole-PoP operators rather than connecting a reduced bottom
+package to a detailed top. The previous Python coupling interface and its
+dependent experiments have been removed.
 
 The FloTHERM simple-cube comparison and its reference data are archived with
 [`simple_erom_case1`](../archived/simple_erom_case1/).

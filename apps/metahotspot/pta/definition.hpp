@@ -1,7 +1,7 @@
 #pragma once
 
 #include "core/vector.hpp"
-#include "model/model_definition.hpp"
+#include "model/fom_definition.hpp"
 
 #include <optional>
 #include <string>
@@ -61,7 +61,7 @@ namespace mhs::app::pta {
 
     // Parsing scratch state. PTA syntax never enters the library definition.
     struct Definition {
-        mhs::model::ModelDefinition model;
+        mhs::model::FomDefinition model;
         mhs::model::MeshSpec mesh;
         mhs::core::Vector<VariableSpec> variables;
         LengthUnit length_unit = LengthUnit::Meter;

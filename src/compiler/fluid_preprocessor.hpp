@@ -1,7 +1,7 @@
 #pragma once
 
 #include "model/fom.hpp"
-#include "model/model_definition.hpp"
+#include "model/fom_definition.hpp"
 
 #include "core/vector.hpp"
 

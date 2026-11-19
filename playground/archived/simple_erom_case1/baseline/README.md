@@ -8,3 +8,7 @@ The raw simple-cube FloTHERM EROM payload is in
 `simple_case1_stress_baseline.csv` freezes the stress-case comparison numbers
 used by this work. Baseline source state: MetaHotspot commit
 `db1c13cb8bb806ef75b6a5512c1d131d85933815`.
+
+The Python coupling experiments that produced these comparisons have been
+removed with their old interface. The reference data records historical results;
+`../demonstrate_current_erom.py` independently reads the FloTHERM export.

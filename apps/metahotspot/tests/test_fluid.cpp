@@ -18,7 +18,7 @@ namespace {
         const std::string root = MHS_SOURCE_DIR;
         const std::string input = root + "/cases/microfluid_cases/steady_case1.xml";
         EXPECT_TRUE(std::filesystem::exists(input));
-        return test_pta::build_model(mhs::app::pta::read_xml(input));
+        return test_pta::compile_fom(mhs::app::pta::read_xml(input));
     }
 
     mhs::app::pta::Definition single_fluid_cell()
@@ -49,7 +49,7 @@ namespace {
 TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 {
     const std::string input = std::string(MHS_SOURCE_DIR) + "/cases/simple_steady_cases/simple_steady_case1.xml";
-    auto model = test_pta::build_model(mhs::app::pta::read_xml(input));
+    auto model = test_pta::compile_fom(mhs::app::pta::read_xml(input));
 
     EXPECT_TRUE(model.fluid.fluid_to_global.empty());
     EXPECT_TRUE(model.fluid.global_to_fluid.empty());
@@ -144,12 +144,12 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
         EXPECT_NEAR(diagonal, 5, 1e-12);
         EXPECT_NEAR(inc.f[0], 2 * 280 + 3 * 320, 1e-10);
     };
-    verify(test_pta::build_model(d));
+    verify(test_pta::compile_fom(d));
     ThermalBoundarySpec thermal;
     thermal.condition = NeumannBoundary {"0"};
     thermal.regions.push_back({Axis::X, 0, {0, 0.15, 0, 1}});
     d.model.thermal_boundaries.push_back(thermal);
-    const auto refined = test_pta::build_model(d);
+    const auto refined = test_pta::compile_fom(d);
     verify(refined);
 
     // One physical X- side is split by both hydraulic and thermal rectangles.
@@ -192,14 +192,14 @@ TEST(FluidModuleTest, PressureInletPumpResistanceIsLumpedAcrossFacetSplits)
         return inflow;
     };
 
-    const auto unrestricted = test_pta::build_model(d);
+    const auto unrestricted = test_pta::compile_fom(d);
     const double q0 = total_inflow(unrestricted);
     ASSERT_GT(q0, 0);
     // Match the baseline hydraulic resistance so the pump halves the flow.
     const double resistance = 200.0 / q0;
     std::get<PressureInlet>(d.model.fluid_boundaries.front().condition).pump_resistance = resistance;
     const double expected = q0 / 2;
-    const auto restricted = test_pta::build_model(d);
+    const auto restricted = test_pta::compile_fom(d);
     EXPECT_NEAR(total_inflow(restricted), expected, expected * 1e-7);
 
     // A thermal cut subdivides the same hydraulic inlet into multiple facets.
@@ -208,7 +208,7 @@ TEST(FluidModuleTest, PressureInletPumpResistanceIsLumpedAcrossFacetSplits)
     thermal.condition = NeumannBoundary {"0"};
     thermal.regions.push_back({Axis::X, 0, {0, 0.25, 0, 1}});
     d.model.thermal_boundaries.push_back(thermal);
-    const auto split = test_pta::build_model(d);
+    const auto split = test_pta::compile_fom(d);
     EXPECT_GT(split.fluid.boundary_terms.size(), restricted.fluid.boundary_terms.size());
     EXPECT_NEAR(total_inflow(split), expected, expected * 1e-7);
 }
@@ -223,7 +223,7 @@ TEST(FluidModuleTest, RejectsInvalidPumpResistance)
     const double nan = std::numeric_limits<double>::quiet_NaN();
     for (const double invalid : {-1.0, infinity, nan}) {
         std::get<PressureInlet>(d.model.fluid_boundaries.front().condition).pump_resistance = invalid;
-        EXPECT_THROW(test_pta::build_model(d), std::invalid_argument);
+        EXPECT_THROW(test_pta::compile_fom(d), std::invalid_argument);
     }
 }
 
@@ -235,7 +235,7 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     // outlet supplies fluid when its pressure is higher than the inlet's.
     d.model.fluid_boundaries
         = {{{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {0, 280}}, {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {1}}};
-    auto reverse = test_pta::build_model(d);
+    auto reverse = test_pta::compile_fom(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
     for (const auto& term : reverse.fluid.boundary_terms) {
         if (const auto* inflow = std::get_if<mhs::model::FluidInflow>(&term.condition))
@@ -253,7 +253,7 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
     verify_reverse(reverse, 300);
 
     std::get<PressureOutlet>(d.model.fluid_boundaries.back().condition).pressure = 0;
-    const auto stagnant = test_pta::build_model(d);
+    const auto stagnant = test_pta::compile_fom(d);
     const auto zero = mhs::solver::assemble_thermal(stagnant, mhs::core::Vector<double> {300}, 0);
     EXPECT_DOUBLE_EQ(zero.f[0], 0);
     EXPECT_DOUBLE_EQ(mhs::core::norm_inf(zero.K.values()), 0);

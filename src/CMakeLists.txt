@@ -14,14 +14,9 @@ endif()
 foreach(_component core model expression linear compiler solver logging)
     add_library(mhs::${_component} ALIAS mhs_${_component})
     set_target_properties(mhs_${_component} PROPERTIES EXPORT_NAME ${_component})
-    if(_component STREQUAL "model")
-        set(_visibility INTERFACE)
-    else()
-        set(_visibility PUBLIC)
-        target_include_directories(mhs_${_component} PRIVATE ${PROJECT_SOURCE_DIR}/src)
-    endif()
-    target_compile_features(mhs_${_component} ${_visibility} cxx_std_20)
-    target_include_directories(mhs_${_component} ${_visibility}
+    target_include_directories(mhs_${_component} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+    target_compile_features(mhs_${_component} PUBLIC cxx_std_20)
+    target_include_directories(mhs_${_component} PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include/metahotspot>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/metahotspot>
     )

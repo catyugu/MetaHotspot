@@ -1,4 +1,4 @@
-#include "compiler/model_compiler.hpp"
+#include "compiler/fom_compiler.hpp"
 #include "solver/solver.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -9,7 +9,7 @@ static mhs::model::MeshSpec cube_mesh() { return {{0.0, 0.005, 0.01}, {0.0, 0.00
 TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 {
     // Cube with heat source + Dirichlet on bottom + convective BC on top
-    mhs::model::ModelDefinition io;
+    mhs::model::FomDefinition io;
 
     io.sources = {"1e6"};
     io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
@@ -26,7 +26,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = mhs::compiler::build_model(io, cube_mesh());
+    auto model = mhs::compiler::compile_fom(io, cube_mesh());
 
     auto result = mhs::solver::solve(model);
 
@@ -43,7 +43,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
 TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 {
-    mhs::model::ModelDefinition io;
+    mhs::model::FomDefinition io;
 
     io.sources = {"1e8"};
     io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
@@ -74,12 +74,12 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
     io.thermal_boundaries.push_back(boundary);
 
-    auto model = mhs::compiler::build_model(io, cube_mesh());
+    auto model = mhs::compiler::compile_fom(io, cube_mesh());
 
-    mhs::model::Study study {mhs::model::StudyType::Transient, 300.0, 5.0, 1.0};
+    mhs::solver::Study study {mhs::solver::StudyType::Transient, 300.0, 5.0, 1.0};
     auto result = mhs::solver::solve(model, study);
 
-    const auto& traces = result.probe_traces;
+    const auto& traces = result.output_traces;
     ASSERT_EQ(traces.size(), 2u);
     EXPECT_EQ(traces[0].name, "center");
     EXPECT_EQ(traces[1].name, "z0");
@@ -106,7 +106,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
 
 TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
 {
-    mhs::model::ModelDefinition io;
+    mhs::model::FomDefinition io;
 
     io.sources = {"0"};
     io.volumes = {{0, 0, {{mhs::model::GeometryOperation::Add, {0, 0, 0}, {0.01, 0.01, 0.01}}}}};
@@ -131,12 +131,12 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
     io.thermal_boundaries.push_back(boundary);
 
-    auto model = mhs::compiler::build_model(io, cube_mesh());
+    auto model = mhs::compiler::compile_fom(io, cube_mesh());
 
-    mhs::model::Study study {mhs::model::StudyType::Transient, 300.0, 5.0, 1.0};
+    mhs::solver::Study study {mhs::solver::StudyType::Transient, 300.0, 5.0, 1.0};
     auto result = mhs::solver::solve(model, study);
 
-    const auto& traces = result.probe_traces;
+    const auto& traces = result.output_traces;
     ASSERT_EQ(traces.size(), 1u);
     const auto& tr = traces[0];
     ASSERT_GE(result.snapshot_times.size(), 6u);

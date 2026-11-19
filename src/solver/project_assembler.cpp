@@ -1,7 +1,7 @@
 #include "solver/assembler.hpp"
 
+#include "contact.hpp"
 #include "thermal_physics.hpp"
-#include "thermal_reconstruction.hpp"
 #include <cmath>
 #include <numeric>
 #include <set>
@@ -11,10 +11,6 @@ namespace mhs::solver {
     namespace {
         using namespace model;
         using core::Vector;
-
-        struct Dofs {
-            std::size_t first, count;
-        };
 
         struct Block {
             const Fom* fom = nullptr;
@@ -30,22 +26,6 @@ namespace mhs::solver {
                        columns.begin() + matrix.row_ptr()[row], columns.begin() + matrix.row_ptr()[row + 1], col)
                 - columns.begin();
         }
-
-        struct Side {
-            Dofs dofs;
-            std::span<const double> modes;
-            double reference;
-
-            double value(std::size_t i) const { return modes.empty() ? 1.0 : modes[i]; }
-
-            double temperature(std::span<const double> state) const
-            {
-                const auto values = state.subspan(dofs.first, dofs.count);
-                return reference
-                    + (modes.empty() ? values.front()
-                                     : std::inner_product(modes.begin(), modes.end(), values.begin(), 0.0));
-            }
-        };
 
         void add_block(core::CSRMatrix<double>& matrix, const Side& rows, const Side& cols, double scale)
         {
@@ -95,7 +75,7 @@ namespace mhs::solver {
                 }
                 else {
                     block.erom = std::get<std::shared_ptr<const Erom>>(component.asset).get();
-                    for (const auto& htc : block.erom->htc) {
+                    for (const auto& htc : block.erom->surface_training) {
                         using expression::CompiledExpression;
                         if (htc)
                             block.erom_defaults.push_back(
@@ -107,14 +87,6 @@ namespace mhs::solver {
                 }
             }
 
-            for (const auto& contact : project.connections()) {
-                auto record = [&](std::size_t component, FacetId facet) {
-                    if (blocks[component].fom && !blocks[component].fom->point_probes.empty())
-                        sampled_contacts[{component, facet}].push_back(&contact);
-                };
-                record(contact.left, contact.left_facet);
-                record(contact.right, contact.right_facet);
-            }
             single_fom = blocks.size() == 1 && blocks.front().fom;
             if (single_fom)
                 return;
@@ -123,60 +95,92 @@ namespace mhs::solver {
             for (std::size_t i = 0; i < blocks.size(); ++i)
                 if (const auto* erom = blocks[i].erom)
                     copy_dense(erom->C, operators.C, project.dof_offset(i));
+            // Only reduced-only projects cache a global contact operator: a mixed
+            // project's FOM rows would otherwise allocate a mostly empty copy.
+            if (!project.contacts().empty() && std::ranges::all_of(blocks, [](const auto& b) { return b.erom; })) {
+                assemble_contacts();
+                cached_contact_K.assign(operators.K.values().begin(), operators.K.values().end());
+                cached_contact_f = operators.f;
+            }
         }
 
-        Side side(std::size_t i, FacetId facet) const
+        void assemble_contacts()
         {
-            const auto& b = blocks[i];
-            const auto offset = project.dof_offset(i);
-            if (b.fom)
-                return {{offset + b.fom->discrete.cell_facets[facet].owner(), 1}, {}, 0};
-            return {{offset, b.erom->K.rows()}, b.erom->Vb.row(facet), b.erom->reference_temperature};
+            for (const auto& c : project.contacts()) {
+                const auto left = contact_side(project, c.left, c.left_facet);
+                const auto right = contact_side(project, c.right, c.right_facet);
+                const auto g
+                    = c.area / (resistance(c.left, c.left_facet) + resistance(c.right, c.right_facet) + c.resistance);
+                add_block(operators.K, left, left, g);
+                add_block(operators.K, right, right, g);
+                add_block(operators.K, left, right, -g);
+                add_block(operators.K, right, left, -g);
+                const auto load = g * (right.reference - left.reference);
+                add_load(operators.f, left, load);
+                add_load(operators.f, right, -load);
+            }
         }
 
         std::shared_ptr<const core::CSRPattern> pattern(bool capacity) const
         {
             using core::SparseIndex;
             const auto size = project.dof_count();
-            Vector<Vector<SparseIndex>> columns(size);
-            auto dense = [&](Dofs rows, Dofs cols) {
-                for (auto i = rows.first; i < rows.first + rows.count; ++i)
-                    for (auto j = cols.first; j < cols.first + cols.count; ++j)
-                        columns[i].push_back(static_cast<SparseIndex>(j));
-            };
-            for (std::size_t i = 0; i < blocks.size(); ++i) {
-                const auto offset = project.dof_offset(i);
-                if (const auto& thermal = blocks[i].thermal) {
-                    const auto& matrix = capacity ? thermal->operators().C : thermal->operators().K;
-                    for (std::size_t r = 0; r < matrix.rows(); ++r)
-                        for (auto j = matrix.row_ptr()[r]; j < matrix.row_ptr()[r + 1]; ++j)
-                            columns[offset + r].push_back(static_cast<SparseIndex>(offset) + matrix.col_idx()[j]);
-                }
-                else {
-                    const Dofs modes {offset, project.dof_size(i)};
-                    dense(modes, modes);
-                }
-            }
-            if (!capacity) {
-                std::set<std::array<std::size_t, 4>> seen;
-                for (const auto& c : project.connections()) {
-                    const auto l = side(c.left, c.left_facet).dofs;
-                    const auto r = side(c.right, c.right_facet).dofs;
-                    if (seen.insert({l.first, l.count, r.first, r.count}).second) {
-                        dense(l, r);
-                        dense(r, l);
+            // Count and fill one flat buffer; avoid a synchronized pool allocation per row.
+            auto visit_columns = [&](const auto& append) {
+                auto dense = [&](Dofs rows, Dofs cols) {
+                    for (auto i = rows.first; i < rows.first + rows.count; ++i)
+                        for (auto j = cols.first; j < cols.first + cols.count; ++j)
+                            append(i, static_cast<SparseIndex>(j));
+                };
+                for (std::size_t i = 0; i < blocks.size(); ++i) {
+                    const auto offset = project.dof_offset(i);
+                    if (const auto& thermal = blocks[i].thermal) {
+                        const auto& matrix = capacity ? thermal->operators().C : thermal->operators().K;
+                        for (std::size_t r = 0; r < matrix.rows(); ++r)
+                            for (auto j = matrix.row_ptr()[r]; j < matrix.row_ptr()[r + 1]; ++j)
+                                append(offset + r, static_cast<SparseIndex>(offset) + matrix.col_idx()[j]);
+                    }
+                    else {
+                        const Dofs modes {offset, project.dof_size(i)};
+                        dense(modes, modes);
                     }
                 }
-            }
-            Vector<SparseIndex> ptr(size + 1), indices;
+                if (!capacity) {
+                    std::set<std::array<std::size_t, 4>> seen;
+                    for (const auto& c : project.contacts()) {
+                        const auto l = contact_side(project, c.left, c.left_facet).dofs;
+                        const auto r = contact_side(project, c.right, c.right_facet).dofs;
+                        if (seen.insert({l.first, l.count, r.first, r.count}).second) {
+                            dense(l, r);
+                            dense(r, l);
+                        }
+                    }
+                }
+            };
+            Vector<SparseIndex> ptr(size + 1);
+            visit_columns([&](std::size_t row, SparseIndex) {
+                ptr[row + 1] = static_cast<SparseIndex>(
+                    core::detail::checked_sparse_size(static_cast<std::size_t>(ptr[row + 1]) + 1));
+            });
+            for (std::size_t i = 0; i < size; ++i)
+                ptr[i + 1] = static_cast<SparseIndex>(
+                    core::detail::checked_sparse_size(static_cast<std::size_t>(ptr[i]) + ptr[i + 1]));
+            Vector<SparseIndex> indices(ptr.back());
+            auto cursor = ptr;
+            visit_columns([&](std::size_t row, SparseIndex col) { indices[cursor[row]++] = col; });
+            SparseIndex first = 0, count = 0;
             for (std::size_t i = 0; i < size; ++i) {
-                auto& row = columns[i];
-                std::ranges::sort(row);
-                row.erase(std::unique(row.begin(), row.end()), row.end());
-                core::detail::checked_sparse_size(indices.size() + row.size());
-                indices.insert(indices.end(), row.begin(), row.end());
-                ptr[i + 1] = static_cast<SparseIndex>(indices.size());
+                const auto last = ptr[i + 1];
+                auto begin = indices.begin() + first, end = indices.begin() + last;
+                std::sort(begin, end);
+                end = std::unique(begin, end);
+                ptr[i] = count;
+                for (auto it = begin; it != end; ++it)
+                    indices[count++] = *it;
+                first = last;
             }
+            ptr.back() = count;
+            indices.resize(count);
             return std::make_shared<const core::CSRPattern>(size, size, std::move(ptr), std::move(indices));
         }
 
@@ -191,10 +195,10 @@ namespace mhs::solver {
         {
             if (is_adiabatic(law))
                 return;
-            const auto dofs = side(i, id);
+            const auto dofs = contact_side(project, i, id);
             const auto r = resistance(i, id);
             const auto temperature = dofs.temperature(state);
-            for (const auto& patch : exposed_patches(project.exposed(i), id, facet)) {
+            for (const auto& patch : uncovered_patches(project.uncovered(i), id, facet)) {
                 const auto trace = evaluate_boundary(law, patch, temperature, time, r);
                 add_block(operators.K, dofs, dofs, trace.conductance);
                 add_load(operators.f, dofs, trace.load - trace.conductance * dofs.reference);
@@ -207,7 +211,7 @@ namespace mhs::solver {
                 throw std::invalid_argument("project assembly: state size differs from DOF count");
             if (single_fom)
                 return blocks.front().thermal->assemble(
-                    state, time, project.exposed(0), project.components().front().boundaries);
+                    state, time, project.uncovered(0), project.components().front().boundaries);
 
             std::ranges::fill(operators.K.values(), 0.0);
             std::ranges::fill(operators.f, 0.0);
@@ -217,7 +221,7 @@ namespace mhs::solver {
                 const auto offset = project.dof_offset(i);
                 if (b.fom) {
                     const auto& local = b.thermal->assemble(
-                        state.subspan(offset, project.dof_size(i)), time, project.exposed(i), component.boundaries);
+                        state.subspan(offset, project.dof_size(i)), time, project.uncovered(i), component.boundaries);
                     copy_sparse(local.K, operators.K, offset);
                     copy_sparse(local.C, operators.C, offset);
                     std::ranges::copy(local.f, operators.f.begin() + offset);
@@ -236,7 +240,7 @@ namespace mhs::solver {
                         operators.f[offset + j] += e.B(j, s) * power;
                 }
                 for (std::size_t s = 0; s < e.surfaces.size(); ++s)
-                    if (e.htc[s]) {
+                    if (e.surface_training[s]) {
                         const auto& surface = e.surfaces[s];
                         const auto& law = boundary_override(component.boundaries, surface.id, b.erom_defaults[s]);
                         for (const auto id : surface.facets)
@@ -244,86 +248,21 @@ namespace mhs::solver {
                     }
             }
 
-            for (const auto& connection : project.connections()) {
-                const auto& c = connection;
-                const auto left = side(c.left, c.left_facet), right = side(c.right, c.right_facet);
-                const auto g
-                    = c.area / (resistance(c.left, c.left_facet) + resistance(c.right, c.right_facet) + c.resistance);
-                add_block(operators.K, left, left, g);
-                add_block(operators.K, right, right, g);
-                add_block(operators.K, left, right, -g);
-                add_block(operators.K, right, left, -g);
-                const auto load = g * (right.reference - left.reference);
-                add_load(operators.f, left, load);
-                add_load(operators.f, right, -load);
+            if (cached_contact_K.empty())
+                assemble_contacts();
+            else {
+                for (std::size_t j = 0; j < cached_contact_K.size(); ++j)
+                    operators.K.values()[j] += cached_contact_K[j];
+                for (std::size_t j = 0; j < cached_contact_f.size(); ++j)
+                    operators.f[j] += cached_contact_f[j];
             }
             return operators;
         }
 
-        double sample_fom(std::size_t i, const PointProbe& probe, std::span<const double> state, double time) const
-        {
-            const auto& m = *blocks[i].fom;
-            const auto local = state.subspan(project.dof_offset(i), project.dof_size(i));
-            const auto& component = project.components()[i];
-            if (project.exposed(i).empty() && component.boundaries.empty())
-                return sample_point(m, local, time, probe.cell, probe.point);
-            auto sample_r = [&](std::size_t index, FacetId id) {
-                const auto& block = blocks[index];
-                if (block.erom)
-                    return block.erom->R[id];
-                const auto& fom = *block.fom;
-                const auto axis = fom.discrete.facets[id].axis;
-                const auto cell = fom.discrete.cell_facets[id].owner();
-                const auto& material = fom.material_table[fom.cell_material[cell]];
-                const auto& k = axis == Axis::X ? material.kx : axis == Axis::Y ? material.ky : material.kz;
-                const auto& geometry = fom.discrete.cells[cell];
-                const auto p = geometry.center();
-                return side_thermal_resistance(geometry.size()[static_cast<std::size_t>(axis)] / 2,
-                    k.eval({p[0], p[1], p[2], state[project.dof_offset(index) + cell], time}));
-            };
-            BoundarySampler sample = [&](FacetId id, const Vec3* point) -> BoundarySample {
-                const auto& facet = m.discrete.facets[id];
-                const auto r = sample_r(i, id);
-                const double temperature = side(i, id).temperature(state);
-                const auto condition = m.facet_thermal_condition[id];
-                const auto& law = boundary_override(component.boundaries, condition, m.boundary_conditions[condition]);
-                auto ambient = [&](const Facet& patch) {
-                    const auto t = evaluate_boundary(law, patch, temperature, time, r);
-                    return BoundarySample {t.temperature, std::holds_alternative<Dirichlet>(law)};
-                };
-                const auto exposed = project.exposed(i).find(id);
-                if (exposed == project.exposed(i).end())
-                    return ambient(facet);
-                double integral = 0;
-                for (const auto* c : sampled_contacts.at({i, id})) {
-                    const auto other = c->left == i ? c->right : c->left;
-                    const auto other_id = c->left == i ? c->right_facet : c->left_facet;
-                    const auto difference = side(other, other_id).temperature(state) - temperature;
-                    const auto t = temperature + difference * r / (r + sample_r(other, other_id) + c->resistance);
-                    if (point) {
-                        const auto u = facet.axis == Axis::X ? 1 : 0, v = facet.axis == Axis::Z ? 1 : 2;
-                        const auto a = (*point)[u] + component.offset[u], b = (*point)[v] + component.offset[v];
-                        if (a >= c->overlap[0] - geometry_eps && a <= c->overlap[1] + geometry_eps
-                            && b >= c->overlap[2] - geometry_eps && b <= c->overlap[3] + geometry_eps)
-                            return {t, false};
-                    }
-                    integral += c->area * t;
-                }
-                for (const auto& patch : exposed->second) {
-                    const auto trace = ambient(patch);
-                    if (point && patch.contains(*point))
-                        return trace;
-                    integral += patch.area() * trace.temperature;
-                }
-                return {integral / facet.area(), false};
-            };
-            return sample_point(m, local, time, probe.cell, probe.point, sample);
-        }
-
         const Project& project;
-        std::map<std::pair<std::size_t, FacetId>, Vector<const Connection*>> sampled_contacts;
         Vector<Block> blocks;
         Operators operators;
+        Vector<double> cached_contact_K, cached_contact_f;
         bool single_fom = false;
     };
 
@@ -337,9 +276,4 @@ namespace mhs::solver {
         return workspace_->assemble(state, time);
     }
 
-    double ProjectAssembler::sample_fom(
-        std::size_t component, const model::PointProbe& probe, std::span<const double> state, double time) const
-    {
-        return workspace_->sample_fom(component, probe, state, time);
-    }
 } // namespace mhs::solver

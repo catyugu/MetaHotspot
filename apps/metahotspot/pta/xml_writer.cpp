@@ -56,7 +56,8 @@ namespace mhs::app::pta {
 
     void write_xml(const std::string& input_path, const std::string& output_path,
         const std::array<std::size_t, 3>& shape, std::span<const double> node_temperature,
-        const mhs::core::Vector<mhs::solver::ProbeTrace>& observation_traces, std::span<const double> observation_times)
+        const mhs::core::Vector<mhs::solver::OutputTrace>& observation_traces,
+        std::span<const double> observation_times)
     {
         using namespace tinyxml2;
 
