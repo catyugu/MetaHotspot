@@ -64,9 +64,11 @@ write_erom("package.mherom", result.asset);
 
 A group's ID is its index in `FomDefinition::thermal_boundaries`. The default
 group has ID `thermal_boundaries.size()`. Every region of a selected group
-must lie on the exterior of the FOM. Groups may cover full faces or parts of
-faces. Groups that select interior faces or mix interior and exterior faces
-are rejected.
+must lie entirely on the boundary of the axis-aligned bounding box of the
+active FOM cells. A group may contain parts of several box faces, with every
+part covered by exterior mesh facets. Selecting any interior or recessed
+exterior facet, including exposed steps, rejects the group. The same rule
+applies when the default group is selected for training.
 EROM source, output and connectable group IDs are zero-based indices in their
 asset tables. Extraction assigns these indices after selecting powered sources
 and trained groups from the FOM.
@@ -98,10 +100,11 @@ surfaces, evaluated at each sampled HTC value. Global capacity-scaled spectral
 estimates use a preconditioned low-end Rayleigh–Ritz iteration and restarted,
 reorthogonalized high-end Krylov iteration. Both require a checked eigenpair
 residual. Elliptic matching points are positive real shifts, evaluated with
-arithmetic-geometric means using the complementary modulus. Each input keeps
-its own response space. Ten successful log-uniform HTC residual probes advance
-each input to the next shift. The fixed C++ random seed gives reproducible
-native runs.
+arithmetic-geometric means using the complementary modulus. Training visits
+those shifts from low to high to learn the HTC-sensitive responses first.
+Each input keeps its own response space. Ten successful log-uniform HTC
+residual probes advance each input to the next shift. The fixed C++ random
+seed gives reproducible native runs.
 
 Each facet uses the exact TPFA conductance
 `g_f(h) = A_f h / (1 + R_f h)`. Conductances are summed per owner cell for
@@ -119,9 +122,11 @@ compression and sampled output acceptance. Output validation uses independent
 AMG-CG FOM solves with a true relative residual at most the smaller of
 `1e-8` and one-thousandth of the extraction tolerance. It checks several
 settings in the training range and the default environment when anchored.
-The measured error is the temperature difference divided by the larger of one
-kelvin and the magnitude of the FOM temperature rise. Accuracy after embedding
-depends on the attached geometry and loads.
+At each sampled setting it exploits symmetry to solve per output when there
+are fewer outputs than independent inputs. The measured error is the
+temperature difference divided by the larger of one kelvin and the magnitude
+of the FOM temperature rise. Accuracy after embedding depends on the attached
+geometry and loads.
 
 ## Native .mherom v3
 

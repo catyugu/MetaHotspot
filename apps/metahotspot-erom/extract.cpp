@@ -78,13 +78,36 @@ namespace mhs::app::erom {
                 if (factor.info() != Eigen::Success)
                     throw std::runtime_error("reduced operator is not positive definite");
 
-                auto compare = [&](const auto& load) {
-                    const Vector approximate = L * factor.solve(load);
-                    const Vector exact = project.L * solver.solve(matrix, rhs, Vector::Zero(n));
+                auto compare = [&](const Vector& exact, const Vector& approximate) {
                     const Vector error = (exact - approximate).cwiseAbs().array() / exact.cwiseAbs().array().max(1.0);
                     if (!error.allFinite())
                         throw std::runtime_error("nonfinite validation temperature");
                     worst = std::max(worst, error.maxCoeff());
+                };
+                if (!defaults && L.rows() < B.cols() + ng) {
+                    // The full and Galerkin operators are symmetric. One adjoint
+                    // solve per output gives the same responses for every input.
+                    for (Eigen::Index j = 0; j < L.rows(); ++j) {
+                        rhs = Vector(project.L.row(j).transpose());
+                        const Vector exact = solver.solve(matrix, rhs, Vector::Zero(n));
+                        const Vector approximate = factor.solve(L.row(j).transpose());
+                        if (B.cols())
+                            compare(project.B.transpose() * exact, B.transpose() * approximate);
+                        const Vector reduced_trace = boundary * approximate;
+                        Vector ambient_exact(ng), ambient_approximate(ng);
+                        for (Eigen::Index i = 0; i < ng; ++i) {
+                            ambient_exact[i] = ambient_approximate[i] = 0;
+                            for (const auto id : project.training[i].facets) {
+                                ambient_exact[i] += closure[id] * exact[project.boundary_cells[id]];
+                                ambient_approximate[i] += closure[id] * reduced_trace[id];
+                            }
+                        }
+                        compare(ambient_exact, ambient_approximate);
+                    }
+                    return;
+                }
+                auto compare_load = [&](const auto& load) {
+                    compare(project.L * solver.solve(matrix, rhs, Vector::Zero(n)), L * factor.solve(load));
                 };
                 Vector load(B.rows());
                 if (defaults) {
@@ -97,7 +120,7 @@ namespace mhs::app::erom {
                 else
                     for (Eigen::Index i = 0; i < B.cols(); ++i) {
                         rhs = project.B.col(i);
-                        compare(B.col(i));
+                        compare_load(B.col(i));
                     }
                 for (Eigen::Index i = 0; i < ng; ++i) {
                     if (!defaults) {
@@ -112,10 +135,10 @@ namespace mhs::app::erom {
                         load.noalias() += power * boundary.row(id).transpose();
                     }
                     if (!defaults)
-                        compare(load);
+                        compare_load(load);
                 }
                 if (defaults)
-                    compare(load);
+                    compare_load(load);
             };
             check(lower);
             check(lower.cwiseSqrt().cwiseProduct(upper.cwiseSqrt()));

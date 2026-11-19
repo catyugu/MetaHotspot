@@ -120,9 +120,25 @@ namespace mhs::app::erom {
                 for (const auto& region : definition.thermal_boundaries[id].regions)
                     if (!exterior_region(mesh, region))
                         throw std::invalid_argument("HTC group " + std::to_string(id) + " must lie on the exterior");
-        for (const auto& [id, range] : ranges)
+        auto bounds = mesh.cells.front();
+        for (const auto& cell : mesh.cells)
+            for (std::size_t axis = 0; axis < bounds.min.size(); ++axis) {
+                bounds.min[axis] = std::min(bounds.min[axis], cell.min[axis]);
+                bounds.max[axis] = std::max(bounds.max[axis], cell.max[axis]);
+            }
+        for (const auto& [id, range] : ranges) {
             if (id >= facets_by_surface.size() || facets_by_surface[id].empty())
                 throw std::invalid_argument("unknown or empty HTC group " + std::to_string(id));
+            if (std::ranges::any_of(facets_by_surface[id], [&](FacetId f) {
+                    const auto& face = mesh.facets[f];
+                    const auto axis = static_cast<std::size_t>(face.axis);
+                    // Compiled facet planes and active cells use the same mesh coordinates.
+                    return face.normal == 0
+                        || face.coordinate != (face.normal < 0 ? bounds.min[axis] : bounds.max[axis]);
+                }))
+                throw std::invalid_argument(
+                    "HTC group " + std::to_string(id) + " must lie entirely on the faces of the FOM bounding box");
+        }
 
         solver::ThermalAssembler assembler(model);
         core::Vector<double> state(mesh.cells.size(), model.reference_temperature);
