@@ -23,7 +23,8 @@ endif()
 
 # Standalone builds default to everything on; as a subproject only the library.
 option(MHS_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
-option(MHS_BUILD_APPS "Build the command-line applications" ${PROJECT_IS_TOP_LEVEL})
+option(MHS_BUILD_APPS "Build the PTA command-line application" ${PROJECT_IS_TOP_LEVEL})
+option(MHS_BUILD_EROM "Build the native C++ EROM extractor" ${MHS_BUILD_APPS})
 option(MHS_BUILD_C_API "Build the shared C/Python API" ON)
 option(MHS_INSTALL "Install libraries, headers and CMake package" ${PROJECT_IS_TOP_LEVEL})
 option(MHS_WERROR "Treat project warnings as errors" ${PROJECT_IS_TOP_LEVEL})
@@ -67,6 +68,8 @@ endif()
 
 if(MHS_BUILD_APPS)
     add_subdirectory(apps/metahotspot)
+endif()
+if(MHS_BUILD_EROM)
     add_subdirectory(apps/metahotspot-erom)
 endif()
 

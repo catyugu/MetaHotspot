@@ -9,46 +9,29 @@ from pathlib import Path
 
 
 def main():
-    extractor, check = sys.argv[1:]
-    folder = Path(__file__).resolve().parent
-    xml = folder / "three_cells.xml"
+    (check,) = sys.argv[1:]
     env = dict(os.environ)
     env.update(OMP_NUM_THREADS="2", OPENBLAS_NUM_THREADS="2")
-    extract = [
-        extractor,
-        str(xml),
-        "--htc",
-        "0",
-        "1",
-        "10",
-        "--htc",
-        "1",
-        "2",
-        "9",
-        "--tolerance",
-        "1e-6",
-    ]
     with tempfile.TemporaryDirectory() as tmp:
         native = Path(tmp) / "test.mherom"
+        extract = [check, "--extract", str(native)]
 
-        rejected = subprocess.run(
-            [*extract[:2], str(native), *extract[2:]],
-            env=env,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        assert rejected.returncode and "depends directly on HTC" in rejected.stderr, (
-            rejected.stderr
-        )
+        for variant, reason in (
+            ("trace", "depends directly on HTC"),
+            ("empty", "unknown or empty HTC group"),
+        ):
+            rejected = subprocess.run(
+                [*extract, variant],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert rejected.returncode and reason in rejected.stderr, rejected.stderr
         assert not native.exists()
 
-        subprocess.run(
-            [*extract[:2], str(native), *extract[2:], "--probe", "off center"],
-            env=env,
-            check=True,
-        )
-        subprocess.run([check, str(native), str(xml)], check=True, env=env)
+        subprocess.run([*extract, "standard"], env=env, check=True)
+        subprocess.run([check, str(native)], check=True, env=env)
 
         original = native.read_bytes()
         rank, ns, no, nb, nf, _ = struct.unpack_from("<6I", original, 12)
@@ -72,30 +55,12 @@ def main():
             bad.write_bytes(changed)
             subprocess.run([check, "--reject", str(bad), reason], check=True, env=env)
 
-        modified = Path(tmp) / "modified.xml"
-        source_free = (
-            xml.read_text(encoding="utf-8")
-            .replace("<VolumetricHeatSource>5", "<VolumetricHeatSource>0")
-            .replace("<VolumetricHeatSource>8", "<VolumetricHeatSource>0")
-        )
-        modified.write_text(source_free, encoding="utf-8")
-        subprocess.run(
-            [*extract[:1], str(modified), str(bad), *extract[2:], "--no-point-probes"],
-            env=env,
-            check=True,
-        )
-        subprocess.run([check, "--no-channels", str(bad)], check=True, env=env)
-
-        fixed_flux = (
-            '<OtherThermalBondary i:type="SecondTypeThermalBoundary">'
-            '<a:HeatFlux xmlns:a="urn:fields">1</a:HeatFlux></OtherThermalBondary>'
-        )
-        modified.write_text(
-            source_free.replace("</Structure>", fixed_flux + "</Structure>"),
-            encoding="utf-8",
-        )
+        subprocess.run([*extract, "partial"], env=env, check=True)
+        subprocess.run([*extract, "passive"], env=env, check=True)
+        subprocess.run([check, "--no-channels", str(native)], check=True, env=env)
+        original = native.read_bytes()
         rejected = subprocess.run(
-            [*extract[:1], str(modified), str(bad), *extract[2:], "--no-point-probes"],
+            [*extract, "flux"],
             env=env,
             text=True,
             capture_output=True,
@@ -104,7 +69,7 @@ def main():
         assert rejected.returncode and "nonzero Neumann" in rejected.stderr, (
             rejected.stderr
         )
-        subprocess.run([check, "--no-channels", str(bad)], check=True, env=env)
+        assert native.read_bytes() == original
 
 
 if __name__ == "__main__":

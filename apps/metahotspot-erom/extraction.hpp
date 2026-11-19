@@ -1,29 +1,14 @@
 #pragma once
 
-#include "model/erom.hpp"
+#include "erom/extraction.hpp"
 #include "model/fom.hpp"
 #include <Eigen/Core>
 #include <Eigen/SparseCore>
-#include <map>
-#include <set>
 
 namespace mhs::app::erom {
     using Matrix = Eigen::MatrixXd;
     using Vector = Eigen::VectorXd;
     using Sparse = Eigen::SparseMatrix<double, Eigen::RowMajor>;
-
-    struct Selection {
-        std::map<model::SurfaceId, model::EromSurfaceTraining> htc;
-        std::set<std::string> probes;
-        bool all_probes = true;
-        bool source_temperatures = true;
-    };
-
-    struct Options {
-        double tolerance = 1e-3;
-        int max_order = 512;
-        double output_error = 0.02;
-    };
 
     struct SurfaceData {
         model::SurfaceId id;
@@ -34,6 +19,19 @@ namespace mhs::app::erom {
         core::Vector<double> resistance;
     };
 
+    // All conductance vectors use compact indices into the distinct boundary cells.
+    struct HtcOperators {
+        explicit HtcOperators(const core::Vector<SurfaceData>& surfaces);
+
+        void add_conductance(Eigen::Ref<Vector> diagonal, std::size_t group, double h) const;
+        Vector diagonal(const Vector& h) const;
+        Vector parameters(double model::EromSurfaceTraining::* field) const;
+
+        core::Vector<const SurfaceData*> groups;
+        core::Vector<Eigen::Index> cells;
+        core::Vector<core::Vector<Eigen::Index>> facet_rows;
+    };
+
     struct Prepared {
         Sparse K;
         Vector capacity;
@@ -42,32 +40,15 @@ namespace mhs::app::erom {
         core::Vector<SurfaceData> surfaces;
         core::Vector<model::EromSource> sources;
         core::Vector<model::EromOutput> outputs;
-        double reference, initial;
+        double reference;
     };
 
-    struct Statistics {
-        int shifts = 0;
-        int response_solves = 0;
-        int response_amg_setups = 0;
-        std::size_t cg_iterations = 0;
-        double lambda_min = 0, lambda_max = 0;
-        double output_error = 0;
-    };
-
-    struct Extraction {
-        model::Erom asset;
-        Statistics statistics;
-    };
-
-    Prepared prepare(const model::Fom& fom, double initial_temperature, Selection selection);
-    Extraction extract(const Prepared& project, const Options& options);
-    void write_erom(const std::filesystem::path& path, const model::Erom& asset);
+    Prepared prepare(const model::Fom& fom, const HtcRanges& ranges);
 
     // Application-local numerical kernels; no extraction implementation enters the SDK.
     Sparse add_diagonal(const Sparse& matrix, const Vector& diagonal);
     Vector solve_positive(const Matrix& matrix, const Vector& rhs);
     Matrix solve_positive(const Matrix& matrix, const Matrix& rhs);
-    Matrix build_basis(const Sparse& K, const Vector& capacity, const Matrix& slopes,
-        const core::Vector<std::pair<double, double>>& ranges, const Matrix& inputs, const Options& options,
-        Statistics& statistics);
+    Matrix build_basis(const Prepared& project, const HtcOperators& htc, const core::Vector<int>& regions,
+        double tolerance, Statistics& statistics);
 } // namespace mhs::app::erom

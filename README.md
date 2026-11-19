@@ -181,6 +181,6 @@ metahotspot --output-vtu /tmp/out.vtu \
 
 ### FOM–EROM 混合工程
 
-C++ SDK 支持通过表面接触连接详细模型与可复用的 EROM。原生 `metahotspot-erom` 读取 PTA XML，
-在一个 C++ 进程中完成提取、校验和 `.mherom` 写出，无需 Python。
+C++ SDK 支持通过表面接触连接详细模型与可复用的 EROM。原生 `mhs::erom_extraction` 接受
+`FomDefinition` 和 `MeshSpec`，按各组 HTC 范围和统一容差提取、校验并写出 `.mherom`。
 使用方式和文件布局见[混合工程与 EROM 提取文档](docs/erom.md)。
