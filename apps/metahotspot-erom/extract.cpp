@@ -2,35 +2,28 @@
 #include "compiler/fom_compiler.hpp"
 #include "solver/thermal_physics.hpp"
 
+#include <Eigen/Cholesky>
 #include <algorithm>
 #include <cmath>
 #include <sstream>
 #include <stdexcept>
 
 namespace mhs::app::erom {
-    void Prepared::set_conductances(Eigen::Ref<Vector> values, Eigen::Index group, double h) const
+    void Prepared::set_conductances(Eigen::Ref<Vector> values, const Vector& h) const
     {
-        for (const auto id : asset.surfaces[group].facets)
-            values[id] = solver::convection_conductance(asset.facets[id].area(), h, asset.R[id]);
-    }
-
-    Vector Prepared::conductances(const Vector& h) const
-    {
-        Vector result(static_cast<Eigen::Index>(boundary_cells.size()));
         for (Eigen::Index i = 0; i < h.size(); ++i)
-            set_conductances(result, i, h[i]);
-        return result;
+            for (const auto id : asset.surfaces[i].facets)
+                values[id] = solver::convection_conductance(asset.facets[id].area(), h[i], asset.R[id]);
     }
 
     Vector Prepared::parameters(double model::EromSurfaceTraining::* field) const
     {
-        core::Vector<double> values;
-        for (const auto& surface : asset.surfaces) {
-            if (!surface.training)
-                break; // prepare writes trained surfaces first
-            values.push_back((*surface.training).*field);
-        }
-        return Eigen::Map<const Vector>(values.data(), static_cast<Eigen::Index>(values.size()));
+        const auto end = std::ranges::find_if_not(
+            asset.surfaces, [](const auto& surface) { return surface.training.has_value(); });
+        Vector values(end - asset.surfaces.begin());
+        for (Eigen::Index i = 0; i < values.size(); ++i)
+            values[i] = (*asset.surfaces[i].training).*field;
+        return values;
     }
 
     void Prepared::add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const
@@ -80,55 +73,59 @@ namespace mhs::app::erom {
             const Vector lower = project.parameters(&model::EromSurfaceTraining::minimum);
             const Vector upper = project.parameters(&model::EromSurfaceTraining::maximum);
             const auto n = project.K.rows(), ng = lower.size();
+            Vector closure(static_cast<Eigen::Index>(project.boundary_cells.size())), rhs(n);
             double worst = 0;
             auto check = [&](const Vector& h, bool defaults = false) {
-                const Vector closure = project.conductances(h);
+                project.set_conductances(closure, h);
                 if (defaults && !covers_regions(project, regions, closure))
                     return;
                 Vector diagonal = Vector::Zero(n);
                 project.add_boundary(diagonal, closure);
                 const Sparse matrix = add_diagonal(project.K, diagonal);
                 ReusableAmg solver(matrix, std::min(1e-8, tolerance * 1e-3));
+                const Matrix reduced = stiffness + boundary.transpose() * (closure.asDiagonal() * boundary);
+                Eigen::LLT<Matrix> factor(reduced);
+                if (factor.info() != Eigen::Success)
+                    throw std::runtime_error("reduced operator is not positive definite");
 
-                Matrix ambient = Matrix::Zero(boundary.rows(), ng);
-                for (Eigen::Index i = 0; i < ng; ++i)
-                    for (const auto facet : project.asset.surfaces[i].facets)
-                        ambient(facet, i) = closure[facet];
-                const Matrix reduced_ambient = boundary.transpose() * ambient;
-                Matrix loads(B.rows(), defaults ? 1 : B.cols() + ng);
-                Vector rhs(n);
+                auto compare = [&](const auto& load) {
+                    const Vector approximate = L * factor.solve(load);
+                    const Vector exact = project.L * solver.solve(matrix, rhs, Vector::Zero(n));
+                    const Vector error = (exact - approximate).cwiseAbs().array() / exact.cwiseAbs().array().max(1.0);
+                    if (!error.allFinite())
+                        throw std::runtime_error("nonfinite validation temperature");
+                    worst = std::max(worst, error.maxCoeff());
+                };
+                Vector load(B.rows());
                 if (defaults) {
                     Vector powers(B.cols());
                     for (Eigen::Index i = 0; i < powers.size(); ++i)
                         powers[i] = project.asset.sources[i].default_power;
-                    const Vector delta = project.parameters(&model::EromSurfaceTraining::ambient).array()
-                        - project.asset.reference_temperature;
-                    rhs = project.B * powers;
-                    project.add_boundary(rhs, ambient * delta);
-                    loads.col(0) = B * powers + reduced_ambient * delta;
+                    rhs.noalias() = project.B * powers;
+                    load.noalias() = B * powers;
                 }
-                else {
-                    loads.leftCols(B.cols()) = B;
-                    loads.rightCols(ng) = reduced_ambient;
-                }
-                const Matrix reduced = stiffness + boundary.transpose() * (closure.asDiagonal() * boundary);
-                const Matrix approximate = L * solve_positive(reduced, loads);
-                for (Eigen::Index i = 0; i < loads.cols(); ++i) {
-                    if (!defaults) {
-                        if (i < B.cols())
-                            rhs = project.B.col(i);
-                        else {
-                            rhs.setZero();
-                            project.add_boundary(rhs, ambient.col(i - B.cols()));
-                        }
+                else
+                    for (Eigen::Index i = 0; i < B.cols(); ++i) {
+                        rhs = project.B.col(i);
+                        compare(B.col(i));
                     }
-                    const Vector exact = project.L * solver.solve(matrix, rhs, Vector::Zero(n));
-                    const Vector error
-                        = (exact - approximate.col(i)).cwiseAbs().array() / exact.cwiseAbs().array().max(1.0);
-                    if (!error.allFinite())
-                        throw std::runtime_error("nonfinite validation temperature");
-                    worst = std::max(worst, error.maxCoeff());
+                for (Eigen::Index i = 0; i < ng; ++i) {
+                    if (!defaults) {
+                        rhs.setZero();
+                        load.setZero();
+                    }
+                    const auto& surface = project.asset.surfaces[i];
+                    const double delta = defaults ? surface.training->ambient - project.asset.reference_temperature : 1;
+                    for (const auto id : surface.facets) {
+                        const double power = closure[id] * delta;
+                        rhs[project.boundary_cells[id]] += power;
+                        load.noalias() += power * boundary.row(id).transpose();
+                    }
+                    if (!defaults)
+                        compare(load);
                 }
+                if (defaults)
+                    compare(load);
             };
             check(lower);
             check(lower.cwiseSqrt().cwiseProduct(upper.cwiseSqrt()));

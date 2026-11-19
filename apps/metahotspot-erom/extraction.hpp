@@ -17,8 +17,7 @@ namespace mhs::app::erom {
         model::Erom asset;
         core::Vector<model::CellId> boundary_cells; // indexed by connectable FacetId
         // Conductances are indexed by the same connectable FacetIds.
-        void set_conductances(Eigen::Ref<Vector> values, Eigen::Index group, double h) const;
-        Vector conductances(const Vector& h) const;
+        void set_conductances(Eigen::Ref<Vector> values, const Vector& h) const;
         Vector parameters(double model::EromSurfaceTraining::* field) const;
         void add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const;
     };

@@ -1,11 +1,9 @@
 #pragma once
 
-#include "core/vector.hpp"
 #include "model/constants.hpp"
 #include "model/types.hpp"
 #include <array>
 #include <cmath>
-#include <string>
 
 namespace mhs::model {
     using Vec3 = std::array<double, 3>;
@@ -37,11 +35,5 @@ namespace mhs::model {
             const bool inside_v = p[v] >= bounds[2] - eps && p[v] <= bounds[3] + eps;
             return on_plane && inside_u && inside_v;
         }
-    };
-
-    struct Surface {
-        SurfaceId id = core::invalid_id;
-        std::string name;
-        core::Vector<FacetId> facets;
     };
 } // namespace mhs::model

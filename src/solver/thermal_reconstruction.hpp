@@ -12,6 +12,9 @@ namespace mhs::solver {
         bool dirichlet;
     };
 
+    BoundarySample sample_boundary_temperature(const model::BoundaryCondition& condition, const model::Facet& patch,
+        double temperature, double time, double resistance);
+
     using BoundarySampler = std::function<BoundarySample(model::FacetId, const model::Vec3*)>;
 
     // Temperature at an arbitrary point: the boundary trace on an external

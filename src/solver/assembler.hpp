@@ -35,13 +35,9 @@ namespace mhs::solver {
         const Operators& assemble(std::span<const double> state, double time);
 
     private:
-        std::shared_ptr<const core::CSRPattern> pattern(bool capacity) const;
-        const model::Erom& erom(std::size_t component) const;
+        Operators make_operators() const;
         double resistance(std::size_t component, model::FacetId facet) const;
         void assemble_contacts();
-        void erom_environment(std::size_t component, model::FacetId facet, const model::Erom& erom,
-            const model::EromSurfaceTraining& training, const model::BoundaryCondition* law,
-            std::span<const double> state, double time);
 
         const model::Project& project_;
         core::Vector<std::unique_ptr<ThermalAssembler>> thermal_;

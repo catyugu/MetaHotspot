@@ -16,26 +16,14 @@ namespace mhs::solver {
             const auto& contacts = project.facet_contacts(i);
             if (contacts.empty() && component.boundaries.empty())
                 return sample_point(m, local, time, probe.cell, probe.point);
-            auto sample_r = [&](std::size_t index, FacetId id) {
-                const auto& asset = project.components()[index].asset;
-                if (const auto* erom = std::get_if<std::shared_ptr<const Erom>>(&asset))
-                    return (*erom)->R[id];
-                const auto& fom = *std::get<std::shared_ptr<const Fom>>(asset);
-                const auto axis = static_cast<std::size_t>(fom.discrete.facets[id].axis);
-                const auto cell = fom.discrete.cell_facets[id].owner();
-                const auto temperature = state[project.dof_offset(index) + cell];
-                return boundary_resistance(fom, id, cell_conductivity(fom, cell, axis, temperature, time));
-            };
             BoundarySampler sample = [&](FacetId id, const Vec3* point) -> BoundarySample {
                 const auto& facet = m.discrete.facets[id];
-                const auto r = sample_r(i, id);
-                const double temperature = contact_side(project, i, id).temperature(state);
+                const double temperature = local[m.discrete.cell_facets[id].owner()];
+                const double r = boundary_resistance(m, id, temperature, time);
                 const auto surface = m.facet_surface[id];
-                const auto& law = boundary_override(component.boundaries, surface, m.boundary_conditions[surface]);
-                auto ambient = [&](const Facet& patch) {
-                    const auto t = evaluate_boundary(law, patch, temperature, time, r);
-                    return BoundarySample {t.temperature, std::holds_alternative<Dirichlet>(law)};
-                };
+                const auto& law = boundary_override(component.boundaries, surface, m.surfaces[surface].condition);
+                auto ambient
+                    = [&](const Facet& patch) { return sample_boundary_temperature(law, patch, temperature, time, r); };
                 const auto record = contacts.find(id);
                 if (record == contacts.end())
                     return ambient(facet);
@@ -44,9 +32,13 @@ namespace mhs::solver {
                     const auto& c = project.contacts()[index];
                     const auto other = c.left == i ? c.right : c.left;
                     const auto other_id = c.left == i ? c.right_facet : c.left_facet;
-                    const auto difference = contact_side(project, other, other_id).temperature(state) - temperature;
-                    const auto t
-                        = temperature + difference * r / contact_resistance(r, sample_r(other, other_id), c.resistance);
+                    const double other_temperature = contact_side(project, other, other_id).temperature(state);
+                    const auto& asset = project.components()[other].asset;
+                    const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&asset);
+                    const double other_r = fom ? boundary_resistance(**fom, other_id, other_temperature, time)
+                                               : std::get<std::shared_ptr<const Erom>>(asset)->R[other_id];
+                    const auto t = temperature
+                        + (other_temperature - temperature) * r / contact_resistance(r, other_r, c.resistance);
                     if (point) {
                         const auto u = facet.axis == Axis::X ? 1 : 0, v = facet.axis == Axis::Z ? 1 : 2;
                         const auto a = (*point)[u] + component.offset[u], b = (*point)[v] + component.offset[v];

@@ -30,4 +30,13 @@ namespace mhs::compiler {
     // Later regions take precedence. Interior facets always have the invalid tag.
     mhs::core::Vector<SurfaceTag> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
         const mhs::core::Vector<TaggedSurfaceRegion>& regions, SurfaceTag fallback = mhs::core::invalid_id);
+    // Temporary traversal order for consumers that process one surface at a time.
+    inline auto group_exterior_facets(const model::Fom& fom)
+    {
+        core::Vector<core::Vector<model::FacetId>> groups(fom.surfaces.size());
+        for (std::size_t i = 0; i < fom.facet_surface.size(); ++i)
+            if (const auto id = fom.facet_surface[i]; id != core::invalid_id)
+                groups[id].push_back(static_cast<model::FacetId>(i));
+        return groups;
+    }
 } // namespace mhs::compiler

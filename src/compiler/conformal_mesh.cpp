@@ -53,7 +53,7 @@ namespace mhs::compiler {
                     const auto& volume = volumes[*owner];
                     model.cell_material.push_back(volume.material);
                     if (volume.source != invalid_id)
-                        model.source_terms.push_back({cell_id, volume.source, cell.volume(), center});
+                        model.source_terms.push_back({cell_id, volume.source});
                     for (auto& probe : model.point_probes)
                         if (probe.point[0] >= cell.min[0] && probe.point[0] <= cell.max[0]
                             && probe.point[1] >= cell.min[1] && probe.point[1] <= cell.max[1]

@@ -48,7 +48,7 @@ namespace mhs::model {
             }
 
             std::uint32_t u32() { return scalar<std::uint32_t>(); }
-            double f64() { return std::bit_cast<double>(scalar<std::uint64_t>()); }
+            double f64() { return scalar<double>(); }
 
             std::string name() { return bytes(u32()); }
 
@@ -56,8 +56,7 @@ namespace mhs::model {
             {
                 check_count(static_cast<std::uint64_t>(rows) * cols, 8);
                 core::Matrix<double> value(rows, cols);
-                // The on-disk representation is IEEE binary64, little-endian, row-major.
-                doubles({value.data(), static_cast<std::size_t>(rows) * cols});
+                values(erom_codec::elements(value));
                 return value;
             }
 
@@ -65,23 +64,16 @@ namespace mhs::model {
             {
                 check_count(count, 8);
                 core::Vector<double> value(count);
-                doubles(value);
+                values(std::span(value));
                 return value;
             }
 
             void finish() const { require(remaining_ == 0, "unexpected trailing data"); }
 
         private:
-            void doubles(std::span<double> values)
+            template <typename T> void values(std::span<T> data)
             {
-                if constexpr (std::endian::native == std::endian::little) {
-                    if (!values.empty())
-                        read(reinterpret_cast<char*>(values.data()), values.size_bytes());
-                }
-                else {
-                    for (auto& x : values)
-                        x = f64();
-                }
+                erom_codec::transfer(data, [this](char* p, std::size_t n) { read(p, n); });
             }
 
             void read(char* buffer, std::size_t count)
@@ -94,8 +86,8 @@ namespace mhs::model {
             {
                 check_count(1, sizeof(T));
                 T value;
-                read(reinterpret_cast<char*>(&value), sizeof(T));
-                return erom_codec::little_endian(value);
+                values(std::span(&value, 1));
+                return value;
             }
 
             std::ifstream input_;
@@ -203,7 +195,7 @@ namespace mhs::model {
         }
         reader.check_count(ng, 16);
         for (std::size_t i = 0; i < ng; ++i) {
-            EromSurface surface {{reader.u32(), reader.name(), {}}, std::nullopt};
+            EromSurface surface {reader.u32(), reader.name(), {}, std::nullopt};
             const auto trained = reader.u32();
             require(trained <= 1, "invalid surface training flag");
             if (trained)

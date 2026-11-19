@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <string>
 
 namespace mhs::model {
     struct EromSource {
@@ -26,7 +27,10 @@ namespace mhs::model {
         double ambient = 300;
     };
 
-    struct EromSurface : Surface {
+    struct EromSurface {
+        SurfaceId id = core::invalid_id;
+        std::string name;
+        core::Vector<FacetId> facets;
         std::optional<EromSurfaceTraining> training;
     };
 

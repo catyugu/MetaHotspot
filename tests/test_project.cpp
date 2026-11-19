@@ -49,9 +49,9 @@ namespace {
         Facet left {Axis::X, -1, 0, {0, 1, 0, 1}};
         Facet right {Axis::X, 1, 1, {0, 1, 0, 1}};
         e->facets = left_open ? core::Vector<Facet> {left, right} : core::Vector<Facet> {right, left};
-        e->surfaces = {{{7, "left", {left_open ? 0u : 1u}},
+        e->surfaces = {{7, "left", {left_open ? 0u : 1u},
                            left_open ? std::optional {EromSurfaceTraining {1, 10, 2, 310}} : std::nullopt},
-            {{9, "right", {left_open ? 1u : 0u}}, EromSurfaceTraining {1, 10, 1, 330}}};
+            {9, "right", {left_open ? 1u : 0u}, EromSurfaceTraining {1, 10, 1, 330}}};
         e->reference_temperature = reference;
         e->uniform_temperature_mode = {1};
         e->sources = {{3, "first", 0}, {5, "second", 1}};

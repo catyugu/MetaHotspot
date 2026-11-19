@@ -36,12 +36,15 @@ namespace mhs::model {
     // Compiled laws are assigned independently to canonical exterior FacetIds.
     using BoundaryCondition = std::variant<Dirichlet, Neumann, Convection>;
 
-    // Midpoint quadrature on a physical source subvolume.
+    struct FomSurface {
+        std::string name;
+        BoundaryCondition condition;
+    };
+
+    // Midpoint quadrature on the owning cell.
     struct SourceTerm {
         CellId cell = mhs::core::invalid_id;
         SourceId source = mhs::core::invalid_id;
-        double weight;
-        Vec3 point;
     };
 
     struct PointProbe {
@@ -56,10 +59,9 @@ namespace mhs::model {
         mhs::core::Vector<MaterialId> cell_material;
         mhs::core::Vector<MaterialProps> material_table;
         mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
-        mhs::core::Vector<BoundaryCondition> boundary_conditions; // indexed by SurfaceId
         mhs::core::Vector<SourceTerm> source_terms;
-        mhs::core::Vector<SurfaceId> facet_surface; // geometric identity, independent of the thermal law
-        mhs::core::Vector<Surface> surfaces;
+        mhs::core::Vector<SurfaceId> facet_surface; // invalid_id on interior facets
+        mhs::core::Vector<FomSurface> surfaces; // indexed by SurfaceId
         FluidModel fluid;
 
         double reference_temperature = 300.0;

@@ -129,16 +129,14 @@ namespace mhs::compiler {
             const auto& boundary = definition.thermal_boundaries[i];
             const auto id = static_cast<mhs::model::SurfaceId>(i);
             auto name = boundary.name.empty() ? "boundary " + std::to_string(i) : boundary.name;
-            model.surfaces.push_back({id, std::move(name), {}});
-            model.boundary_conditions.push_back(compile_thermal_boundary(boundary.condition, symbols));
+            model.surfaces.push_back({std::move(name), compile_thermal_boundary(boundary.condition, symbols)});
             for (const auto& region : boundary.regions) {
                 cuts.push_back(region);
                 surface_regions.push_back({region, id});
             }
         }
         const auto fallback_surface = static_cast<mhs::model::SurfaceId>(model.surfaces.size());
-        model.surfaces.push_back({fallback_surface, "default", {}});
-        model.boundary_conditions.push_back(compile_thermal_boundary(definition.default_thermal_boundary, symbols));
+        model.surfaces.push_back({"default", compile_thermal_boundary(definition.default_thermal_boundary, symbols)});
         mhs::core::Vector<TaggedSurfaceRegion> fluid_regions;
         for (std::size_t id = 0; id < definition.fluid_boundaries.size(); ++id)
             for (const auto& region : definition.fluid_boundaries[id].regions) {
@@ -149,9 +147,6 @@ namespace mhs::compiler {
         build_cell_facet_incidence(model.discrete);
 
         model.facet_surface = assign_exterior_regions(model.discrete, surface_regions, fallback_surface);
-        for (std::size_t i = 0; i < model.facet_surface.size(); ++i)
-            if (const auto surface = model.facet_surface[i]; surface != mhs::core::invalid_id)
-                model.surfaces[surface].facets.push_back(static_cast<mhs::model::FacetId>(i));
 
         // Hydraulic boundary assignments share the same canonical FacetIds.
         auto fluid_tags = assign_exterior_regions(model.discrete, fluid_regions);

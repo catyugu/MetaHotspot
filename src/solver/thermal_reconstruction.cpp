@@ -5,17 +5,18 @@
 #include <span>
 
 namespace mhs::solver {
+    BoundarySample sample_boundary_temperature(const model::BoundaryCondition& condition, const model::Facet& patch,
+        double temperature, double time, double resistance)
+    {
+        return {evaluate_boundary(condition, patch, temperature, time, resistance).temperature,
+            std::holds_alternative<model::Dirichlet>(condition)};
+    }
+
     namespace {
-        BoundarySample exterior_sample(const model::Fom& model, std::span<const double> temperature, double time,
-            model::CellId cell, model::FacetId id)
+        BoundarySample exterior_sample(const model::Fom& model, double temperature, double time, model::FacetId id)
         {
-            const auto& facet = model.discrete.facets[id];
-            const auto axis = static_cast<std::size_t>(facet.axis);
-            const auto& condition = model.boundary_conditions[model.facet_surface[id]];
-            const double k = cell_conductivity(model, cell, axis, temperature[cell], time);
-            const auto trace
-                = evaluate_boundary(condition, facet, temperature[cell], time, boundary_resistance(model, id, k));
-            return {trace.temperature, std::holds_alternative<model::Dirichlet>(condition)};
+            return sample_boundary_temperature(model.surfaces[model.facet_surface[id]].condition,
+                model.discrete.facets[id], temperature, time, boundary_resistance(model, id, temperature, time));
         }
 
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
@@ -52,7 +53,7 @@ namespace mhs::solver {
                     continue;
                 const auto axis = static_cast<std::size_t>(facet.axis);
                 const auto trace = sample_boundary ? sample_boundary(id, nullptr)
-                                                   : exterior_sample(model, temperature, time, cell, id);
+                                                   : exterior_sample(model, temperature[cell], time, id);
                 gradient[axis] += facet.normal * facet.area() * trace.temperature;
             }
             const auto volume = model.discrete.cells[cell].volume();
@@ -72,7 +73,7 @@ namespace mhs::solver {
             if (!model.discrete.cell_facets[id].exterior() || !facet.contains(p))
                 continue;
             const auto trace
-                = sample_boundary ? sample_boundary(id, &p) : exterior_sample(model, temperature, time, cell, id);
+                = sample_boundary ? sample_boundary(id, &p) : exterior_sample(model, temperature[cell], time, id);
             sum += trace.temperature;
             ++count;
             if (trace.dirichlet) {

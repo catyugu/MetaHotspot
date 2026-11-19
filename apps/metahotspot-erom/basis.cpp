@@ -108,10 +108,13 @@ namespace mhs::app::erom {
         const Vector upper = project.parameters(&model::EromSurfaceTraining::maximum);
         const Vector log_lower = lower.array().log(), log_upper = upper.array().log();
         Vector diagonal = Vector::Zero(n);
-        project.add_boundary(diagonal, project.conductances(lower));
+        Vector closure(nb);
+        project.set_conductances(closure, lower);
+        project.add_boundary(diagonal, closure);
         const Sparse minimum = add_diagonal(K, diagonal);
         diagonal.setZero();
-        project.add_boundary(diagonal, project.conductances(upper));
+        project.set_conductances(closure, upper);
+        project.add_boundary(diagonal, closure);
         const Sparse maximum = add_diagonal(K, diagonal);
         const auto shifts = matching_shifts(minimum, maximum, capacity, tolerance, statistics);
         const auto passive = passive_inputs(project, lower.size(), regions);
@@ -137,16 +140,15 @@ namespace mhs::app::erom {
                     for (Eigen::Index i = 0; i < h.size(); ++i)
                         h[i] = std::clamp(
                             std::exp(std::lerp(log_lower[i], log_upper[i], uniform(random))), lower[i], upper[i]);
-                    const Vector closure = project.conductances(h);
+                    project.set_conductances(closure, h);
                     diagonal = shifted_capacity;
                     project.add_boundary(diagonal, closure);
                     if (is_passive) {
                         const auto [group, region] = passive[port - powered];
                         ambient.setZero();
-                        project.set_conductances(ambient, group, h[group]);
-                        for (Eigen::Index row = 0; row < nb; ++row)
-                            if (regions[project.boundary_cells[row]] != region)
-                                ambient[row] = 0;
+                        for (const auto id : project.asset.surfaces[group].facets)
+                            if (regions[project.boundary_cells[id]] == region)
+                                ambient[id] = closure[id];
                         g.setZero();
                         project.add_boundary(g, ambient);
                         norm = g.norm();

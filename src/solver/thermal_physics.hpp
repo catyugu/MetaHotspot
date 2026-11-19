@@ -24,6 +24,13 @@ namespace mhs::solver {
     // Unit-area Fourier conduction resistance; no fluid/interface model involved.
     inline double side_thermal_resistance(double d, double k) { return d / k; }
 
+    inline double source_power(const model::Fom& fom, const model::SourceTerm& term, double t, double time)
+    {
+        const auto& cell = fom.discrete.cells[term.cell];
+        const auto p = cell.center();
+        return cell.volume() * fom.heat_source_table[term.source].eval({p[0], p[1], p[2], t, time});
+    }
+
     inline double cell_conductivity(
         const model::Fom& fom, model::CellId cell, std::size_t axis, double temperature, double time)
     {
@@ -37,6 +44,14 @@ namespace mhs::solver {
         const auto cell = fom.discrete.cell_facets[id].owner();
         const auto axis = static_cast<std::size_t>(fom.discrete.facets[id].axis);
         return side_thermal_resistance(fom.discrete.cells[cell].size()[axis] / 2, k);
+    }
+
+    inline double boundary_resistance(const model::Fom& fom, model::FacetId id, double temperature, double time)
+    {
+        const auto& facet = fom.discrete.facets[id];
+        return boundary_resistance(fom, id,
+            cell_conductivity(
+                fom, fom.discrete.cell_facets[id].owner(), static_cast<std::size_t>(facet.axis), temperature, time));
     }
 
     inline double convection_conductance(double area, double h, double resistance)
