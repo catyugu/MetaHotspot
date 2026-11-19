@@ -10,40 +10,29 @@ namespace mhs::app::erom {
     using Vector = Eigen::VectorXd;
     using Sparse = Eigen::SparseMatrix<double, Eigen::RowMajor>;
 
-    struct SurfaceData {
-        model::SurfaceId id;
-        std::string name;
-        std::optional<model::EromSurfaceTraining> training;
-        core::Vector<model::Facet> facets;
-        core::Vector<model::CellId> cells;
-        core::Vector<double> resistance;
+    struct Prepared {
+        Sparse K, L;
+        Vector capacity;
+        Matrix B;
+        model::Erom asset;
+        core::Vector<model::CellId> boundary_cells; // indexed by connectable FacetId
     };
 
-    // All conductance vectors use compact indices into the distinct boundary cells.
+    // Conductance vectors use compact indices into the distinct boundary cells.
     struct HtcOperators {
-        explicit HtcOperators(const core::Vector<SurfaceData>& surfaces);
+        HtcOperators(const Prepared& project, std::size_t group_count);
 
         void add_conductance(Eigen::Ref<Vector> diagonal, std::size_t group, double h) const;
         Vector diagonal(const Vector& h) const;
         Vector parameters(double model::EromSurfaceTraining::* field) const;
 
-        core::Vector<const SurfaceData*> groups;
+        const model::Erom& asset;
+        std::size_t group_count;
         core::Vector<Eigen::Index> cells;
-        core::Vector<core::Vector<Eigen::Index>> facet_rows;
+        core::Vector<Eigen::Index> facet_rows;
     };
 
-    struct Prepared {
-        Sparse K;
-        Vector capacity;
-        Matrix B;
-        Sparse L;
-        core::Vector<SurfaceData> surfaces;
-        core::Vector<model::EromSource> sources;
-        core::Vector<model::EromOutput> outputs;
-        double reference;
-    };
-
-    Prepared prepare(const model::Fom& fom, const HtcRanges& ranges);
+    Prepared prepare(const model::Fom& fom, const model::FomDefinition& definition, const HtcRanges& ranges);
 
     // Application-local numerical kernels; no extraction implementation enters the SDK.
     Sparse add_diagonal(const Sparse& matrix, const Vector& diagonal);

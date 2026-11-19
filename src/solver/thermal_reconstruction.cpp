@@ -6,25 +6,15 @@
 
 namespace mhs::solver {
     namespace {
-        double conductivity(const mhs::model::Fom& model, std::span<const double> temperature, mhs::model::CellId cell,
-            double time, int axis)
-        {
-            const auto p = model.discrete.cells[cell].center();
-            const mhs::expression::FieldContext ctx {p[0], p[1], p[2], temperature[cell], time};
-            const auto& m = model.material_table[model.cell_material[cell]];
-            return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval(ctx);
-        }
-
         BoundarySample exterior_sample(const model::Fom& model, std::span<const double> temperature, double time,
             model::CellId cell, model::FacetId id)
         {
             const auto& facet = model.discrete.facets[id];
             const auto axis = static_cast<std::size_t>(facet.axis);
-            const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
-            const double d = model.discrete.cells[cell].size()[axis] / 2;
-            const double k = conductivity(model, temperature, cell, time, static_cast<int>(facet.axis));
+            const auto& condition = model.boundary_conditions[model.facet_surface[id]];
+            const double k = cell_conductivity(model, cell, axis, temperature[cell], time);
             const auto trace
-                = evaluate_boundary(condition, facet, temperature[cell], time, side_thermal_resistance(d, k));
+                = evaluate_boundary(condition, facet, temperature[cell], time, boundary_resistance(model, id, k));
             return {trace.temperature, std::holds_alternative<model::Dirichlet>(condition)};
         }
 
@@ -35,8 +25,9 @@ namespace mhs::solver {
         {
             using namespace mhs::core;
             using namespace mhs::model;
-            const Vec3 k {conductivity(model, temperature, cell, time, 0),
-                conductivity(model, temperature, cell, time, 1), conductivity(model, temperature, cell, time, 2)};
+            const Vec3 k {cell_conductivity(model, cell, 0, temperature[cell], time),
+                cell_conductivity(model, cell, 1, temperature[cell], time),
+                cell_conductivity(model, cell, 2, temperature[cell], time)};
             Vec3 gradient {};
             for (auto id : model.discrete.incident_facets(cell)) {
                 const auto& f = model.discrete.facets[id];
@@ -45,7 +36,7 @@ namespace mhs::solver {
                     continue;
                 const auto axis = static_cast<std::size_t>(f.axis);
                 const auto neighbor = cells.minus == cell ? cells.plus : cells.minus;
-                const double k_neighbor = conductivity(model, temperature, neighbor, time, static_cast<int>(f.axis));
+                const double k_neighbor = cell_conductivity(model, neighbor, axis, temperature[neighbor], time);
                 const auto [r_minus, r_plus] = cells.minus == cell
                     ? interior_facet_resistances(model, id, k[axis], k_neighbor)
                     : interior_facet_resistances(model, id, k_neighbor, k[axis]);

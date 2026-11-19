@@ -32,16 +32,16 @@ The compiler locates opposing coplanar facets and couples their overlap by TPFA.
 `ProjectDefinition::contact_resistance` accepts area-specific contact
 resistances in m² K/W keyed by ascending component IDs. A connected patch
 replaces the environment over its covered area. The remaining area keeps the
-surface's environment. Geometric surface identity (`facet_surface`) is independent
-of FOM thermal-condition IDs (`facet_thermal_condition`). Instance overrides use
-SurfaceId. Contacts with untrained EROM surfaces generate a
-warning and leave the environment on both sides in effect. Fluid advection and
+surface's environment. FOMs use `facet_surface` to index both the geometric
+group and its thermal law. Instance overrides use `SurfaceId`. Contacts with
+untrained EROM surfaces log a warning and leave both environment laws in effect. Fluid advection and
 hydraulic boundary terms operate within the individual FOM.
 
-The EROM asset stores an initial modal state and may include the mode response
-to a uniform change in initial temperature. If this response is absent, a
-transient study with a different initial temperature requires an explicit
-initial modal state. FOM and EROM instances share the same output timeline. `Solution::output_traces`
+An EROM starts at zero modal state when the study uses its reference
+temperature. For a different uniform initial temperature, the solver scales
+the stored uniform mode by the temperature difference. The caller may also
+supply an explicit project initial state. FOM and EROM instances share the
+same output timeline. `Solution::output_traces`
 contains `OutputTrace` values keyed by component and output ID. Set the C++ option
 `store_snapshot_states=false` to retain these traces and the final state without
 storing every full state snapshot. The default preserves full histories.
@@ -64,8 +64,10 @@ write_erom("package.mherom", result.asset);
 ```
 
 A group's ID is its index in `FomDefinition::thermal_boundaries`. The default
-group has ID `thermal_boundaries.size()`. Training uses the compiled exterior
-facets of each selected group. Groups may cover full faces or parts of faces.
+group has ID `thermal_boundaries.size()`. Every region of a selected group
+must lie on the exterior of the FOM. Groups may cover full faces or parts of
+faces. Groups that select interior faces or mix interior and exterior faces
+are rejected.
 Supply positive HTC limits in W/(m² K) for each training group. All compiled
 groups with nonzero HTC must be selected. A selected adiabatic group becomes
 connectable with zero default HTC. The original constant HTC and ambient are
@@ -118,7 +120,7 @@ The measured error is the temperature difference divided by the larger of one
 kelvin and the magnitude of the FOM temperature rise. Accuracy after embedding
 depends on the attached geometry and loads.
 
-## Native .mherom v1
+## Native .mherom v2
 
 The binary stream is little-endian and unpadded. Counts and IDs are unsigned
 32-bit integers. Scalars and row-major matrix entries are IEEE 754 binary64.
@@ -126,14 +128,14 @@ Strings are UTF-8 bytes preceded by a 32-bit byte count.
 
 | Order | Record | Layout |
 | --- | --- | --- |
-| 1 | Header | Eight bytes `MHEROM\r\n`, version `1`, then counts `n, ns, no, nb, nf, ng` |
-| 2 | Temperature and training | Reference and initial temperature, training tolerance, uniform-initialization flag |
+| 1 | Header | Eight bytes `MHEROM\r\n`, version `2`, then counts `n, ns, no, nb, nf, ng` |
+| 2 | Temperature | Reference temperature |
 | 3 | Operators | `K[n,n], C[n,n], B[n,ns], L[no,n], Vb[nb,n], R[nb]` |
-| 4 | Initialization | Modal initial state of length `n`, followed by length-`n` uniform mode if the flag is `1` |
+| 4 | Initialization | Uniform mode of length `n` |
 | 5 | Facets | `nf` records of axis (0/1/2), outward normal (0 for −, 1 for +), plane, and four tangent bounds |
 | 6 | Surfaces | `ng` records of ID, name, trained flag, four scalars if trained (HTC min/max/default and ambient), facet count, and facet IDs |
 | 7 | Sources | `ns` records of ID, name and default power in watts |
-| 8 | Outputs | `no` records of ID, name, kind (0 for point, 1 for source average), temperature offset, and either three coordinates or the source ID |
+| 8 | Outputs | `no` records of ID, name, and source ID. Point outputs use `0xffffffff` as the source ID, followed by three coordinates |
 
 `n` is the modal order. The first `nb` facets correspond one-to-one to the
 rows of `Vb` and the positive area-specific half-cell resistances `R`. The
@@ -141,9 +143,10 @@ remaining facets describe the outline for diagnostic contact detection. Every
 facet belongs to one surface. All HTC groups index the same `Vb` and `R`. C++ stores their training ranges and
 default environment as `EromSurfaceTraining` in `Erom::surface_training`.
 The operators use `C dq/dt + Kq = BP + f_external`, with internal surface-side
-temperature `T_ref + Vb q` and output temperature `T_offset + L q`. The format
+temperature `T_ref + Vb q` and output temperature `T_ref + L q`. The format
 stores no mesh or full-field basis. The native reader checks the version,
-truncation, numeric values, dimensions and facet ownership.
+truncation, numeric values, dimensions and facet ownership. Regenerate v1
+assets with the current extractor before loading them.
 
 FloTHERM exports use a separate format. See
 [`bci_rom_testcase1`](../playground/bci_rom_testcase1/) and the archived

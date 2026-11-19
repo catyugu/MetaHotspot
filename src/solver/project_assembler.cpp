@@ -12,13 +12,6 @@ namespace mhs::solver {
         using namespace model;
         using core::Vector;
 
-        struct Block {
-            const Fom* fom = nullptr;
-            const Erom* erom = nullptr;
-            std::unique_ptr<ThermalAssembler> thermal;
-            Vector<BoundaryCondition> erom_defaults;
-        };
-
         std::size_t slot(const core::CSRMatrix<double>& matrix, std::size_t row, std::size_t col)
         {
             const auto columns = matrix.col_idx();
@@ -68,36 +61,20 @@ namespace mhs::solver {
         explicit Workspace(const Project& source) : project(source)
         {
             for (const auto& component : project.components()) {
-                auto& block = blocks.emplace_back();
-                if (const auto* model = std::get_if<std::shared_ptr<const Fom>>(&component.asset)) {
-                    block.fom = model->get();
-                    block.thermal = std::make_unique<ThermalAssembler>(*block.fom);
-                }
-                else {
-                    block.erom = std::get<std::shared_ptr<const Erom>>(component.asset).get();
-                    for (const auto& htc : block.erom->surface_training) {
-                        using expression::CompiledExpression;
-                        if (htc)
-                            block.erom_defaults.push_back(
-                                Convection {CompiledExpression::make_constant(htc->coefficient),
-                                    CompiledExpression::make_constant(htc->ambient)});
-                        else
-                            block.erom_defaults.emplace_back(Neumann {});
-                    }
-                }
+                const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&component.asset);
+                thermal.push_back(fom ? std::make_unique<ThermalAssembler>(**fom) : nullptr);
             }
-
-            single_fom = blocks.size() == 1 && blocks.front().fom;
-            if (single_fom)
+            if (thermal.size() == 1 && thermal.front())
                 return;
             operators = {core::CSRMatrix<double>(pattern(false)), core::CSRMatrix<double>(pattern(true)),
                 Vector<double>(project.dof_count())};
-            for (std::size_t i = 0; i < blocks.size(); ++i)
-                if (const auto* erom = blocks[i].erom)
-                    copy_dense(erom->C, operators.C, project.dof_offset(i));
+            for (std::size_t i = 0; i < thermal.size(); ++i)
+                if (!thermal[i])
+                    copy_dense(erom(i).C, operators.C, project.dof_offset(i));
             // Only reduced-only projects cache a global contact operator: a mixed
             // project's FOM rows would otherwise allocate a mostly empty copy.
-            if (!project.contacts().empty() && std::ranges::all_of(blocks, [](const auto& b) { return b.erom; })) {
+            if (!project.contacts().empty()
+                && std::ranges::none_of(thermal, [](const auto& assembler) { return bool(assembler); })) {
                 assemble_contacts();
                 cached_contact_K.assign(operators.K.values().begin(), operators.K.values().end());
                 cached_contact_f = operators.f;
@@ -109,8 +86,9 @@ namespace mhs::solver {
             for (const auto& c : project.contacts()) {
                 const auto left = contact_side(project, c.left, c.left_facet);
                 const auto right = contact_side(project, c.right, c.right_facet);
-                const auto g
-                    = c.area / (resistance(c.left, c.left_facet) + resistance(c.right, c.right_facet) + c.resistance);
+                const auto g = c.area()
+                    / contact_resistance(
+                        resistance(c.left, c.left_facet), resistance(c.right, c.right_facet), c.resistance);
                 add_block(operators.K, left, left, g);
                 add_block(operators.K, right, right, g);
                 add_block(operators.K, left, right, -g);
@@ -132,10 +110,10 @@ namespace mhs::solver {
                         for (auto j = cols.first; j < cols.first + cols.count; ++j)
                             append(i, static_cast<SparseIndex>(j));
                 };
-                for (std::size_t i = 0; i < blocks.size(); ++i) {
+                for (std::size_t i = 0; i < thermal.size(); ++i) {
                     const auto offset = project.dof_offset(i);
-                    if (const auto& thermal = blocks[i].thermal) {
-                        const auto& matrix = capacity ? thermal->operators().C : thermal->operators().K;
+                    if (const auto& assembler = thermal[i]) {
+                        const auto& matrix = capacity ? assembler->operators().C : assembler->operators().K;
                         for (std::size_t r = 0; r < matrix.rows(); ++r)
                             for (auto j = matrix.row_ptr()[r]; j < matrix.row_ptr()[r + 1]; ++j)
                                 append(offset + r, static_cast<SparseIndex>(offset) + matrix.col_idx()[j]);
@@ -184,51 +162,57 @@ namespace mhs::solver {
             return std::make_shared<const core::CSRPattern>(size, size, std::move(ptr), std::move(indices));
         }
 
-        double resistance(std::size_t i, FacetId facet) const
+        const Erom& erom(std::size_t i) const
         {
-            const auto& b = blocks[i];
-            return b.fom ? b.thermal->resistance(facet) : b.erom->R[facet];
+            return *std::get<std::shared_ptr<const Erom>>(project.components()[i].asset);
         }
 
-        void erom_environment(std::size_t i, FacetId id, const Facet& facet, const BoundaryCondition& law,
-            std::span<const double> state, double time)
+        double resistance(std::size_t i, FacetId facet) const
         {
-            if (is_adiabatic(law))
-                return;
-            const auto dofs = contact_side(project, i, id);
-            const auto r = resistance(i, id);
-            const auto temperature = dofs.temperature(state);
-            for (const auto& patch : uncovered_patches(project.uncovered(i), id, facet)) {
-                const auto trace = evaluate_boundary(law, patch, temperature, time, r);
-                add_block(operators.K, dofs, dofs, trace.conductance);
-                add_load(operators.f, dofs, trace.load - trace.conductance * dofs.reference);
-            }
+            return thermal[i] ? thermal[i]->resistance(facet) : erom(i).R[facet];
+        }
+
+        void erom_environment(std::size_t i, FacetId id, const Erom& e, const EromSurfaceTraining& training,
+            const BoundaryCondition* law, std::span<const double> state, double time)
+        {
+            const auto side = contact_side(project, i, id);
+            const double r = e.R[id];
+            const double temperature = law ? side.temperature(state) : 0;
+            const auto [conductance, load]
+                = boundary_terms(project.facet_contacts(i), id, e.facets[id], [&](const Facet& patch) {
+                      if (law)
+                          return evaluate_boundary(*law, patch, temperature, time, r);
+                      const double g = convection_conductance(patch.area(), training.coefficient, r);
+                      return BoundaryTrace {0, g, g * training.ambient};
+                  });
+            if (conductance != 0)
+                add_block(operators.K, side, side, conductance);
+            if (const double rhs = load - conductance * side.reference; rhs != 0)
+                add_load(operators.f, side, rhs);
         }
 
         const Operators& assemble(std::span<const double> state, double time)
         {
             if (state.size() != project.dof_count())
                 throw std::invalid_argument("project assembly: state size differs from DOF count");
-            if (single_fom)
-                return blocks.front().thermal->assemble(
-                    state, time, project.uncovered(0), project.components().front().boundaries);
+            if (thermal.size() == 1 && thermal.front())
+                return thermal.front()->assemble(state, time, {}, project.components().front().boundaries);
 
             std::ranges::fill(operators.K.values(), 0.0);
             std::ranges::fill(operators.f, 0.0);
-            for (std::size_t i = 0; i < blocks.size(); ++i) {
-                const auto& b = blocks[i];
+            for (std::size_t i = 0; i < thermal.size(); ++i) {
                 const auto& component = project.components()[i];
                 const auto offset = project.dof_offset(i);
-                if (b.fom) {
-                    const auto& local = b.thermal->assemble(
-                        state.subspan(offset, project.dof_size(i)), time, project.uncovered(i), component.boundaries);
+                if (const auto& assembler = thermal[i]) {
+                    const auto& local = assembler->assemble(state.subspan(offset, project.dof_size(i)), time,
+                        project.facet_contacts(i), component.boundaries);
                     copy_sparse(local.K, operators.K, offset);
                     copy_sparse(local.C, operators.C, offset);
                     std::ranges::copy(local.f, operators.f.begin() + offset);
                     continue;
                 }
 
-                const auto& e = *b.erom;
+                const auto& e = erom(i);
                 copy_dense(e.K, operators.K, offset);
                 for (std::size_t s = 0; s < e.sources.size(); ++s) {
                     const auto& source = e.sources[s];
@@ -240,11 +224,14 @@ namespace mhs::solver {
                         operators.f[offset + j] += e.B(j, s) * power;
                 }
                 for (std::size_t s = 0; s < e.surfaces.size(); ++s)
-                    if (e.surface_training[s]) {
+                    if (const auto& training = e.surface_training[s]) {
                         const auto& surface = e.surfaces[s];
-                        const auto& law = boundary_override(component.boundaries, surface.id, b.erom_defaults[s]);
+                        const auto it = component.boundaries.find(surface.id);
+                        const auto* law = it == component.boundaries.end() ? nullptr : &it->second;
+                        if (law ? is_adiabatic(*law) : training->coefficient == 0)
+                            continue;
                         for (const auto id : surface.facets)
-                            erom_environment(i, id, e.facets[id], law, state, time);
+                            erom_environment(i, id, e, *training, law, state, time);
                     }
             }
 
@@ -260,10 +247,9 @@ namespace mhs::solver {
         }
 
         const Project& project;
-        Vector<Block> blocks;
+        Vector<std::unique_ptr<ThermalAssembler>> thermal;
         Operators operators;
         Vector<double> cached_contact_K, cached_contact_f;
-        bool single_fom = false;
     };
 
     ProjectAssembler::ProjectAssembler(const model::Project& project) : workspace_(std::make_unique<Workspace>(project))

@@ -53,12 +53,9 @@ namespace {
         e->surface_training = {left_open ? std::optional {EromSurfaceTraining {1, 10, 2, 310}} : std::nullopt,
             EromSurfaceTraining {1, 10, 1, 330}};
         e->reference_temperature = reference;
-        e->initial_temperature = reference;
-        e->initial_state = {0};
         e->uniform_temperature_mode = {1};
         e->sources = {{3, "first", 0}, {5, "second", 1}};
-        e->outputs = {{17, "sensor", EromOutputKind::PointTemperature, reference, Vec3 {0.5, 0.25, 0.5}},
-            {25, "source mean", EromOutputKind::SourceTemperature, reference, std::nullopt, 3}};
+        e->outputs = {{17, "sensor", Vec3 {0.5, 0.25, 0.5}}, {25, "source mean", std::nullopt, 3}};
         return e;
     }
 
@@ -112,8 +109,8 @@ TEST(Project, MatchingAndNonmatchingFomContactConserveHeat)
         const auto& ops = assembler.assemble(t, 0);
         double area = 0;
         for (const auto& patch : project.contacts()) {
-            area += patch.area;
-            EXPECT_NEAR(patch.area, 1.0 / count, 1e-14);
+            area += patch.area();
+            EXPECT_NEAR(patch.area(), 1.0 / count, 1e-14);
         }
         EXPECT_NEAR(area, 1.0, 1e-14);
         EXPECT_NEAR(ops.K.coeff(0, 0), 2.8, 1e-14);
@@ -135,7 +132,7 @@ TEST(Project, PartialMixedContactUsesExposedBoundaryAndReferenceOffsets)
     const auto project = mhs::compiler::compile_project(
         {{instance(1, cube(false, true)), instance(2, erom, {1, 0.5, 0})}, {{{1, 2}, 0.25}}});
     ASSERT_EQ(project.contacts().size(), 1u);
-    EXPECT_DOUBLE_EQ(project.contacts()[0].area, 0.5);
+    EXPECT_DOUBLE_EQ(project.contacts()[0].area(), 0.5);
     EXPECT_EQ(project.output_position(2, 17), (Vec3 {1.5, 0.75, 0.5}));
     EXPECT_FALSE(project.output_position(2, 25));
     EXPECT_EQ(erom->outputs[0].point, (Vec3 {0.5, 0.25, 0.5}));
@@ -195,13 +192,13 @@ TEST(Project, UntrainedContactWarnsAndKeepsTheEnvironment)
     const auto project
         = mhs::compiler::compile_project({{instance(21, cube()), instance(42, modal(280, false), {1, 0, 0})}, {}});
     EXPECT_TRUE(project.contacts().empty());
-    ASSERT_EQ(project.warnings().size(), 1u);
-    const auto& message = project.warnings()[0];
+#if MHS_LOG_COMPILED_LEVEL <= 3
+    const auto message = capture.log.str();
+    const auto warning = message.find("thermal contact is ignored");
+    ASSERT_NE(warning, std::string::npos);
+    EXPECT_EQ(message.find("thermal contact is ignored", warning + 1), std::string::npos);
     EXPECT_NE(message.find("21 (boundary 1)"), std::string::npos);
     EXPECT_NE(message.find("42 (left)"), std::string::npos);
-    EXPECT_NE(message.find("thermal contact is ignored"), std::string::npos);
-#if MHS_LOG_COMPILED_LEVEL <= 3
-    EXPECT_NE(capture.log.str().find(message), std::string::npos);
 #endif
     const auto result = solver::solve(project);
     EXPECT_NEAR(result.state[0], 350, 1e-7);

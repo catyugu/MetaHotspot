@@ -1,10 +1,11 @@
-#include "extraction.hpp"
+#include "erom/extraction.hpp"
 
 #include <bit>
 #include <fstream>
 #include <limits>
 #include <random>
 #include <stdexcept>
+#include <string_view>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -79,18 +80,14 @@ namespace mhs::app::erom {
         } while (std::filesystem::exists(temporary));
         const Temporary cleanup {temporary};
         Writer writer(temporary);
-        writer.count(1);
+        writer.count(2);
         for (const auto count :
             {e.K.rows(), e.sources.size(), e.outputs.size(), e.Vb.rows(), e.facets.size(), e.surfaces.size()})
             writer.count(count);
         writer.scalar(e.reference_temperature);
-        writer.scalar(e.initial_temperature);
-        writer.scalar(e.training_tolerance);
-        writer.count(!e.uniform_temperature_mode.empty());
         for (const auto* matrix : {&e.K, &e.C, &e.B, &e.L, &e.Vb})
             writer.matrix(*matrix);
         writer.values(e.R);
-        writer.values(e.initial_state);
         writer.values(e.uniform_temperature_mode);
         for (const auto& facet : e.facets) {
             writer.count(static_cast<std::uint32_t>(facet.axis));
@@ -119,12 +116,9 @@ namespace mhs::app::erom {
         for (const auto& output : e.outputs) {
             writer.count(output.id);
             writer.name(output.name);
-            writer.count(static_cast<std::uint32_t>(output.kind));
-            writer.scalar(output.offset);
+            writer.count(output.source);
             if (output.point)
                 writer.values(*output.point);
-            else
-                writer.count(output.source);
         }
         writer.close();
 #ifdef _WIN32

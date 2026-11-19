@@ -68,7 +68,6 @@ namespace {
         near(e.surface_training[0]->maximum, 1e4);
         near(e.surface_training[1]->maximum, 9);
         near(e.reference_temperature, 295);
-        near(e.initial_temperature, 295);
         for (double r : e.R)
             near(r, 0.25);
         near(e.facets[3].area(), 0.5);
@@ -86,7 +85,6 @@ namespace {
             near(e.L(2, i), v(2, i));
             near(e.B(i, 0), v(0, i));
             near(e.B(i, 1), v(2, i));
-            near(e.initial_state[i], 0);
         }
         for (std::size_t i = 0; i < 3; ++i)
             for (std::size_t j = 0; j < 3; ++j) {

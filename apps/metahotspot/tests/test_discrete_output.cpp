@@ -92,7 +92,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         ASSERT_EQ(model.discrete.facets.size(), 6u);
         for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
             const auto& facet = model.discrete.facets[id];
-            const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
+            const auto& condition = model.boundary_conditions[model.facet_surface[id]];
             if (facet.axis != Axis::X || facet.normal != 1) {
                 EXPECT_TRUE(std::holds_alternative<Neumann>(condition));
                 continue;
@@ -101,11 +101,8 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                 const double T = 280 + 10 * time;
                 const mhs::core::Vector<double> state {T};
                 const auto ops = mhs::solver::assemble_thermal(model, state, time);
-                const auto center = facet.center();
-                const mhs::expression::FieldContext context {center[0], center[1], center[2], T, time};
                 const double d = model.discrete.cells[model.discrete.cell_facets[id].owner()].size()[0] / 2;
-                const double g_cell = facet.area() / d;
-                const auto condensed = mhs::solver::evaluate_boundary(condition, context, facet.area(), g_cell);
+                const auto condensed = mhs::solver::evaluate_boundary(condition, facet, T, time, d);
                 double g, load;
                 if (kind == 0) {
                     const auto& bc = std::get<Dirichlet>(condition);

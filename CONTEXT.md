@@ -38,7 +38,7 @@ IO → (FomDefinition, MeshSpec) → Compiler → Fom/Project → Solver → Sol
 
 - 内部几何一律使用 SI 米。
 - 控制体、唯一有向面片与 CSR 关联构成离散网格；CellId 同时标识控制体与温度状态下标。
-- `DiscreteMesh::facets` 是唯一的积分面片集合，热学与流体边界矩形在几何编译阶段共同切分外表面；`facet_surface` 绑定几何身份，`facet_thermal_condition` 独立绑定类型化 `BoundaryCondition`，两者不可互换。边界表达式中的 `T` 指物理表面温度迹。
+- `DiscreteMesh::facets` 是唯一的积分面片集合，热学与流体边界矩形在几何编译阶段共同切分外表面；`facet_surface` 记录外表面的 `SurfaceId`，用同一 ID 查找几何组和类型化的边界条件。边界表达式中的 `T` 指物理表面温度迹。
 - 当前 TPFA 要求轴对齐控制体的相邻中心沿面法向对齐，并采用对角导热张量；网格由调用方提供。共形体编译路径要求内部 Box 边界落在输入网格平面上。
 - 材料、边界和热源表达式在 setup 阶段编译，热循环中不解析字符串。
 - Layer / Block / Rect / Boundary 的输入顺序属于模型语义，后出现的覆盖先出现的。

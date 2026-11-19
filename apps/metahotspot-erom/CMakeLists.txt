@@ -25,7 +25,6 @@ if(MHS_INSTALL)
 endif()
 
 if(MHS_BUILD_TESTS)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_executable(mhs_erom_check tests/check_embed.cpp)
     target_link_libraries(mhs_erom_check PRIVATE mhs::erom_extraction mhs::compiler mhs::solver mhs_options)
     mhs_stage_runtime(mhs_erom_check)
