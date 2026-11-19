@@ -31,6 +31,9 @@ namespace mhs::compiler {
             return r;
         }
 
+        bool connectable(const Surface&) { return true; }
+        bool connectable(const EromSurface& surface) { return surface.training.has_value(); }
+
         struct Face {
             std::size_t component;
             FacetId id;
@@ -170,15 +173,9 @@ namespace mhs::compiler {
                             throw std::invalid_argument("FOM source laws belong to the model");
                     }
                     project.dof_offsets_.push_back(core::detail::checked_sparse_size(project.dof_count() + size));
-                    auto is_open = [](const auto& surface) {
-                        if constexpr (reduced)
-                            return surface.training.has_value();
-                        else
-                            return true;
-                    };
                     for (const auto& [id, law] : component.boundaries) {
                         if (std::ranges::none_of(asset->surfaces,
-                                [&](const auto& surface) { return surface.id == id && is_open(surface); }))
+                                [&](const auto& surface) { return surface.id == id && connectable(surface); }))
                             throw std::invalid_argument("unknown or non-connectable component surface ID");
                     }
                     if (components.size() <= 1)
@@ -199,7 +196,7 @@ namespace mhs::compiler {
                                 || !std::ranges::all_of(rect, [](double x) { return std::isfinite(x); })
                                 || rect[0] >= rect[1] || rect[2] >= rect[3])
                                 throw std::invalid_argument("component translation exceeds facet precision");
-                            Face face {i, id, &surface, &f, is_open(surface), plane, rect};
+                            Face face {i, id, &surface, &f, connectable(surface), plane, rect};
                             if (f.normal > 0)
                                 positive[axis][plane].push_back(face);
                             else
