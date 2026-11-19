@@ -13,16 +13,38 @@ namespace mhs::solver {
     }
 
     inline std::span<const model::Facet> uncovered_patches(
-        const model::UncoveredPatches& exposed, model::FacetId id, const model::Facet& facet)
+        const model::FacetContacts& contacts, model::FacetId id, const model::Facet& facet)
     {
-        const auto it = exposed.find(id);
-        if (it != exposed.end())
-            return it->second;
+        const auto it = contacts.find(id);
+        if (it != contacts.end())
+            return it->second.exposed;
         return {&facet, 1};
     }
 
     // Unit-area Fourier conduction resistance; no fluid/interface model involved.
     inline double side_thermal_resistance(double d, double k) { return d / k; }
+
+    inline double cell_conductivity(
+        const model::Fom& fom, model::CellId cell, std::size_t axis, double temperature, double time)
+    {
+        const auto p = fom.discrete.cells[cell].center();
+        const auto& m = fom.material_table[fom.cell_material[cell]];
+        return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval({p[0], p[1], p[2], temperature, time});
+    }
+
+    inline double boundary_resistance(const model::Fom& fom, model::FacetId id, double k)
+    {
+        const auto cell = fom.discrete.cell_facets[id].owner();
+        const auto axis = static_cast<std::size_t>(fom.discrete.facets[id].axis);
+        return side_thermal_resistance(fom.discrete.cells[cell].size()[axis] / 2, k);
+    }
+
+    inline double convection_conductance(double area, double h, double resistance)
+    {
+        return std::abs(h) <= 1 ? area * h / (1 + resistance * h) : area / (resistance + 1 / h);
+    }
+
+    inline double contact_resistance(double left, double right, double layer) { return left + right + layer; }
 
     // Fluid bulk-to-wall film resistance, separate from the conductive side law.
     inline double fluid_film_resistance(double nu_over_d, double k) { return 1.0 / (nu_over_d * k); }
@@ -39,17 +61,19 @@ namespace mhs::solver {
         double load = 0.0;
     };
 
-    // Physical law on one boundary integration region. Context holds the cell
-    // temperature and time; conductance is cell-to-surface, in W/K.
-    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition,
-        mhs::expression::FieldContext context, double area, double conductive);
+    BoundaryTrace evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
+        double temperature, double time, double resistance);
 
-    inline BoundaryTrace evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
-        double temperature, double time, double resistance)
+    inline std::pair<double, double> boundary_terms(
+        const model::FacetContacts& contacts, model::FacetId id, const model::Facet& facet, const auto& evaluate)
     {
-        const auto p = patch.center();
-        const double area = patch.area();
-        return evaluate_boundary(condition, {p[0], p[1], p[2], temperature, time}, area, area / resistance);
+        double conductance = 0, load = 0;
+        for (const auto& patch : uncovered_patches(contacts, id, facet)) {
+            const auto trace = evaluate(patch);
+            conductance += trace.conductance;
+            load += trace.load;
+        }
+        return {conductance, load};
     }
 
     inline bool is_adiabatic(const model::BoundaryCondition& condition)

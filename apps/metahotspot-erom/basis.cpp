@@ -88,9 +88,9 @@ namespace mhs::app::erom {
                 if (project.B.row(cell).squaredNorm() > 0)
                     driven[regions[cell]] = true;
             std::set<std::pair<std::size_t, int>> inputs;
-            for (std::size_t i = 0; i < htc.groups.size(); ++i)
-                for (const auto cell : htc.groups[i]->cells)
-                    if (const auto region = regions[cell]; !driven[region])
+            for (std::size_t i = 0; i < htc.group_count; ++i)
+                for (const auto id : project.asset.surfaces[i].facets)
+                    if (const auto region = regions[project.boundary_cells[id]]; !driven[region])
                         inputs.emplace(i, region);
             return {inputs.begin(), inputs.end()};
         }

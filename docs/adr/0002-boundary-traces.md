@@ -21,9 +21,9 @@ cells (one invalid for an exterior surface) and supplies the owning cell. `Facet
 The geometry compiler partitions exterior facets against the union of thermal and
 fluid boundary region cuts **before** building cell-facet incidence. A partially
 covered rectangle creates several Facets, including uncovered pieces. The compiler
-then binds geometric surface IDs to `Fom::facet_surface`, thermal conditions
-independently to `Fom::facet_thermal_condition`
-and fluid boundaries to those same FacetIds. Later regions take precedence within
+then binds exterior FacetIds to `Fom::facet_surface`. The surface ID indexes both
+the thermal boundary condition and the geometric group. Fluid boundaries use
+the same FacetIds. Later regions take precedence within
 each physics. The default thermal condition applies to uncovered exterior facets.
 Internal facet geometry does not depend on exterior boundary assignments.
 
@@ -33,9 +33,8 @@ distance `d`, and facet area `A`, conductive flux is `F = k A (T - lambda) / d`.
 Dirichlet prescribes `lambda` independently of temperature; Neumann satisfies
 `F + A q(lambda) = 0` where positive `q` is inward. Convection equates `F` to
 `A h(lambda) (lambda - T_inf(lambda))`. Boundary expressions receive the surface
-trace as their temperature variable. `evaluate_boundary` accepts an expression
-context, integration area, and cell-to-wall conductance, independently of mesh
-geometry or topology.
+trace as their temperature variable. `evaluate_boundary` takes the integration
+patch, internal temperature, time and area-specific cell-to-wall resistance.
 
 Each local trace is eliminated by static condensation. Trace-independent laws
 use analytic formulas and temperature-dependent laws use a bracketed scalar solve.

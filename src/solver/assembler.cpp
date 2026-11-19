@@ -146,35 +146,32 @@ namespace mhs::solver {
     }
 
     const Operators& ThermalAssembler::assemble(std::span<const double> temperature, double time,
-        const model::UncoveredPatches& exposed, const model::BoundaryOverrides& overrides)
+        const model::FacetContacts& contacts, const model::BoundaryOverrides& overrides)
     {
         assemble_internal(temperature, time);
-        for (std::size_t i = 0; i < model_.facet_thermal_condition.size(); ++i) {
-            const auto condition = model_.facet_thermal_condition[i];
-            if (condition == core::invalid_id)
+        for (std::size_t i = 0; i < model_.facet_surface.size(); ++i) {
+            const auto surface = model_.facet_surface[i];
+            if (surface == core::invalid_id)
                 continue;
-            const auto& law
-                = boundary_override(overrides, model_.facet_surface[i], model_.boundary_conditions[condition]);
+            const auto& law = boundary_override(overrides, surface, model_.boundary_conditions[surface]);
             if (is_adiabatic(law))
                 continue;
             const auto id = static_cast<model::FacetId>(i);
             const auto cell = model_.discrete.cell_facets[id].owner();
             const auto r = resistance(id);
-            for (const auto& patch : uncovered_patches(exposed, id, model_.discrete.facets[id])) {
-                const auto trace = evaluate_boundary(law, patch, temperature[cell], time, r);
-                operators_.K.values()[diagonal_positions_[cell]] += trace.conductance;
-                operators_.f[cell] += trace.load;
-            }
+            const auto [conductance, load] = boundary_terms(contacts, id, model_.discrete.facets[id],
+                [&](const model::Facet& patch) { return evaluate_boundary(law, patch, temperature[cell], time, r); });
+            operators_.K.values()[diagonal_positions_[cell]] += conductance;
+            operators_.f[cell] += load;
         }
         return operators_;
     }
 
     double ThermalAssembler::resistance(model::FacetId id) const
     {
-        const auto& facet = model_.discrete.facets[id];
         const auto cell = model_.discrete.cell_facets[id].owner();
-        const auto axis = static_cast<std::size_t>(facet.axis);
-        return side_thermal_resistance(model_.discrete.cells[cell].size()[axis] / 2, conductivity_[cell][axis]);
+        const auto axis = static_cast<std::size_t>(model_.discrete.facets[id].axis);
+        return boundary_resistance(model_, id, conductivity_[cell][axis]);
     }
 
     Operators assemble_thermal(const model::Fom& model, std::span<const double> temperature, double time)

@@ -9,7 +9,6 @@ namespace mhs::model {
     using OutputId = core::EntityIndex;
     using SurfaceId = core::EntityIndex;
     using SourceId = core::EntityIndex;
-    using BoundaryConditionId = core::EntityIndex;
     using FluidCellId = core::EntityIndex;
     using PointId = core::EntityIndex;
 

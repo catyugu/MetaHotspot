@@ -9,7 +9,7 @@
 | `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；重复装配只刷新数值，单次导出独立拥有 |
 | `Erom` | 模态算子、HTC 训练表面、物理源、输出恢复和初态 | `.mherom` 读取后不可变、可共享 |
 | `ProjectDefinition` | FOM/EROM 资产实例、平移、源功率与表面条件覆盖、接触热阻 | 可变工程输入 |
-| `Project` | 只读实例、自由度偏移、`ContactPatch` 与 `UncoveredPatches` | `compiler::compile_project` 的独立结果 |
+| `Project` | 只读实例、自由度偏移、`ContactPatch` 与逐 Facet 接触记录 | `compiler::compile_project` 的独立结果 |
 | `Solution` | 最终混合状态、可选状态历史和 `OutputTrace` | 独立拥有求解结果 |
 
 `compile` 不修改输入；`assemble` 和 `solve` 不修改编译模型。C opaque handle 和 Python wrapper 负责所有权与转换。Python 返回的 NumPy/SciPy 数据在 native handle 销毁后仍有效。
@@ -43,11 +43,11 @@
 
 ## 混合工程
 
-编译后的 FOM 用 `facet_surface` 标识几何表面，用 `facet_thermal_condition` 指向边界条件表；两者按同一 FacetId 索引，内部面均为 invalid。SurfaceId 与 BoundaryConditionId 属于不同表，不能互换。PTA 与 C/Python 输入仍可在一次调用中同时指定区域和热学条件，编译结果保留独立的几何身份和物理绑定。
+编译后的 FOM 用 `facet_surface` 将外表面映射到 `SurfaceId`，用同一 ID 查找几何组和热边界条件。内部面的映射值为 invalid。
 
 `ComponentInstance` 保存 `shared_ptr<const Fom/Erom>` variant、稳定 ID、平移和实例覆盖。FOM 的源表达式归资产；EROM 的 `powers` 以 SourceId 替换指定源的默认瓦数，其他源保持默认值，覆盖不叠加。`boundaries` 以 SurfaceId 替换未被接触覆盖部分的环境条件，不修改共享资产。
 
-`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面，只持久化接触交集、面积和面积比热阻。`UncoveredPatches` 只记录发生接触的 Facet；缺少条目表示整片外露，空条目表示整片被覆盖。未训练的 EROM 表面仍参与几何诊断，接触只报警告并忽略，双方保留环境条件。
+`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面。接触记录存交集和面积比热阻，面积从交集计算。每片发生接触的 Facet 记录接触索引和剩余外露区域，供装配与探针重建共用。未训练的 EROM 表面接触时记录去重的日志警告，双方继续施加环境条件。
 
 `ThermalAssembler` 组装 FOM 内部与剩余外边界，`ProjectAssembler` 合并组件算子并用两侧温度映射装配接触。FOM 外部接触采用法向半单元 `d/k`，内部流固面另用冻结流场的膜阻；跨组件接触不承担水力连通或流固膜模型推断。单 FOM 工程直接返回局部装配结果。全局 CSR 模式用连续缓冲区两遍构建；纯 EROM 工程缓存不随状态、时间变化的接触算子，混合工程保留逐次求值的 FOM 热阻。
 

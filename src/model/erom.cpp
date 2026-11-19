@@ -142,13 +142,9 @@ namespace mhs::model {
             shifted.diagonal().array() += 1e-10 * scale;
             require(shifted.llt().info() == Eigen::Success, "K must be positive semidefinite");
         }
-        require(std::isfinite(e.reference_temperature) && std::isfinite(e.initial_temperature)
-                && e.initial_state.size() == n && finite(e.initial_state)
-                && (e.uniform_temperature_mode.empty() || e.uniform_temperature_mode.size() == n)
+        require(std::isfinite(e.reference_temperature) && e.uniform_temperature_mode.size() == n
                 && finite(e.uniform_temperature_mode),
             "invalid temperature initialization");
-        require(std::isfinite(e.training_tolerance) && e.training_tolerance >= 0 && e.training_tolerance < 1,
-            "invalid training tolerance");
         require(finite(e.R) && std::ranges::all_of(e.R, [](double r) { return r > 0; }),
             "half-cell resistance must be positive and finite");
         for (const auto& facet : e.facets)
@@ -185,10 +181,7 @@ namespace mhs::model {
         std::set<OutputId> outputs;
         for (const auto& o : e.outputs)
             require(o.id != core::invalid_id && outputs.insert(o.id).second && !o.name.empty()
-                    && std::isfinite(o.offset)
-                    && ((o.kind == EromOutputKind::PointTemperature && o.point && finite(*o.point)
-                            && o.source == core::invalid_id)
-                        || (o.kind == EromOutputKind::SourceTemperature && !o.point && sources.contains(o.source))),
+                    && (o.point ? finite(*o.point) && o.source == core::invalid_id : sources.contains(o.source)),
                 "invalid or duplicate temperature output");
     }
 
@@ -196,24 +189,19 @@ namespace mhs::model {
     {
         Reader reader(path);
         require(reader.bytes(8) == std::string_view("MHEROM\r\n"), "invalid magic");
-        require(reader.u32() == 1, "unsupported version");
+        require(reader.u32() == 2, "unsupported version");
         const auto n = reader.u32(), ns = reader.u32(), no = reader.u32(), nb = reader.u32(), nf = reader.u32(),
                    ng = reader.u32();
         require(n > 0 && nb <= nf, "invalid record counts");
         auto e = std::make_shared<Erom>();
         e->reference_temperature = reader.f64();
-        e->initial_temperature = reader.f64();
-        e->training_tolerance = reader.f64();
-        const auto uniform = reader.u32();
-        require(uniform <= 1, "invalid uniform initialization flag");
         e->K = reader.matrix(n, n);
         e->C = reader.matrix(n, n);
         e->B = reader.matrix(n, ns);
         e->L = reader.matrix(no, n);
         e->Vb = reader.matrix(nb, n);
         e->R = reader.vector(nb);
-        e->initial_state = reader.vector(n);
-        e->uniform_temperature_mode = reader.vector(uniform ? n : 0);
+        e->uniform_temperature_mode = reader.vector(n);
         reader.check_count(nf, 48);
         for (std::size_t i = 0; i < nf; ++i) {
             const auto axis = reader.u32(), normal = reader.u32();
@@ -245,17 +233,11 @@ namespace mhs::model {
         reader.check_count(ns, 16);
         for (std::size_t i = 0; i < ns; ++i)
             e->sources.push_back({reader.u32(), reader.name(), reader.f64()});
-        reader.check_count(no, 24);
+        reader.check_count(no, 12);
         for (std::size_t i = 0; i < no; ++i) {
-            EromOutput output {reader.u32(), reader.name(), EromOutputKind::PointTemperature, 0, std::nullopt};
-            const auto kind = reader.u32();
-            require(kind <= 1, "unknown temperature output kind");
-            output.kind = static_cast<EromOutputKind>(kind);
-            output.offset = reader.f64();
-            if (kind == 0)
+            EromOutput output {reader.u32(), reader.name(), std::nullopt, reader.u32()};
+            if (output.source == core::invalid_id)
                 output.point = Vec3 {reader.f64(), reader.f64(), reader.f64()};
-            else
-                output.source = reader.u32();
             e->outputs.push_back(std::move(output));
         }
         reader.finish();

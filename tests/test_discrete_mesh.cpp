@@ -75,13 +75,12 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         const mhs::core::Vector<double> state {350};
         for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
             const auto& facet = model.discrete.facets[id];
-            const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
+            const auto& condition = model.boundary_conditions[model.facet_surface[id]];
             const auto center = facet.center();
             const double d = model.discrete.cells[model.discrete.cell_facets[id].owner()]
                                  .size()[static_cast<std::size_t>(facet.axis)]
                 / 2;
-            const mhs::expression::FieldContext cell_context {center[0], center[1], center[2], state[0], 0};
-            const auto trace = mhs::solver::evaluate_boundary(condition, cell_context, facet.area(), facet.area() / d);
+            const auto trace = mhs::solver::evaluate_boundary(condition, facet, state[0], 0, d);
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], trace.temperature, 0};
             const double conductive_flux = 2 * (state[0] - trace.temperature);
             if (std::holds_alternative<mhs::model::Convection>(condition)) {
@@ -149,7 +148,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
         const auto& facet = model.discrete.facets[id];
         if (facet.normal == 0)
             continue;
-        const auto& condition = model.boundary_conditions[model.facet_thermal_condition[id]];
+        const auto& condition = model.boundary_conditions[model.facet_surface[id]];
         const auto& flux = std::get<mhs::model::Neumann>(condition).heat_flux;
         const auto center = facet.center();
         if (flux.eval({center[0], center[1], center[2], 300, 0}) == 10.0)

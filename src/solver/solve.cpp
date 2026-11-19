@@ -77,13 +77,9 @@ namespace mhs::solver {
                     = std::get_if<std::shared_ptr<const model::Erom>>(&project.components()[i].asset)) {
                     const auto& erom = **asset;
                     const auto offset = project.dof_offset(i);
-                    const double delta = study.initial_temperature - erom.initial_temperature;
-                    if (delta != 0 && erom.uniform_temperature_mode.empty() && study.type == StudyType::Transient)
-                        throw std::invalid_argument(
-                            "EROM requires an explicit modal initial state for a different initial temperature");
-                    std::ranges::copy(erom.initial_state, state.begin() + offset);
+                    const double delta = study.initial_temperature - erom.reference_temperature;
                     for (std::size_t j = 0; j < erom.uniform_temperature_mode.size(); ++j)
-                        state[offset + j] += delta * erom.uniform_temperature_mode[j];
+                        state[offset + j] = delta * erom.uniform_temperature_mode[j];
                 }
             return state;
         }
@@ -234,14 +230,12 @@ namespace mhs::solver {
     {
         auto state = project_initial_values(project, study, initial_state);
         auto traces = project_outputs(project);
-        const auto contacts = index_contacts(project);
         ProjectAssembler assembler(project);
         auto assemble = [&](std::span<const double> current, double time) -> const Operators& {
             return assembler.assemble(current, time);
         };
-        auto observe = [&](double time, std::span<const double> accepted) {
-            sample_outputs(project, contacts, traces, accepted, time);
-        };
+        auto observe
+            = [&](double time, std::span<const double> accepted) { sample_outputs(project, traces, accepted, time); };
         auto solution = solve_system(study, assemble, std::move(state), options, observe);
         solution.output_traces = std::move(traces);
         return solution;

@@ -15,14 +15,13 @@ namespace mhs::compiler {
         };
         template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
-        mhs::model::BoundaryConditionId compile_thermal_boundary(const mhs::model::ThermalBoundary& condition,
-            mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
+        mhs::model::BoundaryCondition compile_thermal_boundary(
+            const mhs::model::ThermalBoundary& condition, const mhs::expression::SymbolTable& symbols)
         {
-            using namespace mhs::core;
             using namespace mhs::model;
             using namespace mhs::expression;
             auto compile = [&](const auto& expression) { return parse(expression, symbols); };
-            auto result = std::visit(
+            return std::visit(
                 overloaded {
                     [&](const mhs::model::DirichletBoundary& value) -> BoundaryCondition {
                         auto temperature = compile(value.temperature);
@@ -40,22 +39,6 @@ namespace mhs::compiler {
                     },
                 },
                 condition);
-            const auto index = static_cast<BoundaryConditionId>(conditions.size());
-            conditions.push_back(std::move(result));
-            return index;
-        }
-
-        mhs::core::Vector<TaggedSurfaceRegion> compile_thermal_boundaries(
-            const mhs::core::Vector<mhs::model::ThermalBoundarySpec>& boundaries,
-            mhs::core::Vector<mhs::model::BoundaryCondition>& conditions, const mhs::expression::SymbolTable& symbols)
-        {
-            mhs::core::Vector<TaggedSurfaceRegion> compiled;
-            for (const auto& boundary : boundaries) {
-                const auto condition = compile_thermal_boundary(boundary.condition, conditions, symbols);
-                for (const auto& region : boundary.regions)
-                    compiled.push_back({region, condition});
-            }
-            return compiled;
         }
 
         void validate_surface_regions(const mhs::model::FomDefinition& definition)
@@ -135,12 +118,6 @@ namespace mhs::compiler {
         }
 
         // Compile boundary patches.
-        auto& boundary_conditions = model.boundary_conditions;
-        const auto default_thermal_boundary
-            = compile_thermal_boundary(definition.default_thermal_boundary, boundary_conditions, symbols);
-        const auto compiled_boundaries
-            = compile_thermal_boundaries(definition.thermal_boundaries, boundary_conditions, symbols);
-
         compile_conformal_mesh(model, mesh, definition.volumes);
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())
@@ -148,8 +125,21 @@ namespace mhs::compiler {
 
         // Canonical geometric partition shared by all boundary physics.
         mhs::core::Vector<mhs::model::SurfaceRegion> cuts;
-        for (const auto& boundary : compiled_boundaries)
-            cuts.push_back(boundary.region);
+        mhs::core::Vector<TaggedSurfaceRegion> surface_regions;
+        for (std::size_t i = 0; i < definition.thermal_boundaries.size(); ++i) {
+            const auto& boundary = definition.thermal_boundaries[i];
+            const auto id = static_cast<mhs::model::SurfaceId>(i);
+            auto name = boundary.name.empty() ? "boundary " + std::to_string(i) : boundary.name;
+            model.surfaces.push_back({id, std::move(name), {}});
+            model.boundary_conditions.push_back(compile_thermal_boundary(boundary.condition, symbols));
+            for (const auto& region : boundary.regions) {
+                cuts.push_back(region);
+                surface_regions.push_back({region, id});
+            }
+        }
+        const auto fallback_surface = static_cast<mhs::model::SurfaceId>(model.surfaces.size());
+        model.surfaces.push_back({fallback_surface, "default", {}});
+        model.boundary_conditions.push_back(compile_thermal_boundary(definition.default_thermal_boundary, symbols));
         mhs::core::Vector<TaggedSurfaceRegion> fluid_regions;
         for (std::size_t id = 0; id < definition.fluid_boundaries.size(); ++id)
             for (const auto& region : definition.fluid_boundaries[id].regions) {
@@ -159,20 +149,6 @@ namespace mhs::compiler {
         refine_exterior_facets(model.discrete, cuts);
         build_cell_facet_incidence(model.discrete);
 
-        model.facet_thermal_condition
-            = assign_exterior_regions(model.discrete, compiled_boundaries, default_thermal_boundary);
-
-        mhs::core::Vector<TaggedSurfaceRegion> surface_regions;
-        for (std::size_t i = 0; i < definition.thermal_boundaries.size(); ++i) {
-            const auto& boundary = definition.thermal_boundaries[i];
-            const auto id = static_cast<mhs::model::SurfaceId>(i);
-            auto name = boundary.name.empty() ? "boundary " + std::to_string(i) : boundary.name;
-            model.surfaces.push_back({id, std::move(name), {}});
-            for (const auto& region : boundary.regions)
-                surface_regions.push_back({region, id});
-        }
-        const auto fallback_surface = static_cast<mhs::model::SurfaceId>(model.surfaces.size());
-        model.surfaces.push_back({fallback_surface, "default", {}});
         model.facet_surface = assign_exterior_regions(model.discrete, surface_regions, fallback_surface);
         for (std::size_t i = 0; i < model.facet_surface.size(); ++i)
             if (const auto surface = model.facet_surface[i]; surface != mhs::core::invalid_id)

@@ -13,13 +13,9 @@ namespace mhs::model {
         double default_power = 0; // W
     };
 
-    enum class EromOutputKind : std::uint8_t { PointTemperature, SourceTemperature };
-
     struct EromOutput {
         OutputId id;
         std::string name;
-        EromOutputKind kind;
-        double offset = 300;
         std::optional<Vec3> point;
         SourceId source = core::invalid_id; // volume-average temperature for this source
     };
@@ -39,10 +35,7 @@ namespace mhs::model {
         core::Vector<EromSource> sources;
         core::Vector<EromOutput> outputs;
         double reference_temperature = 300;
-        double initial_temperature = 300;
-        core::Vector<double> initial_state;
-        core::Vector<double> uniform_temperature_mode; // d(q_initial)/d(T_initial), optional
-        double training_tolerance = 0; // 0 denotes unspecified
+        core::Vector<double> uniform_temperature_mode; // q_initial = (T_initial - T_ref) * mode
     };
 
     void validate_erom(const Erom& erom);

@@ -3,7 +3,6 @@
 #include <cmath>
 #include <numeric>
 #include <stdexcept>
-#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -69,16 +68,13 @@ namespace mhs::solver {
 
     } // namespace
 
-    BoundaryTrace evaluate_boundary(const mhs::model::BoundaryCondition& condition,
-        mhs::expression::FieldContext cell_context, double area, double conductive)
+    BoundaryTrace evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
+        double cell_temperature, double time, double resistance)
     {
         using namespace mhs::model;
-        const double cell_temperature = cell_context.T;
-        auto context = [&](double trace) {
-            auto result = cell_context;
-            result.T = trace;
-            return result;
-        };
+        const auto p = patch.center();
+        const double area = patch.area(), conductive = area / resistance;
+        auto context = [&](double trace) { return expression::FieldContext {p[0], p[1], p[2], trace, time}; };
         return std::visit(
             [&](const auto& law) -> BoundaryTrace {
                 using C = std::decay_t<decltype(law)>;
@@ -106,25 +102,21 @@ namespace mhs::solver {
                         const auto ctx = context(trace);
                         return std::pair {law.coefficient.eval(ctx), law.ambient_temperature.eval(ctx)};
                     };
-                    auto [h, ambient] = values(cell_temperature);
-                    double convective = h * area;
-                    double trace = (conductive * cell_temperature + convective * ambient) / (conductive + convective);
-                    if (!law.coefficient.depends_on_temperature()
-                        && !law.ambient_temperature.depends_on_temperature()) {
-                        const double condensed = conductive * convective / (conductive + convective);
-                        return {trace, condensed, condensed * ambient};
-                    }
-                    trace = solve_trace(
+                    const auto [h, ambient] = values(cell_temperature);
+                    const double condensed = convection_conductance(area, h, resistance);
+                    const double guess = std::lerp(cell_temperature, ambient, condensed / conductive);
+                    if (!law.coefficient.depends_on_temperature() && !law.ambient_temperature.depends_on_temperature())
+                        return {guess, condensed, condensed * ambient};
+                    const double trace = solve_trace(
                         [&](double value) {
                             const auto [coefficient, external_temperature] = values(value);
                             return conductive * (cell_temperature - value)
                                 - area * coefficient * (value - external_temperature);
                         },
-                        trace, cell_temperature);
-                    std::tie(h, ambient) = values(trace);
-                    convective = h * area;
-                    const double condensed = conductive * convective / (conductive + convective);
-                    return {trace, condensed, condensed * ambient};
+                        guess, cell_temperature);
+                    const auto [coefficient, external_temperature] = values(trace);
+                    const double g = convection_conductance(area, coefficient, resistance);
+                    return {trace, g, g * external_temperature};
                 }
             },
             condition);
