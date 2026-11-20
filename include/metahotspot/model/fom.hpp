@@ -1,7 +1,7 @@
 #pragma once
 
 #include "expression/expression.hpp"
-#include "model/discrete_mesh.hpp"
+#include "model/conformal_mesh.hpp"
 #include "model/fluid_model.hpp"
 #include "model/types.hpp"
 
@@ -54,13 +54,12 @@ namespace mhs::model {
     };
 
     struct Fom {
-        DiscreteMesh discrete;
+        ConformalMesh mesh;
 
         mhs::core::Vector<MaterialId> cell_material;
         mhs::core::Vector<MaterialProps> material_table;
         mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
         mhs::core::Vector<SourceTerm> source_terms;
-        mhs::core::Vector<BoundaryGroupId> facet_boundary_group; // invalid_id on interior facets
         mhs::core::Vector<FomBoundaryGroup> boundary_groups; // indexed by BoundaryGroupId
         FluidModel fluid;
 

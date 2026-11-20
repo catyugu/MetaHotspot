@@ -8,23 +8,23 @@
 #include <variant>
 
 namespace mhs::solver {
-    std::pair<double, double> interior_facet_resistances(
-        const mhs::model::Fom& model, mhs::model::FacetId id, double k_minus, double k_plus)
+    std::pair<double, double> interior_resistances(
+        const model::Fom& model, model::CellId i, model::CellId j, std::size_t axis, double ki, double kj)
     {
-        const auto axis = static_cast<std::size_t>(model.discrete.facets[id].axis);
-        const auto& facet = model.discrete.cell_facets[id];
-        double minus = side_thermal_resistance(model.discrete.cells[facet.minus].size()[axis] / 2, k_minus);
-        double plus = side_thermal_resistance(model.discrete.cells[facet.plus].size()[axis] / 2, k_plus);
-        const auto& fluid = model.fluid;
-        if (!fluid.global_to_fluid.empty()) {
-            const auto fi = fluid.global_to_fluid[facet.minus], fj = fluid.global_to_fluid[facet.plus];
-            if (fi != mhs::core::invalid_id && fj == mhs::core::invalid_id)
-                minus = fluid_film_resistance(fluid.interface_heat_transfer_factor[fi], k_minus);
-            else if (fj != mhs::core::invalid_id && fi == mhs::core::invalid_id)
-                plus = fluid_film_resistance(fluid.interface_heat_transfer_factor[fj], k_plus);
+        double ri = side_thermal_resistance(model.mesh.cell_width(i, axis) / 2, ki);
+        double rj = side_thermal_resistance(model.mesh.cell_width(j, axis) / 2, kj);
+        const auto& map = model.fluid.global_to_fluid;
+        const auto& film = model.fluid.interface_heat_transfer_factor;
+        if (!map.empty()) {
+            const auto fi = map[i], fj = map[j];
+            if (fi != core::invalid_id && fj == core::invalid_id)
+                ri = fluid_film_resistance(film[fi], ki);
+            else if (fj != core::invalid_id && fi == core::invalid_id)
+                rj = fluid_film_resistance(film[fj], kj);
         }
-        return {minus, plus};
+        return {ri, rj};
     }
+
     namespace {
         // Bracketed bisection on the trace temperature. The condensed
         // coefficients only need the trace to a few digits beyond the global

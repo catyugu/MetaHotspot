@@ -144,7 +144,7 @@ namespace mhs::compiler {
                             throw std::invalid_argument("unknown EROM source index");
                     }
                     else {
-                        size = asset->discrete.cells.size();
+                        size = asset->mesh.cell_count();
                         if (!component.powers.empty())
                             throw std::invalid_argument("FOM source laws belong to the model");
                     }
@@ -175,9 +175,11 @@ namespace mhs::compiler {
                                 append(core::invalid_id, f, group, asset->outline[group].name, true);
                     }
                     else {
-                        for (FacetId id = 0; id < asset->facet_boundary_group.size(); ++id)
-                            if (const auto surface = asset->facet_boundary_group[id]; surface != core::invalid_id)
-                                append(id, asset->discrete.facets[id], surface, asset->boundary_groups[surface].name);
+                        for (FacetId id = 0; id < asset->mesh.exterior_facets.size(); ++id) {
+                            const auto& face = asset->mesh.exterior_facets[id];
+                            append(id, face.geometry, face.boundary_group,
+                                asset->boundary_groups[face.boundary_group].name);
+                        }
                     }
                 },
                 component.asset);
@@ -233,7 +235,7 @@ namespace mhs::compiler {
                     [&](const auto& asset) -> const Facet& {
                         using Asset = typename std::decay_t<decltype(asset)>::element_type;
                         if constexpr (std::is_same_v<Asset, const Fom>)
-                            return asset->discrete.facets[face];
+                            return asset->mesh.exterior_facets[face].geometry;
                         else
                             return asset->interfaces[face].facet;
                     },

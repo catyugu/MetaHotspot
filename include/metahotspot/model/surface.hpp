@@ -35,7 +35,7 @@ namespace mhs::model {
     // Tangential bounds are ordered YZ for X, XZ for Y and XY for Z.
     struct Facet {
         Axis axis = Axis::X;
-        std::int8_t normal = 0; // -1/+1 for an exterior facet, 0 for interior
+        std::int8_t normal = 0; // outward sign on the coordinate axis
         double coordinate = 0.0;
         Rect bounds {};
 

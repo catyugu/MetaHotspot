@@ -1,27 +1,15 @@
 #pragma once
 
 #include "core/vector.hpp"
+#include "model/surface.hpp"
 #include "model/types.hpp"
-#include <variant>
 
 namespace mhs::model {
 
-    // Nonnegative frozen mass flow rates (kg/s), classified by actual flow
-    // direction after the pressure solve, including reversed pressure boundaries.
-    struct FluidInflow {
-        double mass_flow_rate;
-        double temperature;
-    };
-
-    struct FluidOutflow {
-        double mass_flow_rate;
-    };
-
-    using FluidTransportCondition = std::variant<FluidInflow, FluidOutflow>;
-
     struct FluidBoundaryTerm {
-        FacetId facet = mhs::core::invalid_id;
-        FluidTransportCondition condition;
+        CellId cell;
+        double mass_flow_rate; // kg/s, negative for inflow
+        double inlet_temperature; // used for inflow only
     };
 
     struct FluidModel {
@@ -30,15 +18,15 @@ namespace mhs::model {
         mhs::core::Vector<CellId> fluid_to_global;
         mhs::core::Vector<FluidCellId> global_to_fluid;
 
-        // Frozen hydraulic volume flux by FacetId, positive from minus to plus.
-        // Non-fluid and exterior facets carry zero.
-        mhs::core::Vector<double> facet_volume_flux;
+        // Frozen volume flux along X+, Y+, Z+ for each fluid cell.
+        // A missing fluid neighbor carries zero flux.
+        mhs::core::Vector<Vec3> positive_volume_flux;
 
         // Nu / hydraulic_diameter for each fluid cell. The thermal assembly
         // evaluates h = factor * k_fluid at the current temperature.
         mhs::core::Vector<double> interface_heat_transfer_factor;
 
-        // Frozen transport per exterior facet; only inflow carries temperature.
+        // Frozen transport contributions from exterior facets.
         mhs::core::Vector<FluidBoundaryTerm> boundary_terms;
     };
 

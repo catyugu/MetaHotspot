@@ -21,7 +21,7 @@ namespace mhs::solver {
         const auto& asset = project.components()[side.component_index].asset;
         if (const auto* fom = std::get_if<std::shared_ptr<const model::Fom>>(&asset)) {
             static constexpr double unit_weight = 1;
-            return {offset + (*fom)->discrete.cell_facets[side.face_index].owner(), {&unit_weight, 1}, 0};
+            return {offset + (*fom)->mesh.exterior_facets[side.face_index].owner, {&unit_weight, 1}, 0};
         }
         const auto& erom = *std::get<std::shared_ptr<const model::Erom>>(asset);
         return {offset, erom.Vb.row(side.face_index), erom.reference_temperature};

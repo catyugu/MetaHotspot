@@ -1,4 +1,3 @@
-#include "compiler/geometry_compiler.hpp"
 #include "pta_test_utils.hpp"
 #include "solver/assembler.hpp"
 #include "solver/thermal_physics.hpp"
@@ -24,26 +23,29 @@ static CubeDefinition cube_definition()
     return d;
 }
 
-TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
+TEST(ConformalMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
 {
     auto definition = cube_definition();
     auto model = test_pta::compile_fom(definition, definition.mesh);
     const mhs::core::Vector<std::size_t> order {7, 5, 3, 1, 6, 4, 2, 0};
-    auto mesh = model.discrete;
+    auto mesh = model.mesh;
     mhs::core::Vector<std::size_t> inverse(order.size());
     for (std::size_t i = 0; i < order.size(); ++i) {
-        mesh.cells[i] = model.discrete.cells[order[i]];
+        mesh.cell_to_grid[i] = model.mesh.cell_to_grid[order[i]];
+        mesh.grid_to_cell[mesh.cell_to_grid[i]] = static_cast<CellId>(i);
         inverse[order[i]] = i;
     }
-    for (auto& face : mesh.cell_facets) {
-        if (face.minus != invalid_id)
-            face.minus = inverse[face.minus];
-        if (face.plus != invalid_id)
-            face.plus = inverse[face.plus];
+    mesh.exterior_facets.clear();
+    for (CellId c = 0; c < order.size(); ++c) {
+        mesh.boundary_offsets[c] = static_cast<FacetId>(mesh.exterior_facets.size());
+        for (const auto id : model.mesh.boundary_ids(static_cast<CellId>(order[c]))) {
+            auto face = model.mesh.exterior_facets[id];
+            face.owner = c;
+            mesh.exterior_facets.push_back(face);
+        }
     }
-    auto imported = test_pta::compile_fom(definition, definition.mesh);
-    imported.discrete = std::move(mesh);
-    mhs::compiler::build_cell_facet_incidence(imported.discrete);
+    auto imported = model;
+    imported.mesh = std::move(mesh);
     for (size_t c = 0; c < order.size(); ++c)
         imported.cell_material[c] = model.cell_material[order[c]];
     for (auto& term : imported.source_terms)
@@ -77,7 +79,7 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
         mhs::solver::sample_point(imported, reordered, 0, static_cast<CellId>(inverse[0]), point), 1e-12);
 }
 
-TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
+TEST(ConformalMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
 {
     auto d = cube_definition();
     d.mesh.x_vertices = d.mesh.y_vertices = d.mesh.z_vertices = {0, 1};
@@ -89,10 +91,10 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         const auto model = test_pta::compile_fom(d, d.mesh);
         // All other faces share the compiled zero-flux default condition.
         ASSERT_EQ(model.boundary_groups.size(), 2u);
-        ASSERT_EQ(model.discrete.facets.size(), 6u);
-        for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
-            const auto& facet = model.discrete.facets[id];
-            const auto& condition = model.boundary_groups[model.facet_boundary_group[id]].condition;
+        ASSERT_EQ(model.mesh.exterior_facets.size(), 6u);
+        for (const auto& exterior : model.mesh.exterior_facets) {
+            const auto& facet = exterior.geometry;
+            const auto& condition = model.boundary_groups[exterior.boundary_group].condition;
             if (facet.axis != Axis::X || facet.normal != 1) {
                 EXPECT_TRUE(std::holds_alternative<Neumann>(condition));
                 continue;
@@ -101,7 +103,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
                 const double T = 280 + 10 * time;
                 const mhs::core::Vector<double> state {T};
                 const auto ops = mhs::solver::assemble_thermal(model, state, time);
-                const double d = model.discrete.cells[model.discrete.cell_facets[id].owner()].size()[0] / 2;
+                const double d = model.mesh.cell_width(exterior.owner, 0) / 2;
                 const auto condensed = mhs::solver::evaluate_boundary(condition, facet, T, time, d);
                 double g, load;
                 if (kind == 0) {

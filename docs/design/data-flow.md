@@ -5,7 +5,7 @@
 | 对象 | 职责 | 生命周期 |
 | --- | --- | --- |
 | `FomDefinition` | 几何、材料、热源、边界、探针和参考温度 | 可变输入；由 XML reader 或 C/Python 构造接口填充 |
-| `mhs::model::Fom` | 显式网格、材料与积分数据、编译表达式和冻结流场 | `compile_fom` 的独立结果；供重复装配和求解使用 |
+| `mhs::model::Fom` | 共形网格、材料与积分数据、编译表达式和冻结流场 | `compile_fom` 的独立结果；供重复装配和求解使用 |
 | `Operators {K, C, f}` | 当前状态和时刻的线性化系统 `C dx/dt + K x = f` | 热求解工作区持有；重复装配只刷新数值，单次导出独立拥有 |
 | `Erom` | 模态算子、可连接 HTC 接口、诊断轮廓、源、输出及初态 | `.mherom` 读取后不可变、可共享 |
 | `ProjectDefinition` | FOM/EROM 资产实例、平移、源功率与表面条件覆盖、接触热阻 | 可变工程输入 |
@@ -19,31 +19,29 @@
 | 阶段 | 输入 | 输出与规则 |
 | --- | --- | --- |
 | PTA 几何解析 | Layer / Block / Rect 和几何变量、算术表达式 | 应用层独立求值为 SI 米下的区域；同层后出现的 Block 覆盖前者，核心仅接收数值几何 |
-| 网格输入 | 独立的 Cartesian `MeshSpec` 与物理区域 | `DiscreteMesh`：单元边界、初始有向 Facet 几何 |
-| 网格契约 | 控制体与面片几何、连接 | 验证坐标轴有限且严格递增；生成控制体及有向面片，边界细分后统一构建 CSR 关联 |
-| 共形体区域编译 | Cartesian `MeshSpec` 与物理区域 | 检查内部盒面与网格平面对齐；生成单元时直接写入 `cell_material` 和 `source_terms` |
-| 边界细分与绑定 | 外露 Facet 与热、流体边界区域 | 在几何编译阶段共同切分外部 Facet，统一构建 Cell–Facet 关联；热学、流体边界分别按 FacetId 绑定，区域后者覆盖前者 |
+| 共形网格编译 | Cartesian `MeshSpec` 与物理区域 | 校验坐标轴及盒面对齐，生成 `ConformalMesh` 的双向单元索引、外露面、材料和源项 |
+| 边界切分与绑定 | 外露面与热、流体边界区域 | 联合切分矩形，每片保留 owner 和热边界组，流体标签用于预处理，后定义的区域优先 |
 | 表达式编译 | 材料、源、边界运行时表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
-| 流体预处理 | 流体材料、规范化 Facet 与流体边界赋值 | 共享 FacetId 和面积，求解临时压力场后生成逐 Facet 的体积流量、边界质量流率与入口温度及流固换热因子 |
-| 容量与体热源装配 | 单元几何、材料、体积投影、状态和时间 | `rho c V` 及各投影片上的热源积分 |
-| 面片装配 | 面片、两侧物理类型、边界描述 | 内部面只装配一次；外边界迹由统一局部方程求解并凝聚到单元系统 |
+| 流体预处理 | 流体单元、网格邻接和外表面上的流体边界 | 求解压力场，生成流体单元三个正方向的体积通量、外表面质量流率与入口温度、流固换热因子 |
+| 容量与体热源装配 | 单元几何、材料、状态和时间 | `rho c V` 及逐单元热源积分 |
+| 导热与边界装配 | 网格邻接、材料与外边界条件 | 沿三个正方向各装配一次 TPFA 连接，外边界迹由局部方程求解并凝聚 |
 | 流体能量装配 | 冻结流量、状态和材料 | 上风对流和入口能量贡献，直接追加到主装配的矩阵条目与 RHS；复用容量装配求值的 rho/cp，无中间增量对象 |
 
-当前 TPFA 适用于轴对齐长方体、相邻中心沿面法向对齐及对角导热张量。编译器根据用户指定的笛卡尔轴生成控制体与面片，不执行自适应网格加密。
+当前 TPFA 适用于轴对齐长方体、相邻中心沿面法向对齐及对角导热张量。单元尺寸、中心、体积和六方向邻居直接由坐标轴及索引给出。网格外缘和相邻位置为空的单元侧面均属于外表面。
 
-`SourceTerm` 保存 CellId 和源表索引。当前共形体编译路径要求所有落在网格内部的几何盒面与对应轴顶点平面对齐（容差 `geometry_eps`）；不满足时拒绝编译。每个有效单元按照有序体区域的覆盖关系确定唯一材料与热源，源项在单元中心计算，以单元体积为权重。体区域的非共形切分留待专用实现。热与流体边界在共同的几何切分上分别采用后出现条件覆盖前者的绑定，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取模型参考温度。
+`SourceTerm` 保存 CellId 和源表索引。当前共形体编译路径要求所有落在网格内部的几何盒面与对应轴顶点平面对齐（容差 `geometry_eps`）；不满足时拒绝编译。每个有效单元按照有序体区域的覆盖关系确定唯一材料与热源，源项在单元中心计算，以单元体积为权重。热与流体边界在共同的几何切分上分别采用后出现条件覆盖前者的绑定，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取模型参考温度。
 
-`FluidBoundaryTerm` 保存 FacetId 和内联的 `FluidTransportCondition = variant<FluidInflow, FluidOutflow>`。两种记录均保存非负的质量流率（kg/s），仅 `FluidInflow` 保存流入温度；按压力解得到的实际流向选择类型，而非输入的入口/出口标签，因此压力边界反向流动时仍采用该边界的流入温度。零流量归入 `FluidOutflow`，能量贡献为零。这些记录只有数值和内联判别信息，无动态分配；每片的冻结流量独立，不需要额外条件表。
+每个 `FluidBoundaryTerm` 保存单元编号、带符号质量流率（kg/s）和入口温度。流率为负时按入口温度向 RHS 加焓，为正时按单元温度出流并贡献矩阵对角项。压力边界的流向由压力解确定。
 
 ## 求解与输出
 
 应用与 API 层负责编译单组件或多组件工程，求解器不依赖编译器。公开 C++ 入口 `mhs::solver::solve(project, study, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 同时提供线性、非线性求解参数以及时间容差和最大步长配置。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
 
-探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，FOM 历史保存单元温度，EROM 历史保存模态坐标。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
+探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，FOM 历史保存单元温度，EROM 历史保存模态坐标。应用层由编译后的网格索引计算 VTU 顶点，并在同一网格的顶点上插值 XML 节点温度。
 
 ## 混合工程
 
-编译后的 FOM 用 `facet_boundary_group` 将外部 Facet 映射到热边界组索引 `BoundaryGroupId`。内部 Facet 使用 `invalid_id`。
+FOM 的 `ExteriorFacet` 保存几何、所属单元和热边界组。`boundary_offsets` 给出每个有效单元的连续 FacetId 区间。
 
 `ComponentInstance` 保存 `shared_ptr<const Fom/Erom>` variant、平移和稠密可选实例覆盖；组件身份统一为 `components` 数组下标。FOM 的源表达式归资产；EROM 的 `powers` 以 SourceId 替换指定源的默认瓦数，其他源保持默认值，覆盖不叠加。`boundaries` 以 BoundaryGroupId 替换未被接触覆盖部分的环境条件，不修改共享资产。
 
@@ -55,9 +53,9 @@
 
 ## 输入与数组约定
 
-- C++ 的 `MeshSpec`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Fom.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。控制体与面片连接由编译器生成，不提供外部离散网格输入。
-- C/Python 网格导出使用 `facet_minus`、`facet_plus`、`facet_axis`、`facet_coordinate` 和 `facet_bounds`。前四者为 `(facet_count,)`，bounds 为 `(facet_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。cell 的 min/max 为 `(cell_count, 3)`。正通量由 minus 流向 plus；外边界恰有一侧为 `MHS_INVALID_INDEX`。
-- Facet 面积由切向区间长度之积得到；单元至面的距离为法向半边长，平面位置由 `facet_coordinate` 给出，外法向由缺失的一侧确定。一个 cell side 可有多个外边界 Facet。跨组件非匹配表面按共面矩形交集建立接触面片。单元至 Facet 只保留一套 CSR 关联索引。
+- C++ 的 `MeshSpec`、C 的 `mhs_model_set_cartesian_mesh` 和 Python 的 `Fom.set_cartesian_mesh` 只接收笛卡尔网格顶点规格，坐标使用 SI 米。编译器生成紧凑的单元编号以及分片后的外表面。
+- C/Python 的 `facet_count` 统计外表面分片。`facet_owner`、`facet_normal`、`facet_axis` 和 `facet_coordinate` 为 `(facet_count,)`。法向为沿 `facet_axis` 的符号 −1 或 +1。`facet_bounds` 为 `(facet_count, 4)`，每行为 `[a_min, a_max, b_min, b_max]`，按升序切向轴排列（YZ、XZ、XY）。`cell_min` 和 `cell_max` 为 `(cell_count, 3)`。
+- 面片面积由切向区间长度相乘得到，单元至面的距离为法向半边长。同一单元侧面可有多个外部 Facet。跨组件非匹配表面按共面矩形交集建立接触面片。
 - 几何、材料、`K/C/f`、`state` 和 `state_history` 按 CellId 排列。Python `Solution.state` 和 `state_history` 返回对应数组。
 - `FomDefinition::sources` 每项包含名称和体积功率密度表达式。`Compiled.source_operator(state, time)` 按物理源返回稀疏功率列。
 - 原生 EROM 提取接收 FOM 热边界组索引及各组 HTC 范围。每个可连接接口记录几何、半单元热阻 $R_f$ 和所属组索引，`Vb` 行按接口索引排列。训练和装配逐面计算精确 HTC 导通率 $A_f h/(1+R_f h)$。
@@ -75,7 +73,6 @@ Python `Compiled.info` 只获取标量元信息，`Compiled.fields` 在首次访
 
 ## C API 契约
 
-- 不接受外部 `DiscreteMesh`；C++ 编译器通过 `compile_fom(definition, mesh)` 分别接收物理定义和 Cartesian 网格规格。
 - PTA XML 网格读取留在 CLI 应用侧，通过独立的 `MeshSpec` 传给编译器；PTA 文件格式与导入逻辑不进入内核或公开 API。
 - `mhs_compiled_copy_fields` 导出单元、Facet 及热源投影数据；`mhs_operators_copy_k/c` 直接复制 CSR，布局为 `row_ptr[state_count+1]`、`col_idx[nnz]`、`values[nnz]`；Python `assemble()` 返回 SciPy CSR，需要 CSC 的算法自行转换。
 - `mhs_solution_info_t.converged` 和 Python `Solution.converged` 暴露求解收敛结果。API 成功表示调用完成，收敛状态由该字段判断。
