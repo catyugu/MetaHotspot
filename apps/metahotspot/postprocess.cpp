@@ -30,7 +30,7 @@ namespace mhs::app::postprocess {
     mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::Fom& model, const mhs::model::MeshSpec& grid,
         std::span<const double> cell_temperature, double time)
     {
-        if (cell_temperature.size() != model.discrete.cells.size())
+        if (cell_temperature.size() != model.mesh.cell_count())
             throw std::invalid_argument("node sampling state size mismatch");
         std::map<mhs::model::Vec3, std::size_t> nodes;
         for (double x : grid.x_vertices)
@@ -38,8 +38,8 @@ namespace mhs::app::postprocess {
                 for (double z : grid.z_vertices)
                     nodes.emplace(mhs::model::Vec3 {x, y, z}, nodes.size());
         mhs::core::Vector<double> node_T(nodes.size(), 0.0), weight(nodes.size(), 0.0);
-        for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
-            const auto& cell = model.discrete.cells[c];
+        for (std::size_t c = 0; c < model.mesh.cell_count(); ++c) {
+            const auto& cell = model.mesh.cell(c);
             const auto center = cell.center();
             const auto temperature = cell_temperature[c];
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], temperature, time};

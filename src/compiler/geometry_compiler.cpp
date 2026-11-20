@@ -28,7 +28,7 @@ namespace mhs::compiler {
         return std::nullopt;
     }
 
-    std::array<mhs::core::Vector<SurfaceTag>, 2> compile_exterior_facets(mhs::model::DiscreteMesh& mesh,
+    std::array<mhs::core::Vector<SurfaceTag>, 2> compile_exterior_facets(mhs::model::ConformalMesh& mesh,
         std::span<const TaggedSurfaceRegion> thermal, std::span<const TaggedSurfaceRegion> fluid,
         SurfaceTag thermal_fallback)
     {

@@ -61,16 +61,16 @@ TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
 {
     const auto model = load_microfluid_case();
-    ASSERT_EQ(model.fluid.facet_volume_flux.size(), model.discrete.facets.size());
-    mhs::core::Vector<double> balance(model.discrete.cells.size(), 0);
+    ASSERT_EQ(model.fluid.facet_volume_flux.size(), model.mesh.facets.size());
+    mhs::core::Vector<double> balance(model.mesh.cell_count(), 0);
     auto density = [&](mhs::model::CellId cell) {
-        const auto p = model.discrete.cells[cell].center();
+        const auto p = model.mesh.cell(cell).center();
         return model.material_table[model.cell_material[cell]].rho.eval(
             {p[0], p[1], p[2], model.reference_temperature, 0});
     };
     bool nonzero = false;
-    for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
-        const auto& f = model.discrete.cell_facets[id];
+    for (std::size_t id = 0; id < model.mesh.facets.size(); ++id) {
+        const auto& f = model.mesh.cell_facets[id];
         if (f.exterior())
             continue;
         const double mass = model.fluid.facet_volume_flux[id] * (density(f.minus) + density(f.plus)) / 2;
@@ -90,14 +90,14 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
                     return flow.mass_flow_rate;
             },
             term.condition);
-        balance[model.discrete.cell_facets[term.facet].owner()] += mass;
+        balance[model.mesh.cell_facets[term.facet].owner()] += mass;
         boundary_sum += mass;
     }
     for (auto cell : model.fluid.fluid_to_global)
         EXPECT_NEAR(balance[cell], 0, 1e-12);
     EXPECT_NEAR(boundary_sum, 0, 1e-12);
     EXPECT_TRUE(nonzero);
-    const mhs::core::Vector<double> state(model.discrete.cells.size(), 300);
+    const mhs::core::Vector<double> state(model.mesh.cell_count(), 300);
     // Suppress diffusion/sources to inspect advection through the main assembler.
     auto transport = model;
     std::fill(transport.facet_boundary_group.begin(), transport.facet_boundary_group.end(), mhs::core::invalid_id);
@@ -156,8 +156,8 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     std::size_t side_facets = 0;
     double side_area = 0.0;
     bool has_cross_cut = false;
-    for (auto id : refined.discrete.incident_facets(0)) {
-        const auto& facet = refined.discrete.facets[id];
+    for (auto id : refined.mesh.incident_facets(0)) {
+        const auto& facet = refined.mesh.facets[id];
         if (facet.axis != Axis::X || facet.normal != -1)
             continue;
         ++side_facets;

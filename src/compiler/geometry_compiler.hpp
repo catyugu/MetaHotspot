@@ -9,7 +9,7 @@
 
 namespace mhs::compiler {
 
-    void build_cell_facet_incidence(mhs::model::DiscreteMesh& mesh);
+    void build_cell_facet_incidence(mhs::model::ConformalMesh& mesh);
 
     // Tags are opaque caller-owned indices; geometry has no physics payload.
     using SurfaceTag = mhs::core::EntityIndex;
@@ -24,7 +24,7 @@ namespace mhs::compiler {
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
 
     // Partition and tag thermal/fluid boundaries together. Later regions take precedence.
-    std::array<mhs::core::Vector<SurfaceTag>, 2> compile_exterior_facets(mhs::model::DiscreteMesh& mesh,
+    std::array<mhs::core::Vector<SurfaceTag>, 2> compile_exterior_facets(mhs::model::ConformalMesh& mesh,
         std::span<const TaggedSurfaceRegion> thermal, std::span<const TaggedSurfaceRegion> fluid,
         SurfaceTag thermal_fallback);
 } // namespace mhs::compiler

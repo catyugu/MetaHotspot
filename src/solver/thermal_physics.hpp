@@ -16,7 +16,7 @@ namespace mhs::solver {
 
     inline double source_power(const model::Fom& fom, const model::SourceTerm& term, double t, double time)
     {
-        const auto& cell = fom.discrete.cells[term.cell];
+        const auto& cell = fom.mesh.cell(term.cell);
         const auto p = cell.center();
         return cell.volume() * fom.heat_source_table[term.source].eval({p[0], p[1], p[2], t, time});
     }
@@ -24,24 +24,24 @@ namespace mhs::solver {
     inline double cell_conductivity(
         const model::Fom& fom, model::CellId cell, std::size_t axis, double temperature, double time)
     {
-        const auto p = fom.discrete.cells[cell].center();
+        const auto p = fom.mesh.cell(cell).center();
         const auto& m = fom.material_table[fom.cell_material[cell]];
         return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval({p[0], p[1], p[2], temperature, time});
     }
 
     inline double boundary_resistance(const model::Fom& fom, model::FacetId id, double k)
     {
-        const auto cell = fom.discrete.cell_facets[id].owner();
-        const auto axis = static_cast<std::size_t>(fom.discrete.facets[id].axis);
-        return side_thermal_resistance(fom.discrete.cells[cell].size()[axis] / 2, k);
+        const auto cell = fom.mesh.cell_facets[id].owner();
+        const auto axis = static_cast<std::size_t>(fom.mesh.facets[id].axis);
+        return side_thermal_resistance(fom.mesh.cell(cell).size()[axis] / 2, k);
     }
 
     inline double boundary_resistance(const model::Fom& fom, model::FacetId id, double temperature, double time)
     {
-        const auto& facet = fom.discrete.facets[id];
+        const auto& facet = fom.mesh.facets[id];
         return boundary_resistance(fom, id,
             cell_conductivity(
-                fom, fom.discrete.cell_facets[id].owner(), static_cast<std::size_t>(facet.axis), temperature, time));
+                fom, fom.mesh.cell_facets[id].owner(), static_cast<std::size_t>(facet.axis), temperature, time));
     }
 
     inline double convection_conductance(double area, double h, double resistance)

@@ -18,11 +18,11 @@ namespace mhs::compiler::fluid {
         using namespace mhs::core;
         using namespace mhs::model;
         auto& fluid = model.fluid;
-        const auto& mesh = model.discrete;
+        const auto& mesh = model.mesh;
         fluid = {};
-        fluid.global_to_fluid.assign(mesh.cells.size(), mhs::core::invalid_id);
+        fluid.global_to_fluid.assign(mesh.cell_count(), mhs::core::invalid_id);
         mhs::core::Vector<double> viscosity;
-        for (std::size_t c = 0; c < mesh.cells.size(); ++c) {
+        for (std::size_t c = 0; c < mesh.cell_count(); ++c) {
             const auto mat = model.cell_material[c];
             if (mat >= initial_viscosity.size() || model.material_table[mat].kind != MaterialKind::Fluid)
                 continue;
@@ -62,7 +62,7 @@ namespace mhs::compiler::fluid {
                 hi(n, -std::numeric_limits<double>::infinity());
             for (std::size_t i = 0; i < n; ++i) {
                 auto r = root(i);
-                const auto& c = mesh.cells[fluid.fluid_to_global[i]];
+                const auto& c = mesh.cell(fluid.fluid_to_global[i]);
                 lo[r] = std::min(lo[r], c.min[axis]);
                 hi[r] = std::max(hi[r], c.max[axis]);
             }
@@ -77,7 +77,7 @@ namespace mhs::compiler::fluid {
             fluid.interface_heat_transfer_factor[i] = nusselt_rectangular(w, h) / diameter;
             mobility[i] = diameter * diameter / (2 * f_re_rectangular(w, h) * viscosity[i]);
             const auto c = fluid.fluid_to_global[i];
-            const auto p = mesh.cells[c].center();
+            const auto p = mesh.cell(c).center();
             rho[i] = model.material_table[model.cell_material[c]].rho.eval(
                 {p[0], p[1], p[2], model.reference_temperature, 0});
         }
@@ -121,8 +121,8 @@ namespace mhs::compiler::fluid {
                 continue;
             const auto ii = i, jj = j;
             auto g = f.area()
-                / ((mesh.cells[cells.minus].size()[static_cast<std::size_t>(f.axis)] / 2) / mobility[ii]
-                    + (mesh.cells[cells.plus].size()[static_cast<std::size_t>(f.axis)] / 2) / mobility[jj]);
+                / ((mesh.cell(cells.minus).size()[static_cast<std::size_t>(f.axis)] / 2) / mobility[ii]
+                    + (mesh.cell(cells.plus).size()[static_cast<std::size_t>(f.axis)] / 2) / mobility[jj]);
             conductance[id] = g;
             diagonal[ii] += g;
             diagonal[jj] += g;
@@ -144,7 +144,7 @@ namespace mhs::compiler::fluid {
                     else {
                         reference = true;
                         const auto axis = static_cast<std::size_t>(facet.axis);
-                        const double distance = mesh.cells[mesh.cell_facets[facet_id].owner()].size()[axis] / 2;
+                        const double distance = mesh.cell(mesh.cell_facets[facet_id].owner()).size()[axis] / 2;
                         const double g = facet.area() * mobility[i] / distance;
                         boundary_conductance[t] = g;
                         diagonal[i] += g;

@@ -540,8 +540,8 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
-    out->cell_count = c->model().discrete.cells.size();
-    out->facet_count = c->model().discrete.facets.size();
+    out->cell_count = c->model().mesh.cell_count();
+    out->facet_count = c->model().mesh.facets.size();
     out->projection_count = c->model().source_terms.size();
     out->source_count = c->model().heat_source_table.size();
     out->reference_temperature = c->model().reference_temperature;
@@ -591,8 +591,8 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
     CHECK_NULL(c);
     CHECK_NULL(fields);
     const auto& model = c->model();
-    const auto& mesh = model.discrete;
-    if (fields->cell_count != mesh.cells.size() || fields->facet_count != mesh.facets.size()
+    const auto& mesh = model.mesh;
+    if (fields->cell_count != mesh.cell_count() || fields->facet_count != mesh.facets.size()
         || fields->projection_count != model.source_terms.size()) {
         SET_ERR("compiled fields buffer sizes do not match compiled model");
         return MHS_ERROR;
@@ -613,17 +613,18 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
         SET_ERR("NULL projection field buffer");
         return MHS_ERROR;
     }
-    for (size_t cidx = 0; cidx < mesh.cells.size(); ++cidx) {
+    for (size_t cidx = 0; cidx < mesh.cell_count(); ++cidx) {
+        const auto cell = mesh.cell(cidx);
         for (size_t a = 0; a < 3; ++a) {
-            fields->cell_min[3 * cidx + a] = mesh.cells[cidx].min[a];
-            fields->cell_max[3 * cidx + a] = mesh.cells[cidx].max[a];
+            fields->cell_min[3 * cidx + a] = cell.min[a];
+            fields->cell_max[3 * cidx + a] = cell.max[a];
         }
         fields->material_id[cidx] = model.cell_material[cidx];
     }
     for (size_t id = 0; id < mesh.facets.size(); ++id) {
         const auto& facet = mesh.facets[id];
-        fields->facet_minus[id] = model.discrete.cell_facets[id].minus;
-        fields->facet_plus[id] = model.discrete.cell_facets[id].plus;
+        fields->facet_minus[id] = model.mesh.cell_facets[id].minus;
+        fields->facet_plus[id] = model.mesh.cell_facets[id].plus;
         fields->facet_axis[id] = static_cast<mhs_axis_t>(facet.axis);
         fields->facet_coordinate[id] = facet.coordinate;
         for (size_t a = 0; a < 4; ++a)
@@ -633,7 +634,7 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
         const auto& term = model.source_terms[id];
         fields->projection_cell[id] = term.cell;
         fields->projection_source[id] = term.source;
-        const auto& cell = model.discrete.cells[term.cell];
+        const auto& cell = model.mesh.cell(term.cell);
         fields->projection_volume[id] = cell.volume();
         const auto center = cell.center();
         std::ranges::copy(center, fields->projection_center + 3 * id);
@@ -652,7 +653,7 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
     }
     MHS_TRY({
         const auto& model = c->model();
-        if (state_count != model.discrete.cells.size() || projection_count != model.source_terms.size())
+        if (state_count != model.mesh.cell_count() || projection_count != model.source_terms.size())
             throw std::invalid_argument("source projection buffer size mismatch");
         for (size_t i = 0; i < projection_count; ++i) {
             const auto& term = model.source_terms[i];
@@ -669,8 +670,8 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
     CHECK_NULL(values);
     const auto& model = c->model();
 
-    const auto& mesh = model.discrete;
-    if (temperature_count != model.discrete.cells.size() || values->count != temperature_count) {
+    const auto& mesh = model.mesh;
+    if (temperature_count != model.mesh.cell_count() || values->count != temperature_count) {
         SET_ERR("material evaluation buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
@@ -680,8 +681,8 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
         return MHS_ERROR;
     }
     MHS_TRY({
-        for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
-            const auto p = mesh.cells[cell].center();
+        for (std::size_t cell = 0; cell < mesh.cell_count(); ++cell) {
+            const auto p = mesh.cell(cell).center();
             const auto& props = model.material_table[model.cell_material[cell]];
             const auto dof = cell;
             const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
@@ -706,7 +707,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     CHECK_NULL(c);
     CHECK_NULL(temperature);
     MHS_TRY({
-        const auto cell_count = c->model().discrete.cells.size();
+        const auto cell_count = c->model().mesh.cell_count();
         if (temperature_count != cell_count) {
             SET_ERR("temperature_count must equal cell_count");
             return MHS_ERROR;
@@ -805,7 +806,7 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study
             run.output_interval = study->output_interval;
         }
 
-        if ((!state && state_count != 0) || (state && state_count != c->model().discrete.cells.size()))
+        if ((!state && state_count != 0) || (state && state_count != c->model().mesh.cell_count()))
             throw std::invalid_argument("initial state must be NULL/0 or have cell_count entries");
         const std::span<const double> init_span(state, state_count);
 

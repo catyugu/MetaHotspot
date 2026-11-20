@@ -27,9 +27,9 @@ namespace mhs::app::erom {
             const auto& probe = model.point_probes[id];
             if (probe.cell == core::invalid_id)
                 throw std::invalid_argument("cannot retain point probe outside the FOM: " + probe.name);
-            const auto facets = model.discrete.incident_facets(probe.cell);
-            const auto& mesh = model.discrete;
-            const auto center = mesh.cells[probe.cell].center();
+            const auto facets = model.mesh.incident_facets(probe.cell);
+            const auto& mesh = model.mesh;
+            const auto center = mesh.cell(probe.cell).center();
             const bool on_boundary = std::ranges::any_of(facets,
                 [&](FacetId f) { return mesh.cell_facets[f].exterior() && mesh.facets[f].contains(probe.point); });
             std::set<CellId> support {probe.cell};
@@ -63,7 +63,7 @@ namespace mhs::app::erom {
             return face.normal != 0 && face.coordinate == (face.normal < 0 ? box.min[axis] : box.max[axis]);
         }
 
-        bool covered_by_box_faces(const DiscreteMesh& mesh, const SurfaceRegion& region, const CellGeometry& box)
+        bool covered_by_box_faces(const ConformalMesh& mesh, const SurfaceRegion& region, const CellGeometry& box)
         {
             double covered = 0;
             for (const auto& f : mesh.facets) {
@@ -104,8 +104,8 @@ namespace mhs::app::erom {
 
     Prepared prepare(const Fom& model, const FomDefinition& definition, const HtcRanges& ranges)
     {
-        const auto& mesh = model.discrete;
-        if (mesh.cells.empty() || !model.fluid.fluid_to_global.empty())
+        const auto& mesh = model.mesh;
+        if (mesh.cell_count() == 0 || !model.fluid.fluid_to_global.empty())
             throw std::invalid_argument("EROM extraction requires a nonempty solid FOM");
 
         const std::set<MaterialId> used_materials(model.cell_material.begin(), model.cell_material.end());
@@ -121,12 +121,14 @@ namespace mhs::app::erom {
         for (std::size_t id = 0; id < model.facet_boundary_group.size(); ++id)
             if (const auto surface = model.facet_boundary_group[id]; surface != core::invalid_id)
                 facets_by_surface[surface].push_back(static_cast<FacetId>(id));
-        auto bounds = mesh.cells.front();
-        for (const auto& cell : mesh.cells)
+        auto bounds = mesh.cell(0);
+        for (std::size_t c = 1; c < mesh.cell_count(); ++c) {
+            const auto cell = mesh.cell(c);
             for (std::size_t axis = 0; axis < bounds.min.size(); ++axis) {
                 bounds.min[axis] = std::min(bounds.min[axis], cell.min[axis]);
                 bounds.max[axis] = std::max(bounds.max[axis], cell.max[axis]);
             }
+        }
         for (const auto& [id, range] : ranges) {
             if (id >= facets_by_surface.size() || facets_by_surface[id].empty())
                 throw std::invalid_argument("unknown or empty HTC group " + std::to_string(id));
@@ -142,10 +144,10 @@ namespace mhs::app::erom {
         }
 
         solver::ThermalAssembler assembler(model);
-        core::Vector<double> state(mesh.cells.size(), model.reference_temperature);
+        core::Vector<double> state(mesh.cell_count(), model.reference_temperature);
         const auto& operators = assembler.assemble_internal(state, 0);
         Prepared result {};
-        const auto n = static_cast<Eigen::Index>(mesh.cells.size());
+        const auto n = static_cast<Eigen::Index>(mesh.cell_count());
         result.K = Eigen::Map<const Sparse>(n, n, static_cast<Eigen::Index>(operators.K.nnz()),
             operators.K.row_ptr().data(), operators.K.col_idx().data(), operators.K.values().data());
         result.capacity = Eigen::Map<const Vector>(operators.C.values().data(), n);
@@ -198,7 +200,7 @@ namespace mhs::app::erom {
 
         core::Vector<double> volumes(model.heat_source_table.size());
         for (const auto& term : model.source_terms)
-            volumes[term.source] += mesh.cells[term.cell].volume();
+            volumes[term.source] += mesh.cell(term.cell).volume();
         core::Vector<SourceId> columns(volumes.size(), core::invalid_id);
         for (SourceId id = 0; id < volumes.size(); ++id) {
             if (volumes[id] == 0)
@@ -217,7 +219,7 @@ namespace mhs::app::erom {
         result.B = Matrix::Zero(n, static_cast<Eigen::Index>(result.sources.size()));
         for (const auto& term : model.source_terms)
             if (const auto col = columns[term.source]; col != core::invalid_id) {
-                const double weight = mesh.cells[term.cell].volume() / volumes[term.source];
+                const double weight = mesh.cell(term.cell).volume() / volumes[term.source];
                 result.B(term.cell, col) += weight;
                 weights.emplace_back(model.point_probes.size() + col, term.cell, weight);
             }

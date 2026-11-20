@@ -6,14 +6,15 @@
 #include <stdexcept>
 
 namespace mhs::compiler {
-    // The only structured-index arithmetic in the compiled model pipeline.
     // Conformal Cartesian cells: volume box faces inside the mesh must lie on input grid planes.
     void compile_conformal_mesh(mhs::model::Fom& model, const mhs::model::MeshSpec& input,
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
     {
         using namespace mhs::core;
         using namespace mhs::model;
-        std::array<mhs::core::Vector<double>, 3> axes {input.x_vertices, input.y_vertices, input.z_vertices};
+        auto& mesh = model.mesh;
+        auto& axes = mesh.vertices;
+        axes = {input.x_vertices, input.y_vertices, input.z_vertices};
         std::array<std::size_t, 3> n {};
         for (int a = 0; a < 3; ++a) {
             if (axes[a].size() < 2)
@@ -36,8 +37,7 @@ namespace mhs::compiler {
                             throw std::invalid_argument("volume geometry must align with Cartesian mesh vertices");
                     }
                 }
-        auto flatten = [&](std::size_t x, std::size_t y, std::size_t z) { return (x * n[1] + y) * n[2] + z; };
-        mhs::core::Vector<CellId> active(n[0] * n[1] * n[2], invalid_id);
+        mesh.grid_to_cell.assign(n[0] * n[1] * n[2], invalid_id);
         for (std::size_t x = 0; x < n[0]; ++x)
             for (std::size_t y = 0; y < n[1]; ++y)
                 for (std::size_t z = 0; z < n[2]; ++z) {
@@ -47,9 +47,10 @@ namespace mhs::compiler {
                     const auto owner = classify_point(volumes, center);
                     if (!owner)
                         continue;
-                    const auto cell_id = static_cast<CellId>(model.discrete.cells.size());
-                    active[flatten(x, y, z)] = cell_id;
-                    model.discrete.cells.push_back(cell);
+                    const auto cell_id = static_cast<CellId>(model.mesh.cell_count());
+                    const auto index = mesh.grid_index(x, y, z);
+                    mesh.grid_to_cell[index] = cell_id;
+                    mesh.cell_to_grid.push_back(index);
                     const auto& volume = volumes[*owner];
                     model.cell_material.push_back(volume.material);
                     if (volume.source != invalid_id)
@@ -60,36 +61,21 @@ namespace mhs::compiler {
                             && probe.point[2] >= cell.min[2] && probe.point[2] <= cell.max[2])
                             probe.cell = cell_id;
                 }
-        for (std::size_t x = 0; x < n[0]; ++x)
-            for (std::size_t y = 0; y < n[1]; ++y)
-                for (std::size_t z = 0; z < n[2]; ++z) {
-                    const auto c = active[flatten(x, y, z)];
-                    if (c == mhs::core::invalid_id)
+        for (CellId c = 0; c < mesh.cell_count(); ++c)
+            for (std::size_t a = 0; a < 3; ++a)
+                for (int sign : {-1, 1}) {
+                    const auto neighbor = mesh.neighbor(c, a, sign);
+                    if ((neighbor != mhs::core::invalid_id) && neighbor < c)
                         continue;
-                    for (int a = 0; a < 3; ++a)
-                        for (int sign : {-1, 1}) {
-                            std::array<std::size_t, 3> v {x, y, z};
-                            CellId neighbor = mhs::core::invalid_id;
-                            if ((sign < 0 && v[a] > 0) || (sign > 0 && v[a] + 1 < n[a])) {
-                                if (sign < 0)
-                                    --v[a];
-                                else
-                                    ++v[a];
-                                neighbor = active[flatten(v[0], v[1], v[2])];
-                            }
-                            if ((neighbor != mhs::core::invalid_id) && neighbor < c)
-                                continue;
-                            const auto& cell = model.discrete.cells[c];
-                            Facet f;
-                            f.normal = neighbor == invalid_id ? static_cast<std::int8_t>(sign) : 0;
-                            model.discrete.cell_facets.push_back(
-                                sign > 0 ? CellFacet {c, neighbor} : CellFacet {neighbor, c});
-                            f.axis = static_cast<Axis>(a);
-                            f.coordinate = sign > 0 ? cell.max[a] : cell.min[a];
-                            const int t = a == 0 ? 1 : 0, u = a == 2 ? 1 : 2;
-                            f.bounds = {cell.min[t], cell.max[t], cell.min[u], cell.max[u]};
-                            model.discrete.facets.push_back(f);
-                        }
+                    const auto& cell = model.mesh.cell(c);
+                    Facet f;
+                    f.normal = neighbor == invalid_id ? static_cast<std::int8_t>(sign) : 0;
+                    model.mesh.cell_facets.push_back(sign > 0 ? CellFacet {c, neighbor} : CellFacet {neighbor, c});
+                    f.axis = static_cast<Axis>(a);
+                    f.coordinate = sign > 0 ? cell.max[a] : cell.min[a];
+                    const auto [t, u] = tangential_axes(f.axis);
+                    f.bounds = {cell.min[t], cell.max[t], cell.min[u], cell.max[u]};
+                    model.mesh.facets.push_back(f);
                 }
     }
 } // namespace mhs::compiler

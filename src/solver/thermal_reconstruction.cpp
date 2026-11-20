@@ -8,7 +8,7 @@ namespace mhs::solver {
         BoundaryEvaluation exterior_sample(const model::Fom& model, double temperature, double time, model::FacetId id)
         {
             return evaluate_boundary(model.boundary_groups[model.facet_boundary_group[id]].condition,
-                model.discrete.facets[id], temperature, time, boundary_resistance(model, id, temperature, time));
+                model.mesh.facets[id], temperature, time, boundary_resistance(model, id, temperature, time));
         }
 
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
@@ -22,9 +22,9 @@ namespace mhs::solver {
                 cell_conductivity(model, cell, 1, temperature[cell], time),
                 cell_conductivity(model, cell, 2, temperature[cell], time)};
             Vec3 gradient {};
-            for (auto id : model.discrete.incident_facets(cell)) {
-                const auto& f = model.discrete.facets[id];
-                const auto& cells = model.discrete.cell_facets[id];
+            for (auto id : model.mesh.incident_facets(cell)) {
+                const auto& f = model.mesh.facets[id];
+                const auto& cells = model.mesh.cell_facets[id];
                 if (cells.exterior())
                     continue;
                 const auto axis = static_cast<std::size_t>(f.axis);
@@ -39,16 +39,16 @@ namespace mhs::solver {
                     = (r_neighbor * temperature[cell] + r_cell * temperature[neighbor]) / (r_minus + r_plus);
                 gradient[axis] += (cells.minus == cell ? 1 : -1) * f.area() * trace;
             }
-            for (auto id : model.discrete.incident_facets(cell)) {
-                const auto& facet = model.discrete.facets[id];
-                if (!model.discrete.cell_facets[id].exterior())
+            for (auto id : model.mesh.incident_facets(cell)) {
+                const auto& facet = model.mesh.facets[id];
+                if (!model.mesh.cell_facets[id].exterior())
                     continue;
                 const auto axis = static_cast<std::size_t>(facet.axis);
                 const auto trace = sample_boundary ? sample_boundary(id, nullptr)
                                                    : exterior_sample(model, temperature[cell], time, id);
                 gradient[axis] += facet.normal * facet.area() * trace.temperature;
             }
-            const auto volume = model.discrete.cells[cell].volume();
+            const auto volume = model.mesh.cell(cell).volume();
             return {gradient[0] / volume, gradient[1] / volume, gradient[2] / volume};
         }
     } // namespace
@@ -60,9 +60,9 @@ namespace mhs::solver {
             return std::nullopt;
         double sum = 0, dirichlet_sum = 0;
         size_t count = 0, dirichlet_count = 0;
-        for (auto id : model.discrete.incident_facets(cell)) {
-            const auto& facet = model.discrete.facets[id];
-            if (!model.discrete.cell_facets[id].exterior() || !facet.contains(p))
+        for (auto id : model.mesh.incident_facets(cell)) {
+            const auto& facet = model.mesh.facets[id];
+            if (!model.mesh.cell_facets[id].exterior() || !facet.contains(p))
                 continue;
             const auto trace
                 = sample_boundary ? sample_boundary(id, &p) : exterior_sample(model, temperature[cell], time, id);
@@ -94,7 +94,7 @@ namespace mhs::solver {
         if (const auto trace = boundary_value(model, temperature, time, cell, p, sample_boundary))
             return *trace;
         const auto gradient = reconstruct_cell_gradient(model, temperature, time, cell, sample_boundary);
-        const auto center = model.discrete.cells[cell].center();
+        const auto center = model.mesh.cell(cell).center();
         return temperature[cell] + gradient[0] * (p[0] - center[0]) + gradient[1] * (p[1] - center[1])
             + gradient[2] * (p[2] - center[2]);
     }

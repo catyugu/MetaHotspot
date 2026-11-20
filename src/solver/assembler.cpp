@@ -7,9 +7,9 @@
 
 namespace mhs::solver {
     namespace {
-        std::shared_ptr<const core::CSRPattern> build_thermal_pattern(const model::DiscreteMesh& mesh)
+        std::shared_ptr<const core::CSRPattern> build_thermal_pattern(const model::ConformalMesh& mesh)
         {
-            const auto n = mesh.cells.size();
+            const auto n = mesh.cell_count();
             core::detail::checked_sparse_size(n);
             core::Vector<core::SparseIndex> ptr(n + 1, 0), columns, row;
             for (std::size_t i = 0; i < n; ++i) {
@@ -40,8 +40,8 @@ namespace mhs::solver {
 
     ThermalAssembler::ThermalAssembler(const model::Fom& model)
         : model_(model)
-        , operators_ {core::CSRMatrix<double>(build_thermal_pattern(model.discrete)),
-              build_capacity(model.discrete.cells.size()), core::Vector<double>(model.discrete.cells.size())}
+        , operators_ {core::CSRMatrix<double>(build_thermal_pattern(model.mesh)),
+              build_capacity(model.mesh.cell_count()), core::Vector<double>(model.mesh.cell_count())}
         , diagonal_positions_(operators_.K.rows())
         , conductivity_(operators_.K.rows())
         , density_(model.fluid.fluid_to_global.size())
@@ -61,7 +61,7 @@ namespace mhs::solver {
         using namespace mhs::model;
         using namespace mhs::expression;
         const auto& model = model_;
-        if (temperature.size() != model.discrete.cells.size())
+        if (temperature.size() != model.mesh.cell_count())
             throw std::invalid_argument("assemble_thermal: state size differs from DOF count");
         auto& A = operators_.K;
         auto& rhs = operators_.f;
@@ -73,13 +73,13 @@ namespace mhs::solver {
             return std::lower_bound(columns.begin() + A.row_ptr()[row], columns.begin() + A.row_ptr()[row + 1], col)
                 - columns.begin();
         };
-        for (std::size_t c = 0; c < model.discrete.cells.size(); ++c) {
+        for (std::size_t c = 0; c < model.mesh.cell_count(); ++c) {
             const auto row = static_cast<SparseIndex>(c);
-            const auto center = model.discrete.cells[c].center();
+            const auto center = model.mesh.cell(c).center();
             const FieldContext ctx {center[0], center[1], center[2], temperature[row], time};
             const auto& mat = model.material_table[model.cell_material[c]];
             conductivity_[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
-            const auto volume = model.discrete.cells[c].volume();
+            const auto volume = model.mesh.cell(c).volume();
             const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
             operators_.C.values()[c] = rho * cp * volume;
             if (!density_.empty()) {
@@ -95,9 +95,9 @@ namespace mhs::solver {
         auto fluid_index = [&](CellId c) {
             return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
         };
-        for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
-            const auto& f = model.discrete.facets[id];
-            const auto& cells = model.discrete.cell_facets[id];
+        for (std::size_t id = 0; id < model.mesh.facets.size(); ++id) {
+            const auto& f = model.mesh.facets[id];
+            const auto& cells = model.mesh.cell_facets[id];
             if (cells.exterior())
                 continue;
             const auto i = cells.minus;
@@ -125,7 +125,7 @@ namespace mhs::solver {
             }
         }
         for (const auto& term : model.fluid.boundary_terms) {
-            const auto cell = model.discrete.cell_facets[term.facet].owner();
+            const auto cell = model.mesh.cell_facets[term.facet].owner();
             const auto row = static_cast<SparseIndex>(cell);
             const auto cp = specific_heat_[model.fluid.global_to_fluid[cell]];
             std::visit(
@@ -155,9 +155,9 @@ namespace mhs::solver {
             if (is_adiabatic(law))
                 continue;
             const auto id = static_cast<model::FacetId>(i);
-            const auto cell = model_.discrete.cell_facets[id].owner();
+            const auto cell = model_.mesh.cell_facets[id].owner();
             const auto r = resistance(id);
-            const auto [conductance, load] = boundary_terms(model_.discrete.facets[id],
+            const auto [conductance, load] = boundary_terms(model_.mesh.facets[id],
                 project ? project->face_partition(component, id) : nullptr,
                 [&](const model::Facet& patch) { return evaluate_boundary(law, patch, temperature[cell], time, r); });
             operators_.K.values()[diagonal_positions_[cell]] += conductance;
@@ -168,8 +168,8 @@ namespace mhs::solver {
 
     double ThermalAssembler::resistance(model::FacetId id) const
     {
-        const auto cell = model_.discrete.cell_facets[id].owner();
-        const auto axis = static_cast<std::size_t>(model_.discrete.facets[id].axis);
+        const auto cell = model_.mesh.cell_facets[id].owner();
+        const auto axis = static_cast<std::size_t>(model_.mesh.facets[id].axis);
         return boundary_resistance(model_, id, conductivity_[cell][axis]);
     }
 

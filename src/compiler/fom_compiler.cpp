@@ -138,7 +138,7 @@ namespace mhs::compiler {
             for (const auto& region : definition.fluid_boundaries[id].regions)
                 fluid_regions.push_back({region, static_cast<SurfaceTag>(id)});
         auto [thermal_tags, fluid_tags]
-            = compile_exterior_facets(model.discrete, surface_regions, fluid_regions, fallback_boundary);
+            = compile_exterior_facets(model.mesh, surface_regions, fluid_regions, fallback_boundary);
         model.facet_boundary_group = std::move(thermal_tags);
         mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_tags, initial_viscosity);
 

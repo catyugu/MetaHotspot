@@ -11,10 +11,10 @@ namespace mhs::solver {
     std::pair<double, double> interior_facet_resistances(
         const mhs::model::Fom& model, mhs::model::FacetId id, double k_minus, double k_plus)
     {
-        const auto axis = static_cast<std::size_t>(model.discrete.facets[id].axis);
-        const auto& facet = model.discrete.cell_facets[id];
-        double minus = side_thermal_resistance(model.discrete.cells[facet.minus].size()[axis] / 2, k_minus);
-        double plus = side_thermal_resistance(model.discrete.cells[facet.plus].size()[axis] / 2, k_plus);
+        const auto axis = static_cast<std::size_t>(model.mesh.facets[id].axis);
+        const auto& facet = model.mesh.cell_facets[id];
+        double minus = side_thermal_resistance(model.mesh.cell(facet.minus).size()[axis] / 2, k_minus);
+        double plus = side_thermal_resistance(model.mesh.cell(facet.plus).size()[axis] / 2, k_plus);
         const auto& fluid = model.fluid;
         if (!fluid.global_to_fluid.empty()) {
             const auto fi = fluid.global_to_fluid[facet.minus], fj = fluid.global_to_fluid[facet.plus];

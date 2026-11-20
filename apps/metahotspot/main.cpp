@@ -47,7 +47,7 @@ int main(int argc, char* argv[])
         const auto project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
         const auto& model = *asset;
 
-        MHS_LOG_INFO("Compiled {} cells and {} facets", model.discrete.cells.size(), model.discrete.facets.size());
+        MHS_LOG_INFO("Compiled {} cells and {} facets", model.mesh.cell_count(), model.mesh.facets.size());
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
         const std::array<std::size_t, 3> shape {grid.x_vertices.size(), grid.y_vertices.size(), grid.z_vertices.size()};
         // Write outputs
         // VTU: writes cell-centered body temperature directly (no node interpolation)
-        mhs::app::output::write_vtu(output_vtu, model.discrete, solution);
+        mhs::app::output::write_vtu(output_vtu, model.mesh, solution);
         MHS_LOG_INFO("VTU written to: {}", output_vtu);
 
         // XML output uses node-centered data (interpolated from cell centers)

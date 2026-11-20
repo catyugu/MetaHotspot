@@ -1,7 +1,7 @@
 #pragma once
 
 #include "expression/expression.hpp"
-#include "model/discrete_mesh.hpp"
+#include "model/conformal_mesh.hpp"
 #include "model/fluid_model.hpp"
 #include "model/types.hpp"
 
@@ -54,7 +54,7 @@ namespace mhs::model {
     };
 
     struct Fom {
-        DiscreteMesh discrete;
+        ConformalMesh mesh;
 
         mhs::core::Vector<MaterialId> cell_material;
         mhs::core::Vector<MaterialProps> material_table;

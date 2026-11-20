@@ -14,8 +14,8 @@ namespace mhs::solver {
                 return {};
             return [&project, &component, &m, i, state, local, time](
                        FacetId id, const Vec3* point) -> BoundaryEvaluation {
-                const auto& facet = m.discrete.facets[id];
-                const double temperature = local[m.discrete.cell_facets[id].owner()];
+                const auto& facet = m.mesh.facets[id];
+                const double temperature = local[m.mesh.cell_facets[id].owner()];
                 const double r = boundary_resistance(m, id, temperature, time);
                 const auto surface = m.facet_boundary_group[id];
                 const auto& law
