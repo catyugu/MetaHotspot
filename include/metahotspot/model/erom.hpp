@@ -25,6 +25,9 @@ namespace mhs::model {
         double ambient = 300;
     };
 
+    // Asset-local index into both Erom::interfaces and the rows of Vb.
+    enum class EromInterfaceId : core::EntityIndex { };
+
     struct EromInterface {
         Facet facet;
         double resistance; // m² K/W
@@ -45,8 +48,26 @@ namespace mhs::model {
         core::Vector<EromOutput> outputs;
         double reference_temperature = 300;
         core::Vector<double> uniform_temperature_mode; // q_initial = (T_initial - T_ref) * mode
+
+        const EromInterface& interface_at(EromInterfaceId id) const
+        {
+            return interfaces[static_cast<core::EntityIndex>(id)];
+        }
     };
 
-    void validate_erom(const Erom& erom);
-    std::shared_ptr<const Erom> read_erom(const std::filesystem::path& path);
+    // Validates on construction; copies share immutable data.
+    class EromAsset {
+    public:
+        explicit EromAsset(Erom erom);
+        EromAsset(const EromAsset&) = default;
+        EromAsset& operator=(const EromAsset&) = default;
+
+        const Erom& operator*() const { return *data_; }
+        const Erom* operator->() const { return data_.get(); }
+
+    private:
+        std::shared_ptr<const Erom> data_;
+    };
+
+    EromAsset read_erom(const std::filesystem::path& path);
 } // namespace mhs::model

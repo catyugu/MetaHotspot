@@ -56,9 +56,9 @@ namespace mhs::app::erom {
         };
     } // namespace
 
-    void write_erom(const std::filesystem::path& path, const model::Erom& e)
+    void write_erom(const std::filesystem::path& path, const model::EromAsset& asset)
     {
-        model::validate_erom(e);
+        const auto& e = *asset;
         std::random_device random;
         auto temporary = path;
         do {

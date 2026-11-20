@@ -5,10 +5,10 @@
 
 namespace mhs::solver {
 
-    inline const model::BoundaryCondition* boundary_override(const model::BoundaryOverrides& overrides,
-        model::BoundaryGroupId boundary_group, const model::BoundaryCondition* fallback = nullptr)
+    inline const model::BoundaryCondition& boundary_law(const model::FomInstance& fom, model::BoundaryGroupId group)
     {
-        return boundary_group < overrides.size() && overrides[boundary_group] ? &*overrides[boundary_group] : fallback;
+        return group < fom.boundaries.size() && fom.boundaries[group] ? *fom.boundaries[group]
+                                                                      : fom.asset->boundary_groups[group].condition;
     }
 
     // Unit-area Fourier conduction resistance; no fluid/interface model involved.
@@ -69,6 +69,9 @@ namespace mhs::solver {
 
     BoundaryEvaluation evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
         double temperature, double time, double resistance);
+
+    BoundaryEvaluation evaluate_convection(const model::Convection& law, const model::Facet& patch, double temperature,
+        double time, double resistance, bool require_physical_htc = false);
 
     // Boundary expressions and point probes use component coordinates.
     inline model::Facet local_patch(

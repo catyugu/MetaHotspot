@@ -145,13 +145,12 @@ namespace mhs::solver {
         std::span<const double> temperature, double time, const model::Project* project, std::size_t component)
     {
         assemble_internal(temperature, time);
-        const auto* overrides = project ? &project->components()[component].boundaries : nullptr;
+        const auto* fom = project ? &std::get<model::FomInstance>(project->components()[component].model) : nullptr;
         for (std::size_t i = 0; i < model_.facet_boundary_group.size(); ++i) {
             const auto surface = model_.facet_boundary_group[i];
             if (surface == core::invalid_id)
                 continue;
-            const auto& fallback = model_.boundary_groups[surface].condition;
-            const auto& law = overrides ? *boundary_override(*overrides, surface, &fallback) : fallback;
+            const auto& law = fom ? boundary_law(*fom, surface) : model_.boundary_groups[surface].condition;
             if (is_adiabatic(law))
                 continue;
             const auto id = static_cast<model::FacetId>(i);

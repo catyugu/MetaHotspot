@@ -68,8 +68,8 @@ namespace mhs::solver {
             core::Vector<double> state(count);
             const auto components = project.components();
             for (std::size_t i = 0; i < components.size(); ++i)
-                if (const auto* asset = std::get_if<std::shared_ptr<const model::Erom>>(&components[i].asset)) {
-                    const auto& e = **asset;
+                if (const auto* erom = std::get_if<model::EromInstance>(&components[i].model)) {
+                    const auto& e = *erom->asset;
                     const double delta = study.initial_temperature - e.reference_temperature;
                     std::ranges::transform(e.uniform_temperature_mode, state.begin() + project.dof_offset(i),
                         [delta](double weight) { return delta * weight; });

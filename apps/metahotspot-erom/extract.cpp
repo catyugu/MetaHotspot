@@ -215,7 +215,6 @@ namespace mhs::app::erom {
         model::Erom asset {native(K), native(C), native(B), native(L), native(boundary), std::move(project.interfaces),
             std::move(surfaces), std::move(project.outline), std::move(project.sources), std::move(project.outputs),
             project.reference_temperature, {uniform.begin(), uniform.end()}};
-        model::validate_erom(asset);
-        return {std::move(asset), statistics};
+        return {model::EromAsset(std::move(asset)), statistics};
     }
 } // namespace mhs::app::erom

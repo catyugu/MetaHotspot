@@ -78,7 +78,7 @@ struct mhs_compiled_t {
 
     const mhs::model::Fom& model() const
     {
-        return *std::get<std::shared_ptr<const mhs::model::Fom>>(project.components().front().asset);
+        return *std::get<mhs::model::FomInstance>(project.components().front().model).asset;
     }
 };
 
@@ -525,7 +525,7 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     MHS_TRY({
         auto c = std::make_unique<mhs_compiled_t>();
         const auto asset = std::make_shared<const mhs::model::Fom>(mhs::compiler::compile_fom(m->def, m->mesh));
-        c->project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
+        c->project = mhs::compiler::compile_project({{{{}, mhs::model::FomInstance {asset}}}, {}});
         *out = c.release();
     });
 }

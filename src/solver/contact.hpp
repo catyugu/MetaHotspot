@@ -18,12 +18,14 @@ namespace mhs::solver {
     inline Side contact_side(const model::Project& project, model::ContactSide side)
     {
         const auto offset = project.dof_offset(side.component_index);
-        const auto& asset = project.components()[side.component_index].asset;
-        if (const auto* fom = std::get_if<std::shared_ptr<const model::Fom>>(&asset)) {
+        const auto& component = project.components()[side.component_index].model;
+        if (const auto* facet = std::get_if<model::FacetId>(&side.face)) {
             static constexpr double unit_weight = 1;
-            return {offset + (*fom)->discrete.cell_facets[side.face_index].owner(), {&unit_weight, 1}, 0};
+            const auto& fom = *std::get<model::FomInstance>(component).asset;
+            return {offset + fom.discrete.cell_facets[*facet].owner(), {&unit_weight, 1}, 0};
         }
-        const auto& erom = *std::get<std::shared_ptr<const model::Erom>>(asset);
-        return {offset, erom.Vb.row(side.face_index), erom.reference_temperature};
+        const auto& erom = *std::get<model::EromInstance>(component).asset;
+        const auto id = static_cast<core::EntityIndex>(std::get<model::EromInterfaceId>(side.face));
+        return {offset, erom.Vb.row(id), erom.reference_temperature};
     }
 } // namespace mhs::solver

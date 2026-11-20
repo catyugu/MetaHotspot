@@ -1,5 +1,4 @@
 #include "thermal_reconstruction.hpp"
-#include <limits>
 #include <optional>
 #include <span>
 
@@ -56,8 +55,6 @@ namespace mhs::solver {
     static std::optional<double> boundary_value(const mhs::model::Fom& model, std::span<const double> temperature,
         double time, mhs::model::CellId cell, const mhs::model::Vec3& p, const BoundarySampler& sample_boundary)
     {
-        if (cell == mhs::core::invalid_id)
-            return std::nullopt;
         double sum = 0, dirichlet_sum = 0;
         size_t count = 0, dirichlet_count = 0;
         for (auto id : model.discrete.incident_facets(cell)) {
@@ -83,14 +80,14 @@ namespace mhs::solver {
     std::optional<double> boundary_value_at(const model::Fom& model, std::span<const double> temperature, double time,
         model::CellId cell, const model::Vec3& point)
     {
+        if (cell == core::invalid_id)
+            return std::nullopt;
         return boundary_value(model, temperature, time, cell, point, {});
     }
 
     double sample_point(const mhs::model::Fom& model, std::span<const double> temperature, double time,
         mhs::model::CellId cell, const mhs::model::Vec3& p, const BoundarySampler& sample_boundary)
     {
-        if (cell == mhs::core::invalid_id)
-            return std::numeric_limits<double>::quiet_NaN();
         if (const auto trace = boundary_value(model, temperature, time, cell, p, sample_boundary))
             return *trace;
         const auto gradient = reconstruct_cell_gradient(model, temperature, time, cell, sample_boundary);

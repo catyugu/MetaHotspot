@@ -27,42 +27,44 @@ namespace {
             definition, {{0, 1}, split ? core::Vector<double> {0, 0.5, 1} : core::Vector<double> {0, 1}, {0, 1}}));
     }
 
-    std::shared_ptr<Erom> modal(double reference = 280, bool left_open = true)
+    Erom modal(double reference = 280, bool left_open = true)
     {
-        auto e = std::make_shared<Erom>();
-        e->K = core::Matrix<double>(1, 1);
-        e->C = core::Matrix<double>(1, 1);
-        e->C(0, 0) = 2;
-        e->B = core::Matrix<double>(1, 2);
-        e->B(0, 0) = 1;
-        e->B(0, 1) = 2;
-        e->L = core::Matrix<double>(2, 1);
-        e->L(0, 0) = 1;
-        e->L(1, 0) = 0.5;
-        e->Vb = core::Matrix<double>(left_open ? 2 : 1, 1);
-        e->Vb(0, 0) = 1;
+        Erom e;
+        e.K = core::Matrix<double>(1, 1);
+        e.C = core::Matrix<double>(1, 1);
+        e.C(0, 0) = 2;
+        e.B = core::Matrix<double>(1, 2);
+        e.B(0, 0) = 1;
+        e.B(0, 1) = 2;
+        e.L = core::Matrix<double>(2, 1);
+        e.L(0, 0) = 1;
+        e.L(1, 0) = 0.5;
+        e.Vb = core::Matrix<double>(left_open ? 2 : 1, 1);
+        e.Vb(0, 0) = 1;
         const Facet left {Axis::X, -1, 0, {0, 1, 0, 1}};
         const Facet right {Axis::X, 1, 1, {0, 1, 0, 1}};
         if (left_open) {
-            e->Vb(1, 0) = 1;
-            e->interfaces.push_back({left, 0.25, 0});
-            e->boundary_groups.push_back({"left", 1, 10, 2, 310});
+            e.Vb(1, 0) = 1;
+            e.interfaces.push_back({left, 0.25, 0});
+            e.boundary_groups.push_back({"left", 1, 10, 2, 310});
         }
         else
-            e->outline.push_back({"left", {left}});
-        e->interfaces.push_back({right, 0.25, static_cast<BoundaryGroupId>(e->boundary_groups.size())});
-        e->boundary_groups.push_back({"right", 1, 10, 1, 330});
-        e->reference_temperature = reference;
-        e->uniform_temperature_mode = {1};
-        e->sources = {{"first", 0}, {"second", 1}};
-        e->outputs = {{"sensor", Vec3 {0.5, 0.25, 0.5}}, {"source mean", std::nullopt}};
+            e.outline.push_back({"left", {left}});
+        e.interfaces.push_back({right, 0.25, static_cast<BoundaryGroupId>(e.boundary_groups.size())});
+        e.boundary_groups.push_back({"right", 1, 10, 1, 330});
+        e.reference_temperature = reference;
+        e.uniform_temperature_mode = {1};
+        e.sources = {{"first", 0}, {"second", 1}};
+        e.outputs = {{"sensor", Vec3 {0.5, 0.25, 0.5}}, {"source mean", std::nullopt}};
         return e;
     }
 
-    template <typename Asset> ComponentInstance instance(std::shared_ptr<Asset> asset, Vec3 at = {})
+    ComponentInstance instance(std::shared_ptr<const Fom> asset, Vec3 at = {})
     {
-        return {at, std::move(asset), {}, {}};
+        return {at, FomInstance {std::move(asset)}};
     }
+
+    ComponentInstance instance(const EromAsset& asset, Vec3 at = {}) { return {at, EromInstance {asset}}; }
 } // namespace
 
 TEST(Project, ComponentCountsAndSharedAssets)
@@ -71,7 +73,7 @@ TEST(Project, ComponentCountsAndSharedAssets)
     EXPECT_EQ(empty.dof_count(), 0u);
     EXPECT_THROW(solver::solve(empty), std::invalid_argument);
     auto fom = cube();
-    auto erom = modal();
+    const EromAsset erom(modal());
     for (const auto& [foms, eroms] : {std::pair {2, 0}, {0, 1}, {0, 2}, {1, 1}, {2, 2}}) {
         ProjectDefinition definition;
         for (int i = 0; i < foms; ++i)
@@ -123,11 +125,16 @@ TEST(Project, MatchingAndNonmatchingFomContactConserveHeat)
 
 TEST(Project, PartialMixedContactUsesExposedBoundaryAndReferenceOffsets)
 {
-    const auto erom = modal();
+    const EromAsset erom(modal());
     const auto project = mhs::compiler::compile_project(
         {{instance(cube(false, true), {7, 13, 19}), instance(erom, {8, 13.5, 19})}, {{{0, 1}, 0.25}}});
     ASSERT_EQ(project.contacts().size(), 1u);
     EXPECT_DOUBLE_EQ(project.contacts()[0].area(), 0.5);
+    const auto& contact = project.contacts()[0];
+    ASSERT_TRUE(std::holds_alternative<FacetId>(contact.left.face));
+    ASSERT_TRUE(std::holds_alternative<EromInterfaceId>(contact.right.face));
+    EXPECT_EQ(std::get<EromInterfaceId>(contact.right.face), EromInterfaceId {0});
+    EXPECT_EQ(project.face_partition(1, FacetId {0}), nullptr);
     EXPECT_EQ(project.output_position(1, 0), (Vec3 {8.5, 13.75, 19.5}));
     EXPECT_FALSE(project.output_position(1, 1));
     EXPECT_EQ(*erom->outputs[0].point, (Vec3 {0.5, 0.25, 0.5}));
@@ -157,16 +164,16 @@ TEST(Project, EromContactUsesModalOuterProductsAndInstanceSchedules)
     auto left = modal(280);
     auto right = modal(310);
     // Two contact patches share the same pair of modal blocks.
-    auto split = left->interfaces[1];
-    left->interfaces[1].facet.bounds[1] = split.facet.bounds[0] = 0.5;
-    left->interfaces.push_back(split);
-    left->Vb = core::Matrix<double>(3, 1);
-    left->Vb(0, 0) = 1;
-    left->Vb(1, 0) = left->Vb(2, 0) = 2;
-    right->Vb(0, 0) = -3;
-    auto l = instance(left), r = instance(right, {1, 0, 0});
-    l.powers = {[](double t) { return 7 * t; }};
-    const auto project = mhs::compiler::compile_project({{l, r}, {}});
+    auto split = left.interfaces[1];
+    left.interfaces[1].facet.bounds[1] = split.facet.bounds[0] = 0.5;
+    left.interfaces.push_back(split);
+    left.Vb = core::Matrix<double>(3, 1);
+    left.Vb(0, 0) = 1;
+    left.Vb(1, 0) = left.Vb(2, 0) = 2;
+    right.Vb(0, 0) = -3;
+    const EromInstance l {EromAsset(std::move(left)), {[](double t) { return 7 * t; }}};
+    const auto project
+        = mhs::compiler::compile_project({{{{}, l}, instance(EromAsset(std::move(right)), {1, 0, 0})}, {}});
     ASSERT_EQ(project.contacts().size(), 2u);
     EXPECT_EQ(project.dof_count(), 2u);
     const core::Vector<double> state {0, 0};
@@ -184,6 +191,15 @@ TEST(Project, EromContactUsesModalOuterProductsAndInstanceSchedules)
     EXPECT_DOUBLE_EQ(next.K.coeff(0, 1), 12);
     EXPECT_NEAR(next.f[0], 23 + 30 * (4.0 / 3 + 4), 1e-12);
     EXPECT_NEAR(next.f[1], 2 + 20 * 0.8 + 30 * 6, 1e-12);
+
+    using expression::CompiledExpression;
+    auto insulated = l;
+    insulated.htc = {Convection {CompiledExpression::make_constant(0), CompiledExpression::make_constant(310)}};
+    const auto insulated_project = mhs::compiler::compile_project({{{{}, insulated}, project.components()[1]}, {}});
+    solver::ProjectAssembler insulated_assembler(insulated_project);
+    const auto& adiabatic = insulated_assembler.assemble(state, 3);
+    EXPECT_NEAR(adiabatic.K.coeff(0, 0), 8, 1e-13);
+    EXPECT_NEAR(adiabatic.f[0], 23 + 30 * 4, 1e-12);
 }
 
 TEST(Project, UntrainedContactWarnsAndKeepsTheEnvironment)
@@ -196,7 +212,7 @@ TEST(Project, UntrainedContactWarnsAndKeepsTheEnvironment)
         ~Capture() { sinks.pop_back(); }
     } capture;
     const auto project
-        = mhs::compiler::compile_project({{instance(cube()), instance(modal(280, false), {1, 0, 0})}, {}});
+        = mhs::compiler::compile_project({{instance(cube()), instance(EromAsset(modal(280, false)), {1, 0, 0})}, {}});
     EXPECT_TRUE(project.contacts().empty());
 #if MHS_LOG_COMPILED_LEVEL <= 3
     const auto message = capture.log.str();
@@ -217,6 +233,11 @@ TEST(Project, RejectsOverlappingContactsAndInvalidInterfaceGroups)
         mhs::compiler::compile_project({{instance(fom), instance(fom, {1, 0, 0}), instance(fom, {1, 0.2, 0})}, {}}),
         std::invalid_argument);
     auto e = modal();
-    e->interfaces[1].boundary_group = 0;
-    EXPECT_THROW(mhs::compiler::compile_project({{instance(e)}, {}}), std::invalid_argument);
+    e.interfaces[1].boundary_group = 0;
+    EXPECT_THROW((void)EromAsset(std::move(e)), std::invalid_argument);
+
+    using expression::CompiledExpression;
+    const EromInstance negative_htc {EromAsset(modal()), {},
+        {Convection {CompiledExpression::make_constant(-1), CompiledExpression::make_constant(310)}}};
+    EXPECT_THROW(mhs::compiler::compile_project({{{{}, negative_htc}}, {}}), std::invalid_argument);
 }

@@ -3,7 +3,7 @@
 
 namespace mhs::model {
     using CellId = core::EntityIndex;
-    using FacetId = core::EntityIndex;
+    using FacetId = core::EntityIndex; // index in a FOM's DiscreteMesh
     using MaterialId = core::EntityIndex;
     using OutputId = core::EntityIndex;
     using BoundaryGroupId = core::EntityIndex;

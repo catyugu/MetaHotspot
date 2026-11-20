@@ -50,7 +50,7 @@ namespace mhs::model {
     struct PointProbe {
         std::string name;
         Vec3 point {};
-        CellId cell = mhs::core::invalid_id;
+        CellId cell = core::invalid_id; // owning active cell after compilation
     };
 
     struct Fom {

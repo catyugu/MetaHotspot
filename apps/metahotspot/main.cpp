@@ -44,7 +44,7 @@ int main(int argc, char* argv[])
 
         const auto asset
             = std::make_shared<const mhs::model::Fom>(mhs::compiler::compile_fom(definition.model, definition.mesh));
-        const auto project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
+        const auto project = mhs::compiler::compile_project({{{{}, mhs::model::FomInstance {asset}}}, {}});
         const auto& model = *asset;
 
         MHS_LOG_INFO("Compiled {} cells and {} facets", model.discrete.cells.size(), model.discrete.facets.size());

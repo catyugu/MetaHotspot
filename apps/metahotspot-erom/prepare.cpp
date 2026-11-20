@@ -25,8 +25,6 @@ namespace mhs::app::erom {
             const Fom& model, const HtcRanges& ranges, OutputId id, core::Vector<double>& state, Weights& weights)
         {
             const auto& probe = model.point_probes[id];
-            if (probe.cell == core::invalid_id)
-                throw std::invalid_argument("cannot retain point probe outside the FOM: " + probe.name);
             const auto facets = model.discrete.incident_facets(probe.cell);
             const auto& mesh = model.discrete;
             const auto center = mesh.cells[probe.cell].center();

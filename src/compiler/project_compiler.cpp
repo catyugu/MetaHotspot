@@ -26,11 +26,10 @@ namespace mhs::compiler {
 
         struct Face {
             std::size_t component_index;
-            core::EntityIndex face_index;
-            const Facet* facet;
-            core::EntityIndex group_index; // boundary group, or diagnostic outline group
+            std::optional<ComponentFace> face; // absent for diagnostic outlines
+            double coordinate; // world plane
+            std::size_t group_index; // boundary group, or diagnostic outline group
             std::string_view name;
-            bool outline;
             Rect rect;
         };
 
@@ -122,65 +121,69 @@ namespace mhs::compiler {
         project.components_ = std::move(definition.components);
         const auto components = project.components();
         project.face_partitions_.resize(components.size());
-        std::set<const Erom*> validated;
         std::array<std::map<double, Plane>, 3> positive;
         std::array<Vector<Face>, 3> negative;
         for (std::size_t i = 0; i < components.size(); ++i) {
             const auto& component = components[i];
             if (!std::ranges::all_of(component.offset, [](double x) { return std::isfinite(x); }))
                 throw std::invalid_argument("component translation must be finite");
-            std::visit(
-                [&](const auto& asset) {
-                    if (!asset)
-                        throw std::invalid_argument("component asset is null");
-                    using Asset = typename std::decay_t<decltype(asset)>::element_type;
-                    constexpr bool reduced = std::is_same_v<Asset, const Erom>;
-                    std::size_t size;
-                    if constexpr (reduced) {
-                        if (validated.insert(asset.get()).second)
-                            validate_erom(*asset);
-                        size = asset->K.rows();
-                        if (component.powers.size() > asset->sources.size())
-                            throw std::invalid_argument("unknown EROM source index");
+            auto append = [&](std::optional<ComponentFace> face, const Facet& f, std::size_t group_index,
+                              std::string_view name) {
+                const auto axis = static_cast<std::size_t>(f.axis);
+                const auto plane = f.coordinate + component.offset[axis];
+                const auto rect = translate(f.bounds, f.axis, component.offset);
+                if (!std::isfinite(plane) || !std::ranges::all_of(rect, [](double x) { return std::isfinite(x); })
+                    || !positive_rect(rect))
+                    throw std::invalid_argument("component translation exceeds facet precision");
+                auto& faces = f.normal > 0 ? positive[axis][plane].faces : negative[axis];
+                faces.push_back({i, face, plane, group_index, name, rect});
+            };
+            std::size_t size;
+            if (const auto* fom = std::get_if<FomInstance>(&component.model)) {
+                if (!fom->asset)
+                    throw std::invalid_argument("FOM asset is null");
+                const auto& asset = *fom->asset;
+                size = asset.discrete.cells.size();
+                if (fom->boundaries.size() > asset.boundary_groups.size())
+                    throw std::invalid_argument("unknown FOM boundary group index");
+                for (const auto& probe : asset.point_probes)
+                    if (probe.cell >= size || !asset.discrete.cells[probe.cell].contains(probe.point))
+                        throw std::invalid_argument("invalid owning cell for FOM probe: " + probe.name);
+                if (components.size() > 1)
+                    for (FacetId id = 0; id < asset.facet_boundary_group.size(); ++id)
+                        if (const auto group = asset.facet_boundary_group[id]; group != core::invalid_id)
+                            append(ComponentFace {id}, asset.discrete.facets[id], group,
+                                asset.boundary_groups[group].name);
+            }
+            else {
+                const auto& erom = std::get<EromInstance>(component.model);
+                const auto& asset = *erom.asset;
+                size = asset.K.rows();
+                if (erom.powers.size() > asset.sources.size())
+                    throw std::invalid_argument("unknown EROM source index");
+                if (erom.htc.size() > asset.boundary_groups.size())
+                    throw std::invalid_argument("unknown EROM HTC group index");
+                for (const auto& law : erom.htc)
+                    if (law
+                        && ((law->coefficient.is_constant()
+                                && !(std::isfinite(law->coefficient.constant_value())
+                                    && law->coefficient.constant_value() >= 0))
+                            || (law->ambient_temperature.is_constant()
+                                && !std::isfinite(law->ambient_temperature.constant_value()))))
+                        throw std::invalid_argument(
+                            "EROM HTC requires a finite nonnegative coefficient and finite ambient temperature");
+                if (components.size() > 1) {
+                    for (core::EntityIndex id = 0; id < asset.interfaces.size(); ++id) {
+                        const auto& f = asset.interfaces[id];
+                        append(ComponentFace {EromInterfaceId {id}}, f.facet, f.boundary_group,
+                            asset.boundary_groups[f.boundary_group].name);
                     }
-                    else {
-                        size = asset->discrete.cells.size();
-                        if (!component.powers.empty())
-                            throw std::invalid_argument("FOM source laws belong to the model");
-                    }
-                    project.dof_offsets_.push_back(core::detail::checked_sparse_size(project.dof_count() + size));
-                    if (component.boundaries.size() > asset->boundary_groups.size())
-                        throw std::invalid_argument("unknown or non-connectable component boundary group index");
-                    if (components.size() <= 1)
-                        return;
-                    auto append = [&](core::EntityIndex face_index, const Facet& f, core::EntityIndex group_index,
-                                      std::string_view name, bool outline = false) {
-                        const auto axis = static_cast<std::size_t>(f.axis);
-                        const auto plane = f.coordinate + component.offset[axis];
-                        const auto rect = translate(f.bounds, f.axis, component.offset);
-                        if (!std::isfinite(plane)
-                            || !std::ranges::all_of(rect, [](double x) { return std::isfinite(x); })
-                            || !positive_rect(rect))
-                            throw std::invalid_argument("component translation exceeds facet precision");
-                        auto& faces = f.normal > 0 ? positive[axis][plane].faces : negative[axis];
-                        faces.push_back({i, face_index, &f, group_index, name, outline, rect});
-                    };
-                    if constexpr (reduced) {
-                        for (core::EntityIndex id = 0; id < asset->interfaces.size(); ++id) {
-                            const auto& f = asset->interfaces[id];
-                            append(id, f.facet, f.boundary_group, asset->boundary_groups[f.boundary_group].name);
-                        }
-                        for (std::size_t group = 0; group < asset->outline.size(); ++group)
-                            for (const auto& f : asset->outline[group].facets)
-                                append(core::invalid_id, f, group, asset->outline[group].name, true);
-                    }
-                    else {
-                        for (FacetId id = 0; id < asset->facet_boundary_group.size(); ++id)
-                            if (const auto surface = asset->facet_boundary_group[id]; surface != core::invalid_id)
-                                append(id, asset->discrete.facets[id], surface, asset->boundary_groups[surface].name);
-                    }
-                },
-                component.asset);
+                    for (std::size_t group = 0; group < asset.outline.size(); ++group)
+                        for (const auto& f : asset.outline[group].facets)
+                            append(std::nullopt, f, group, asset.outline[group].name);
+                }
+            }
+            project.dof_offsets_.push_back(core::detail::checked_sparse_size(project.dof_count() + size));
         }
 
         const auto& resistances = definition.contact_resistance;
@@ -189,22 +192,22 @@ namespace mhs::compiler {
                 throw std::invalid_argument(
                     "contact resistance requires two valid sorted component indices and a finite nonnegative value");
 
-        std::set<std::tuple<std::size_t, bool, core::EntityIndex, std::size_t, bool, core::EntityIndex>> warned;
+        std::set<std::tuple<std::size_t, bool, std::size_t, std::size_t, bool, std::size_t>> warned;
         for (std::size_t axis = 0; axis < positive.size(); ++axis) {
             auto& index = positive[axis];
             for (auto& [coordinate, group] : index)
                 group.index();
             for (const auto& right : negative[axis]) {
-                const auto plane = right.facet->coordinate + components[right.component_index].offset[axis];
+                const auto plane = right.coordinate;
                 for (auto it = index.lower_bound(plane - geometry_eps);
                     it != index.end() && it->first <= plane + geometry_eps; ++it)
                     it->second.search(right.rect, [&](const Face& left, const Rect& cut) {
                         if (left.component_index == right.component_index)
                             return;
                         const auto l = left.component_index, r = right.component_index;
-                        if (left.outline || right.outline) {
+                        if (!left.face || !right.face) {
                             const auto key
-                                = std::tuple {l, left.outline, left.group_index, r, right.outline, right.group_index};
+                                = std::tuple {l, !left.face, left.group_index, r, !right.face, right.group_index};
                             if (warned.insert(key).second)
                                 MHS_LOG_WARN("Components {} ({}) and {} ({}): EROM surface is not connectable; thermal "
                                              "contact is ignored",
@@ -213,7 +216,7 @@ namespace mhs::compiler {
                         }
                         for (const auto* side : {&left, &right}) {
                             auto& partitions = project.face_partitions_[side->component_index];
-                            auto [it, inserted] = partitions.try_emplace(side->face_index);
+                            auto [it, inserted] = partitions.try_emplace(*side->face);
                             if (inserted)
                                 it->second.exposed.push_back(side->rect);
                             cover(it->second.exposed, cut);
@@ -221,7 +224,7 @@ namespace mhs::compiler {
                         }
                         const auto resistance = resistances.find(std::minmax(l, r));
                         project.contacts_.push_back(
-                            {{left.component_index, left.face_index}, {right.component_index, right.face_index}, cut,
+                            {{left.component_index, *left.face}, {right.component_index, *right.face}, cut,
                                 resistance == resistances.end() ? 0.0 : resistance->second});
                     });
             }
@@ -229,15 +232,11 @@ namespace mhs::compiler {
         // Finish exposed rectangles in component coordinates once, before solving.
         for (std::size_t i = 0; i < components.size(); ++i)
             for (auto& [face, partition] : project.face_partitions_[i]) {
-                const auto& facet = std::visit(
-                    [&](const auto& asset) -> const Facet& {
-                        using Asset = typename std::decay_t<decltype(asset)>::element_type;
-                        if constexpr (std::is_same_v<Asset, const Fom>)
-                            return asset->discrete.facets[face];
-                        else
-                            return asset->interfaces[face].facet;
-                    },
-                    components[i].asset);
+                const auto& model = components[i].model;
+                const auto* id = std::get_if<FacetId>(&face);
+                const auto& facet = id
+                    ? std::get<FomInstance>(model).asset->discrete.facets[*id]
+                    : std::get<EromInstance>(model).asset->interface_at(std::get<EromInterfaceId>(face)).facet;
                 const auto [u, v] = tangential_axes(facet.axis);
                 for (auto& rect : partition.exposed)
                     for (std::size_t a = 0; a < rect.size(); ++a) {

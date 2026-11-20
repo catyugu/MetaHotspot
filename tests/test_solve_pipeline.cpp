@@ -3,6 +3,7 @@
 #include "solver/solver.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <string>
 
 static mhs::model::MeshSpec cube_mesh() { return {{0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}, {0.0, 0.005, 0.01}}; }
@@ -28,7 +29,7 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
     io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
     const auto asset = std::make_shared<const mhs::model::Fom>(mhs::compiler::compile_fom(io, cube_mesh()));
-    const auto project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
+    const auto project = mhs::compiler::compile_project({{{{}, mhs::model::FomInstance {asset}}}, {}});
 
     auto result = mhs::solver::solve(project);
 
@@ -77,7 +78,7 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     io.thermal_boundaries.push_back(boundary);
 
     const auto asset = std::make_shared<const mhs::model::Fom>(mhs::compiler::compile_fom(io, cube_mesh()));
-    const auto project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
+    const auto project = mhs::compiler::compile_project({{{{}, mhs::model::FomInstance {asset}}}, {}});
 
     mhs::solver::Study study {mhs::solver::StudyType::Transient, 300.0, 5.0, 1.0};
     auto result = mhs::solver::solve(project, study);
@@ -105,6 +106,14 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     for (double v : traces[1].values) {
         EXPECT_NEAR(v, 500.0, 1e-6) << "z0 probe on Dirichlet face must stay at 500K";
     }
+
+    EXPECT_EQ(asset->point_probes[0].cell, 7u);
+    io.point_probes[0].x = 0.02;
+    EXPECT_THROW(mhs::compiler::compile_fom(io, cube_mesh()), std::invalid_argument);
+    io.point_probes[0] = {"void", 0.0075, 0.0075, 0.0075};
+    io.volumes[0].geometry.push_back(
+        {mhs::model::GeometryOperation::Subtract, {0.005, 0.005, 0.005}, {0.01, 0.01, 0.01}});
+    EXPECT_THROW(mhs::compiler::compile_fom(io, cube_mesh()), std::invalid_argument);
 }
 
 TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
@@ -135,7 +144,7 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     io.thermal_boundaries.push_back(boundary);
 
     const auto asset = std::make_shared<const mhs::model::Fom>(mhs::compiler::compile_fom(io, cube_mesh()));
-    const auto project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
+    const auto project = mhs::compiler::compile_project({{{{}, mhs::model::FomInstance {asset}}}, {}});
 
     mhs::solver::Study study {mhs::solver::StudyType::Transient, 300.0, 5.0, 1.0};
     auto result = mhs::solver::solve(project, study);

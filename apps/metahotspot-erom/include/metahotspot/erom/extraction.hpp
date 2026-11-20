@@ -20,7 +20,7 @@ namespace mhs::app::erom {
     };
 
     struct Extraction {
-        model::Erom asset;
+        model::EromAsset asset;
         Statistics statistics;
     };
 
@@ -29,5 +29,5 @@ namespace mhs::app::erom {
     // HTC ranges are positive and in W/(m^2 K). Tolerance is dimensionless and in (0, 1).
     Extraction extract(const model::FomDefinition& definition, const model::MeshSpec& mesh, const HtcRanges& htc,
         double tolerance = 1e-3);
-    void write_erom(const std::filesystem::path& path, const model::Erom& asset);
+    void write_erom(const std::filesystem::path& path, const model::EromAsset& asset);
 } // namespace mhs::app::erom

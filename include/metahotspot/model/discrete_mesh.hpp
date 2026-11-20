@@ -8,6 +8,13 @@ namespace mhs::model {
         Vec3 min {}, max {};
         Vec3 center() const { return {(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2}; }
         Vec3 size() const { return {max[0] - min[0], max[1] - min[1], max[2] - min[2]}; }
+        bool contains(const Vec3& point) const
+        {
+            for (std::size_t axis = 0; axis < point.size(); ++axis)
+                if (!(point[axis] >= min[axis] && point[axis] <= max[axis]))
+                    return false;
+            return true;
+        }
         double volume() const
         {
             auto d = size();

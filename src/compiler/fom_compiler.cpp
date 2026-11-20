@@ -71,8 +71,6 @@ namespace mhs::compiler {
 
         mhs::expression::SymbolTable symbols;
         register_all_functions(symbols, definition.functions);
-        for (const auto& p : definition.point_probes)
-            model.point_probes.push_back({p.name, {p.x, p.y, p.z}});
 
         // Compile material properties in FomDefinition::materials order.
         model.material_table.resize(definition.materials.size());
@@ -115,7 +113,7 @@ namespace mhs::compiler {
         }
 
         // Compile boundary patches.
-        compile_conformal_mesh(model, mesh, definition.volumes);
+        compile_conformal_mesh(model, mesh, definition.volumes, definition.point_probes);
         for (const auto material : model.cell_material)
             if (material >= model.material_table.size())
                 throw std::out_of_range("cell has no valid material assignment");

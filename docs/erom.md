@@ -1,10 +1,11 @@
 # Mixed projects and EROM extraction
 
 The C++ SDK compiles projects from reusable FOM and EROM assets. Each component
-is identified by its array index and stores a translation and optional surface laws. An EROM instance can
-also set a time-dependent power in watts for each source ID. FOM source and
-material expressions use the FOM's local coordinates. Surface laws use the
-local quadrature point on each exposed patch.
+is identified by its array index and stores a translation and either a
+`FomInstance` or an `EromInstance`. An EROM instance can set a time-dependent
+power in watts for each source ID. FOM source and material expressions use the
+FOM's local coordinates. Boundary expressions use the local quadrature point on
+each exposed patch.
 
 ```cpp
 #include "compiler/project_compiler.hpp"
@@ -14,31 +15,41 @@ using namespace mhs::model;
 
 auto package = read_erom("package.mherom");
 ProjectDefinition input;
-input.components.push_back({{0, 0, 0}, package});
-input.components.push_back({{0.1, 0, 0}, package});
-input.components[1].powers.resize(4);
-input.components[1].powers[3] = [](double t) { return t < 0.1 ? 5.0 : 2.0; };
+input.components.push_back({{0, 0, 0}, EromInstance {package}});
+EromInstance second {package};
+second.powers.resize(4);
+second.powers[3] = [](double t) { return t < 0.1 ? 5.0 : 2.0; };
+input.components.push_back({{0.1, 0, 0}, std::move(second)});
 auto project = mhs::compiler::compile_project(std::move(input));
 auto solution = mhs::solver::solve(project, {mhs::solver::StudyType::Transient, 300, 2, 0.1});
 const auto* trace = solution.find_output(1, 0);
 ```
 
 Build a FOM with `mhs::compiler::compile_fom` and share the result as
-`std::shared_ptr<const Fom>`. `Project::dof_offset` and `dof_size` identify a
+`std::shared_ptr<const Fom>` in a `FomInstance`. Construct an `EromAsset` from
+programmatically built `Erom` data. Its constructor validates the data once,
+and copies of the asset share the validated data. `read_erom` and `extract`
+both provide an `EromAsset`. `Project::dof_offset` and `dof_size` identify a
 component's block in each state snapshot. FOM blocks store absolute cell
 temperatures. EROM blocks store modal states. `output_position` translates
-point observations into world coordinates.
+point observations into world coordinates. FOM compilation requires every
+point observation to lie in an active cell, including its boundary.
 
 The compiler locates opposing coplanar facets and couples their overlap by TPFA.
 `ProjectDefinition::contact_resistance` accepts area-specific contact
 resistances in m² K/W keyed by ascending component array indices. `Contact::bounds`
 uses world coordinates. `FacePartition` stores contact indices and exposed rectangles
-in component coordinates. Contact sides carry a component index and a face index
-(FOM facet or EROM interface). A connected patch
-replaces the environment over its covered area. The remaining area keeps the
-surface's environment. FOMs use `facet_boundary_group` to select a thermal boundary group and its law. Instance overrides use `BoundaryGroupId`. Contacts with
-untrained EROM surfaces log a warning and leave both environment laws in effect. Fluid advection and
-hydraulic boundary terms operate within the individual FOM.
+in component coordinates. A contact side holds a component index and either a
+mesh-local `FacetId` or an asset-local `EromInterfaceId`. The latter indexes
+both the EROM interface table and the corresponding row of `Vb`. A connected
+patch replaces the environment over its covered area. `FomInstance::boundaries`
+and `EromInstance::htc` apply to the exposed area and are indexed by their
+asset's `BoundaryGroupId`. An unset override keeps the asset's default.
+EROM overrides specify a `Convection` law with a finite nonnegative HTC and a
+finite ambient temperature. A zero HTC gives an adiabatic boundary.
+Contacts with untrained EROM surfaces log a warning and leave both
+environment laws in effect. Fluid advection and hydraulic boundary terms
+operate within the individual FOM.
 
 An EROM starts at zero modal state when the study uses its reference
 temperature. For a different uniform initial temperature, the solver scales
@@ -93,9 +104,8 @@ initially uses the FOM reference temperature and stores the uniform mode for
 starting from other temperatures.
 
 Dirichlet conditions, nonzero Neumann fluxes, nonlinear or nonconstant physics,
-and regions with no HTC anchor are rejected during extraction. Dirichlet and
-Neumann laws can be applied to a trained EROM surface in the receiving project.
-Use `read_erom` to load the output into a project.
+and regions with no HTC anchor are rejected during extraction. Use
+`read_erom` to load the output into a project.
 
 Extraction uses the Extended-FANTASTIC response-space algorithm. Physical
 heat-source columns drive training. A thermally disconnected region with no

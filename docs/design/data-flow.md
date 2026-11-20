@@ -45,13 +45,13 @@
 
 编译后的 FOM 用 `facet_boundary_group` 将外部 Facet 映射到热边界组索引 `BoundaryGroupId`。内部 Facet 使用 `invalid_id`。
 
-`ComponentInstance` 保存 `shared_ptr<const Fom/Erom>` variant、平移和稠密可选实例覆盖；组件身份统一为 `components` 数组下标。FOM 的源表达式归资产；EROM 的 `powers` 以 SourceId 替换指定源的默认瓦数，其他源保持默认值，覆盖不叠加。`boundaries` 以 BoundaryGroupId 替换未被接触覆盖部分的环境条件，不修改共享资产。
+`ComponentInstance` 保存平移及 `FomInstance` / `EromInstance` variant，组件身份为 `components` 数组下标。FOM 的源表达式归资产，`FomInstance::boundaries` 按 FOM 边界组覆盖外露面的边界条件。EROM 的 `powers` 按资产内的 `SourceId` 替换功率，`htc` 按资产内的边界组覆盖外露面上的 HTC 和环境温度，零 HTC 表示绝热。读取、提取和程序构造均在创建 `EromAsset` 时执行一次资产校验，多个组件可共享同一个已校验资产。
 
-`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面。`Contact` 保存接触交集，`FacePartition` 保存逐面接触下标和局部坐标的外露矩形，供装配和探针重建共用。工程对每个接触面片只装配一次。接触未训练 EROM 轮廓时，编译器记录去重的日志警告，双方继续施加各自的环境条件。
+`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面。`Contact` 保存接触交集，`FacePartition` 保存逐面接触下标和局部坐标的外露矩形，供装配和探针重建共用。接触端的面索引区分 FOM 网格内的 `FacetId` 与 EROM 资产内的 `EromInterfaceId`，后者同时索引接口记录及 `Vb` 的行。工程对每个接触面片只装配一次。接触未训练 EROM 轮廓时，编译器记录去重的日志警告，双方继续施加各自的环境条件。
 
 `ThermalAssembler` 组装 FOM 内部与剩余外边界，`ProjectAssembler` 合并组件算子并用两侧温度映射装配接触。FOM 外部接触采用法向半单元 `d/k`，内部流固面另用冻结流场的膜阻；跨组件接触不承担水力连通或流固膜模型推断。单 FOM 工程直接返回局部装配结果。全局 CSR 模式用连续缓冲区两遍构建；纯 EROM 工程缓存不随状态、时间变化的接触算子，混合工程保留逐次求值的 FOM 热阻。
 
-观察量在 `project_output.cpp` 单独计算，不读取装配器上次求值的状态。求解入口将均匀初温填入 FOM 状态，并按 EROM 的均匀温度模态和参考温度生成模态初态。调用者也可给出完整初态。所有 `OutputTrace` 共用 `snapshot_times`，由 `(组件下标, OutputId)` 查询。C++ 的 `SolveOptions::store_snapshot_states=false` 可只保留时间、输出轨迹和最终状态；默认仍保存全状态历史，C/Python 结果契约不变。
+FOM 编译时为观察点绑定活动单元，域外或空区内的点会报错。观察量在 `project_output.cpp` 单独计算，不读取装配器上次求值的状态。求解入口将均匀初温填入 FOM 状态，并按 EROM 的均匀温度模态和参考温度生成模态初态。调用者也可给出完整初态。所有 `OutputTrace` 共用 `snapshot_times`，由 `(组件下标, OutputId)` 查询。C++ 的 `SolveOptions::store_snapshot_states=false` 可只保留时间、输出轨迹和最终状态；默认仍保存全状态历史，C/Python 结果契约不变。
 
 ## 输入与数组约定
 

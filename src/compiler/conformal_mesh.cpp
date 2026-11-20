@@ -9,7 +9,7 @@ namespace mhs::compiler {
     // The only structured-index arithmetic in the compiled model pipeline.
     // Conformal Cartesian cells: volume box faces inside the mesh must lie on input grid planes.
     void compile_conformal_mesh(mhs::model::Fom& model, const mhs::model::MeshSpec& input,
-        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
+        const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, std::span<const mhs::model::PointProbeSpec> probes)
     {
         using namespace mhs::core;
         using namespace mhs::model;
@@ -54,12 +54,31 @@ namespace mhs::compiler {
                     model.cell_material.push_back(volume.material);
                     if (volume.source != invalid_id)
                         model.source_terms.push_back({cell_id, volume.source});
-                    for (auto& probe : model.point_probes)
-                        if (probe.point[0] >= cell.min[0] && probe.point[0] <= cell.max[0]
-                            && probe.point[1] >= cell.min[1] && probe.point[1] <= cell.max[1]
-                            && probe.point[2] >= cell.min[2] && probe.point[2] <= cell.max[2])
-                            probe.cell = cell_id;
                 }
+
+        for (const auto& probe : probes) {
+            const Vec3 point {probe.x, probe.y, probe.z};
+            std::array<std::size_t, 3> first, last;
+            for (std::size_t a = 0; a < axes.size(); ++a) {
+                const auto& vertices = axes[a];
+                if (!(point[a] >= vertices.front() && point[a] <= vertices.back()))
+                    throw std::invalid_argument("point probe outside the active FOM: " + probe.name);
+                const auto it = std::ranges::lower_bound(vertices, point[a]);
+                const auto vertex = static_cast<std::size_t>(it - vertices.begin());
+                first[a] = vertex > 0 ? vertex - 1 : 0;
+                last[a] = *it == point[a] ? std::min(vertex, n[a] - 1) : first[a];
+            }
+            auto cell = invalid_id;
+            // On shared grid planes, keep the last active cell in mesh order.
+            for (auto x = first[0]; x <= last[0]; ++x)
+                for (auto y = first[1]; y <= last[1]; ++y)
+                    for (auto z = first[2]; z <= last[2]; ++z)
+                        if (const auto id = active[flatten(x, y, z)]; id != invalid_id)
+                            cell = id;
+            if (cell == invalid_id)
+                throw std::invalid_argument("point probe outside the active FOM: " + probe.name);
+            model.point_probes.push_back({probe.name, point, cell});
+        }
         for (std::size_t x = 0; x < n[0]; ++x)
             for (std::size_t y = 0; y < n[1]; ++y)
                 for (std::size_t z = 0; z < n[2]; ++z) {

@@ -94,9 +94,12 @@ namespace mhs::model {
         };
     } // namespace
 
-    void validate_erom(const Erom& e)
+    static void validate_erom(const Erom& e)
     {
         const auto n = e.K.rows(), nf = e.Vb.rows();
+        require(nf <= core::invalid_id && e.sources.size() <= core::invalid_id && e.outputs.size() <= core::invalid_id
+                && e.boundary_groups.size() <= core::invalid_id,
+            "record counts exceed the index range");
         require(n > 0 && e.K.cols() == n && e.C.rows() == n && e.C.cols() == n, "invalid K/C dimensions");
         require(e.B.rows() == n && e.B.cols() == e.sources.size() && e.L.rows() == e.outputs.size() && e.L.cols() == n
                 && e.Vb.cols() == n && nf == e.interfaces.size(),
@@ -156,7 +159,13 @@ namespace mhs::model {
             require(!o.name.empty() && (!o.point || finite(*o.point)), "invalid temperature output");
     }
 
-    std::shared_ptr<const Erom> read_erom(const std::filesystem::path& path)
+    EromAsset::EromAsset(Erom erom)
+    {
+        validate_erom(erom);
+        data_ = std::make_shared<const Erom>(std::move(erom));
+    }
+
+    EromAsset read_erom(const std::filesystem::path& path)
     {
         Reader reader(path);
         require(reader.bytes(erom_codec::magic.size()) == erom_codec::magic, "invalid magic");
@@ -164,14 +173,14 @@ namespace mhs::model {
         const auto n = reader.u32(), ns = reader.u32(), no = reader.u32(), nb = reader.u32(), ng = reader.u32(),
                    nl = reader.u32();
         require(n > 0, "invalid record counts");
-        auto e = std::make_shared<Erom>();
-        e->reference_temperature = reader.f64();
-        e->K = reader.matrix(n, n);
-        e->C = reader.matrix(n, n);
-        e->B = reader.matrix(n, ns);
-        e->L = reader.matrix(no, n);
-        e->Vb = reader.matrix(nb, n);
-        e->uniform_temperature_mode = reader.vector(n);
+        Erom e;
+        e.reference_temperature = reader.f64();
+        e.K = reader.matrix(n, n);
+        e.C = reader.matrix(n, n);
+        e.B = reader.matrix(n, ns);
+        e.L = reader.matrix(no, n);
+        e.Vb = reader.matrix(nb, n);
+        e.uniform_temperature_mode = reader.vector(n);
         auto facet = [&] {
             const auto axis = reader.u32(), normal = reader.u32();
             require(axis < 3 && normal <= 1, "invalid facet axis or normal");
@@ -182,10 +191,10 @@ namespace mhs::model {
         };
         reader.check_count(nb, 60);
         for (std::size_t i = 0; i < nb; ++i)
-            e->interfaces.push_back({facet(), reader.f64(), reader.u32()});
+            e.interfaces.push_back({facet(), reader.f64(), reader.u32()});
         reader.check_count(ng, 36);
         for (std::size_t i = 0; i < ng; ++i)
-            e->boundary_groups.push_back({reader.name(), reader.f64(), reader.f64(), reader.f64(), reader.f64()});
+            e.boundary_groups.push_back({reader.name(), reader.f64(), reader.f64(), reader.f64(), reader.f64()});
         reader.check_count(nl, 8);
         for (std::size_t i = 0; i < nl; ++i) {
             EromOutline group {reader.name(), {}};
@@ -193,11 +202,11 @@ namespace mhs::model {
             reader.check_count(count, 48);
             for (std::size_t j = 0; j < count; ++j)
                 group.facets.push_back(facet());
-            e->outline.push_back(std::move(group));
+            e.outline.push_back(std::move(group));
         }
         reader.check_count(ns, 12);
         for (std::size_t i = 0; i < ns; ++i)
-            e->sources.push_back({reader.name(), reader.f64()});
+            e.sources.push_back({reader.name(), reader.f64()});
         reader.check_count(no, 8);
         for (std::size_t i = 0; i < no; ++i) {
             EromOutput output {reader.name(), std::nullopt};
@@ -205,10 +214,9 @@ namespace mhs::model {
             require(has_point <= 1, "invalid output point flag");
             if (has_point)
                 output.point = Vec3 {reader.f64(), reader.f64(), reader.f64()};
-            e->outputs.push_back(std::move(output));
+            e.outputs.push_back(std::move(output));
         }
         reader.finish();
-        validate_erom(*e);
-        return e;
+        return EromAsset(std::move(e));
     }
 } // namespace mhs::model

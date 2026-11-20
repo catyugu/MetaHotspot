@@ -126,7 +126,7 @@ namespace {
         const auto result = extract(definition, mesh, ranges, tolerance);
         check(result.statistics.output_error <= tolerance, "sampled output error exceeds extraction tolerance");
         if (variant == "partial") {
-            const auto& e = result.asset;
+            const auto& e = *result.asset;
             check(e.interfaces[0].boundary_group == 0 && e.interfaces[1].boundary_group == 0
                     && e.interfaces[2].boundary_group == 1,
                 "wrong facet partition for the partial HTC group");
@@ -135,12 +135,10 @@ namespace {
             near(e.interfaces[1].resistance, 25);
 
             const auto fom = std::make_shared<const Fom>(compiler::compile_fom(definition, mesh));
-            const auto rom = std::make_shared<const Erom>(e);
             using expression::CompiledExpression;
-            const BoundaryOverrides boundary {
-                Convection {CompiledExpression::make_constant(70), CompiledExpression::make_constant(310)}};
-            const auto full = compiler::compile_project({{{{}, fom, {}, boundary}}, {}});
-            const auto reduced = compiler::compile_project({{{{}, rom, {}, boundary}}, {}});
+            const Convection boundary {CompiledExpression::make_constant(70), CompiledExpression::make_constant(310)};
+            const auto full = compiler::compile_project({{{{}, FomInstance {fom, {boundary}}}}, {}});
+            const auto reduced = compiler::compile_project({{{{}, EromInstance {result.asset, {}, {boundary}}}}, {}});
             const auto full_solution = solver::solve(full), reduced_solution = solver::solve(reduced);
             check(full_solution.converged && reduced_solution.converged, "steady solve did not converge");
             near(full_solution.output_traces.at(0).values.back(), reduced_solution.output_traces.at(0).values.back(),
@@ -198,7 +196,7 @@ int main(int argc, char** argv)
             const auto e = read_erom(argv[2]);
             check(e->sources.empty() && e->outputs.empty() && e->B.cols() == 0 && e->L.rows() == 0,
                 "expected empty source and output channels");
-            const auto project = mhs::compiler::compile_project({{{{}, e, {}, {}}}, {}});
+            const auto project = mhs::compiler::compile_project({{{{}, EromInstance {e}}}, {}});
             check(solver::solve(project).converged, "source-free EROM did not converge");
             return 0;
         }
@@ -213,9 +211,9 @@ int main(int argc, char** argv)
         sink.volumes = {{0, core::invalid_id, {{GeometryOperation::Add, {}, {1, 1, 1}}}}};
         sink.thermal_boundaries = {{{{Axis::X, 1, {0, 1, 0, 1}}}, DirichletBoundary {"288"}}};
         auto body = std::make_shared<const Fom>(compiler::compile_fom(sink, {{0, 1}, {0, 1}, {0, 1}}));
-        ComponentInstance external {{3, 0, 0}, body, {}, {}};
-        const auto mixed = mhs::compiler::compile_project({{{{}, e, {}, {}}, external}, {}});
-        const auto full = mhs::compiler::compile_project({{{{}, fom, {}, {}}, external}, {}});
+        ComponentInstance external {{3, 0, 0}, FomInstance {body}};
+        const auto mixed = mhs::compiler::compile_project({{{{}, EromInstance {e}}, external}, {}});
+        const auto full = mhs::compiler::compile_project({{{{}, FomInstance {fom}}, external}, {}});
         check(mixed.dof_count() == 4 && full.dof_count() == 7 && mixed.contacts().size() == 2,
             "embedding failed to reduce DOFs and match nonconforming facets");
         compare(mixed, full, {});

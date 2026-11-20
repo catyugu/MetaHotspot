@@ -96,30 +96,40 @@ namespace mhs::solver {
                     const double q = flux(trace);
                     return {trace, 0.0, area * q};
                 }
-                else {
-                    static_assert(std::is_same_v<C, Convection>);
-                    auto values = [&](double trace) {
-                        const auto ctx = context(trace);
-                        return std::pair {law.coefficient.eval(ctx), law.ambient_temperature.eval(ctx)};
-                    };
-                    const auto [h, ambient] = values(cell_temperature);
-                    const double condensed = convection_conductance(area, h, resistance);
-                    const double guess = std::lerp(cell_temperature, ambient, condensed / conductive);
-                    if (!law.coefficient.depends_on_temperature() && !law.ambient_temperature.depends_on_temperature())
-                        return {guess, condensed, condensed * ambient};
-                    const double trace = solve_trace(
-                        [&](double value) {
-                            const auto [coefficient, external_temperature] = values(value);
-                            return conductive * (cell_temperature - value)
-                                - area * coefficient * (value - external_temperature);
-                        },
-                        guess, cell_temperature);
-                    const auto [coefficient, external_temperature] = values(trace);
-                    const double g = convection_conductance(area, coefficient, resistance);
-                    return {trace, g, g * external_temperature};
-                }
+                else
+                    return evaluate_convection(law, patch, cell_temperature, time, resistance);
             },
             condition);
+    }
+
+    BoundaryEvaluation evaluate_convection(const model::Convection& law, const model::Facet& patch,
+        double cell_temperature, double time, double resistance, bool require_physical_htc)
+    {
+        const auto p = patch.center();
+        const double area = patch.area(), conductive = area / resistance;
+        auto context = [&](double trace) { return expression::FieldContext {p[0], p[1], p[2], trace, time}; };
+        auto values = [&](double trace) {
+            const auto ctx = context(trace);
+            const double h = law.coefficient.eval(ctx), ambient = law.ambient_temperature.eval(ctx);
+            if (require_physical_htc && (!std::isfinite(h) || h < 0 || !std::isfinite(ambient)))
+                throw std::invalid_argument(
+                    "EROM HTC requires a finite nonnegative coefficient and finite ambient temperature");
+            return std::pair {h, ambient};
+        };
+        const auto [h, ambient] = values(cell_temperature);
+        const double condensed = convection_conductance(area, h, resistance);
+        const double guess = std::lerp(cell_temperature, ambient, condensed / conductive);
+        if (!law.coefficient.depends_on_temperature() && !law.ambient_temperature.depends_on_temperature())
+            return {guess, condensed, condensed * ambient};
+        const double trace = solve_trace(
+            [&](double value) {
+                const auto [coefficient, external_temperature] = values(value);
+                return conductive * (cell_temperature - value) - area * coefficient * (value - external_temperature);
+            },
+            guess, cell_temperature);
+        const auto [coefficient, external_temperature] = values(trace);
+        const double g = convection_conductance(area, coefficient, resistance);
+        return {trace, g, g * external_temperature};
     }
 
 } // namespace mhs::solver

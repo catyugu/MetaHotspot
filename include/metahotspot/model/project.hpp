@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <variant>
 
 namespace mhs::model {
     struct Project;
@@ -18,14 +19,21 @@ namespace mhs::compiler {
 }
 
 namespace mhs::model {
-    using BoundaryOverrides = core::Vector<std::optional<BoundaryCondition>>;
+    struct FomInstance {
+        std::shared_ptr<const Fom> asset;
+        // FOM BoundaryGroupId. Unset entries retain the asset law.
+        core::Vector<std::optional<BoundaryCondition>> boundaries {};
+    };
+
+    struct EromInstance {
+        EromAsset asset;
+        core::Vector<std::function<double(double)>> powers {}; // EROM SourceId; empty retains the default power
+        core::Vector<std::optional<Convection>> htc {}; // EROM BoundaryGroupId; unset retains the default HTC
+    };
 
     struct ComponentInstance {
         Vec3 offset {};
-        std::variant<std::shared_ptr<const Fom>, std::shared_ptr<const Erom>> asset;
-        // Indexed by SourceId; empty schedules retain the EROM defaults.
-        core::Vector<std::function<double(double)>> powers;
-        BoundaryOverrides boundaries; // indexed by BoundaryGroupId; unset entries retain asset laws
+        std::variant<FomInstance, EromInstance> model;
     };
 
     struct ProjectDefinition {
@@ -34,9 +42,12 @@ namespace mhs::model {
         std::map<std::pair<std::size_t, std::size_t>, double> contact_resistance;
     };
 
+    // FacetId is local to a FOM mesh; EromInterfaceId is local to an EROM asset.
+    using ComponentFace = std::variant<FacetId, EromInterfaceId>;
+
     struct ContactSide {
         std::size_t component_index; // index in Project::components()
-        core::EntityIndex face_index; // FOM facet index or EROM interface index
+        ComponentFace face;
     };
 
     struct Contact {
@@ -63,7 +74,7 @@ namespace mhs::model {
         }
 
         // A null partition means the original face is fully exposed.
-        const FacePartition* face_partition(std::size_t component_index, core::EntityIndex face_index) const;
+        const FacePartition* face_partition(std::size_t component_index, ComponentFace face) const;
         std::optional<Vec3> output_position(std::size_t component_index, OutputId output) const;
 
     private:
@@ -71,6 +82,6 @@ namespace mhs::model {
         core::Vector<ComponentInstance> components_;
         core::Vector<Contact> contacts_;
         core::Vector<std::size_t> dof_offsets_ {0};
-        core::Vector<std::map<core::EntityIndex, FacePartition>> face_partitions_;
+        core::Vector<std::map<ComponentFace, FacePartition>> face_partitions_;
     };
 } // namespace mhs::model

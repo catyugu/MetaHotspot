@@ -61,8 +61,8 @@ namespace mhs::solver {
         : project_(project), thermal_(project.components().size())
     {
         for (std::size_t i = 0; i < thermal_.size(); ++i)
-            if (const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&project_.components()[i].asset))
-                thermal_[i].emplace(**fom);
+            if (const auto* fom = std::get_if<FomInstance>(&project_.components()[i].model))
+                thermal_[i].emplace(*fom->asset);
         if (thermal_.size() == 1 && thermal_.front())
             return;
         operators_ = make_operators();
@@ -70,7 +70,7 @@ namespace mhs::solver {
         for (std::size_t i = 0; i < thermal_.size(); ++i)
             if (!thermal_[i]) {
                 const auto offset = project_.dof_offset(i);
-                const auto& e = *std::get<std::shared_ptr<const Erom>>(project_.components()[i].asset);
+                const auto& e = *std::get<EromInstance>(project_.components()[i].model).asset;
                 std::copy_n(e.C.data(), e.C.rows() * e.C.cols(),
                     operators_.C.values().begin() + operators_.C.row_ptr()[offset]);
                 if (reduced_only)
@@ -86,10 +86,10 @@ namespace mhs::solver {
     {
         auto resistance = [&](ContactSide side) {
             const auto i = side.component_index;
-            if (thermal_[i])
-                return thermal_[i]->resistance(side.face_index);
-            const auto& erom = *std::get<std::shared_ptr<const Erom>>(project_.components()[i].asset);
-            return erom.interfaces[side.face_index].resistance;
+            if (const auto* facet = std::get_if<FacetId>(&side.face))
+                return thermal_[i]->resistance(*facet);
+            const auto& erom = *std::get<EromInstance>(project_.components()[i].model).asset;
+            return erom.interface_at(std::get<EromInterfaceId>(side.face)).resistance;
         };
         for (const auto& c : project_.contacts()) {
             const auto left = contact_side(project_, c.left);
@@ -171,9 +171,10 @@ namespace mhs::solver {
     {
         if (state.size() != project_.dof_count())
             throw std::invalid_argument("project assembly: state size differs from DOF count");
-        if (thermal_.size() == 1 && thermal_.front())
-            return thermal_.front()->assemble(
-                state, time, project_.components().front().boundaries.empty() ? nullptr : &project_);
+        if (thermal_.size() == 1 && thermal_.front()) {
+            const auto& fom = std::get<FomInstance>(project_.components().front().model);
+            return thermal_.front()->assemble(state, time, fom.boundaries.empty() ? nullptr : &project_);
+        }
 
         const bool cached = fixed_.has_value();
         if (cached) {
@@ -183,7 +184,6 @@ namespace mhs::solver {
         else
             std::ranges::fill(operators_.K.values(), 0.0);
         for (std::size_t i = 0; i < thermal_.size(); ++i) {
-            const auto& component = project_.components()[i];
             const auto offset = project_.dof_offset(i);
             if (auto& assembler = thermal_[i]) {
                 const auto& local
@@ -194,7 +194,8 @@ namespace mhs::solver {
                 continue;
             }
 
-            const auto& e = *std::get<std::shared_ptr<const Erom>>(component.asset);
+            const auto& component = std::get<EromInstance>(project_.components()[i].model);
+            const auto& e = *component.asset;
             if (!cached) {
                 copy_dense(e.K, operators_.K, offset);
                 std::fill_n(operators_.f.begin() + offset, e.K.rows(), 0.0);
@@ -209,17 +210,20 @@ namespace mhs::solver {
                     operators_.f[offset + j] += e.B(j, s) * power;
             }
             for (core::EntityIndex interface_index = 0; interface_index < e.interfaces.size(); ++interface_index) {
-                const auto& face = e.interfaces[interface_index];
-                const auto& surface = e.boundary_groups[face.boundary_group];
-                const auto* law = boundary_override(component.boundaries, face.boundary_group);
-                if (law ? is_adiabatic(*law) : surface.coefficient == 0)
+                const EromInterfaceId id {interface_index};
+                const auto& face = e.interface_at(id);
+                const auto group = face.boundary_group;
+                const auto& surface = e.boundary_groups[group];
+                const auto* law
+                    = group < component.htc.size() && component.htc[group] ? &*component.htc[group] : nullptr;
+                if (!law && surface.coefficient == 0)
                     continue;
                 const Side side {offset, e.Vb.row(interface_index), e.reference_temperature};
                 const double temperature = law ? side.temperature(state) : 0;
                 const auto [g, load]
-                    = boundary_terms(face.facet, project_.face_partition(i, interface_index), [&](const Facet& patch) {
+                    = boundary_terms(face.facet, project_.face_partition(i, id), [&](const Facet& patch) {
                           if (law)
-                              return evaluate_boundary(*law, patch, temperature, time, face.resistance);
+                              return evaluate_convection(*law, patch, temperature, time, face.resistance, true);
                           const double g = convection_conductance(patch.area(), surface.coefficient, face.resistance);
                           return BoundaryEvaluation {.conductance = g, .load = g * surface.ambient};
                       });
