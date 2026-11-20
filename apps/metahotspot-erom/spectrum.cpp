@@ -139,8 +139,8 @@ namespace mhs::app::erom {
                 throw std::runtime_error("invalid real matching point");
             shifts.push_back(shift);
         }
-        // Learn the HTC-sensitive, conduction-dominated responses first.
-        std::ranges::sort(shifts);
+        // Match the Python reference: process frequencies from high to low.
+        std::ranges::sort(shifts, std::greater {});
         return shifts;
     }
 } // namespace mhs::app::erom

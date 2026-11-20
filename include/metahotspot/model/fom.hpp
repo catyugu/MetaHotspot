@@ -60,8 +60,8 @@ namespace mhs::model {
         mhs::core::Vector<MaterialProps> material_table;
         mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
         mhs::core::Vector<SourceTerm> source_terms;
-        mhs::core::Vector<SurfaceId> facet_boundary; // invalid_id on interior facets
-        mhs::core::Vector<FomBoundaryGroup> boundary_groups; // indexed by SurfaceId
+        mhs::core::Vector<BoundaryGroupId> facet_boundary_group; // invalid_id on interior facets
+        mhs::core::Vector<FomBoundaryGroup> boundary_groups; // indexed by BoundaryGroupId
         FluidModel fluid;
 
         double reference_temperature = 300.0;

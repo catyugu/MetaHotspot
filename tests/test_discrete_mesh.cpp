@@ -75,7 +75,7 @@ TEST(DiscreteMesh, TemperatureDependentBoundaryTracesSolveTheSurfaceLaw)
         const mhs::core::Vector<double> state {350};
         for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
             const auto& facet = model.discrete.facets[id];
-            const auto& condition = model.boundary_groups[model.facet_boundary[id]].condition;
+            const auto& condition = model.boundary_groups[model.facet_boundary_group[id]].condition;
             const auto center = facet.center();
             const double d = model.discrete.cells[model.discrete.cell_facets[id].owner()]
                                  .size()[static_cast<std::size_t>(facet.axis)]
@@ -148,7 +148,7 @@ TEST(DiscreteMesh, PartialBoundaryIntegratesActualOverlap)
         const auto& facet = model.discrete.facets[id];
         if (facet.normal == 0)
             continue;
-        const auto& condition = model.boundary_groups[model.facet_boundary[id]].condition;
+        const auto& condition = model.boundary_groups[model.facet_boundary_group[id]].condition;
         const auto& flux = std::get<mhs::model::Neumann>(condition).heat_flux;
         const auto center = facet.center();
         if (flux.eval({center[0], center[1], center[2], 300, 0}) == 10.0)

@@ -1,50 +1,6 @@
-"""Model-agnostic macromodel (MOR) algorithms for MetaHotspot.
+"""Operator-level thermal model reduction and native mesh geometry views."""
 
-This subpackage contains only model-independent reduced-order thermal-model
-algorithms and plain-data contracts.  It never names a concrete case geometry,
-material, layer stack, or model configuration — concrete models and case
-workflows live in the playground/ adapters that consume these algorithms.
-
-Modules:
-
-* :mod:`utils` — FANTASTIC-BCI operator-level machinery: per-port spectral
-  bounds, elliptic shift planning, residual-driven Krylov enrichment,
-  ``build_parametric_basis``, ``project_bci``, reduced solves, accuracy
-  metrics.  Purely numeric; consumes the generic ``Operators`` interface.
-* :mod:`affine` — the affine-parametric model base contract
-  (:class:`~metahotspot.macromodel.affine.AffineParametricModel`), its
-  plain-data satellites (:class:`~metahotspot.macromodel.affine.BoundaryGroup`,
-  :class:`~metahotspot.macromodel.affine.SourcePort`,
-  :class:`~metahotspot.macromodel.affine.CellLayout`,
-  :class:`~metahotspot.macromodel.affine.AffineSolveResult`), and the
-  :class:`~metahotspot.macromodel.geometry.CellGeometry` geometry view.
-  Concrete models subclass the base from playground adapters; the library
-  itself ships no concrete model.
-
-All algorithms consume plain numpy/scipy data or the ``metahotspot`` bindings'
-generic ``Operators`` / ``CompiledFields`` contracts — never a named case.
-"""
-
-from metahotspot.macromodel import affine, utils
-
-# Re-export the stable public surface.
-from metahotspot.macromodel.affine import (
-    AffineParametricModel,
-    AffineSolveResult,
-    BoundaryGroup,
-    CellLayout,
-    SourcePort,
-)
+from metahotspot.macromodel import utils
 from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
 
-__all__ = [
-    "AffineParametricModel",
-    "AffineSolveResult",
-    "BoundaryGroup",
-    "BoundarySurface",
-    "CellGeometry",
-    "CellLayout",
-    "SourcePort",
-    "affine",
-    "utils",
-]
+__all__ = ["BoundarySurface", "CellGeometry", "utils"]

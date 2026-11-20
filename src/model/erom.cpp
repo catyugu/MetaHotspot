@@ -136,8 +136,8 @@ namespace mhs::model {
             validate_facet(face.facet);
             require(std::isfinite(face.resistance) && face.resistance > 0,
                 "half-cell resistance must be positive and finite");
-            require(face.surface < e.boundary_groups.size(), "invalid interface surface");
-            used[face.surface] = true;
+            require(face.boundary_group < e.boundary_groups.size(), "invalid interface surface");
+            used[face.boundary_group] = true;
         }
         require(std::ranges::all_of(used, [](bool x) { return x; }), "empty surface");
         for (const auto& h : e.boundary_groups)
@@ -152,11 +152,8 @@ namespace mhs::model {
         }
         for (const auto& s : e.sources)
             require(!s.name.empty() && std::isfinite(s.default_power), "invalid source");
-        for (const auto& o : e.outputs) {
-            const auto* point = std::get_if<Vec3>(&o.location);
-            require(!o.name.empty() && (point ? finite(*point) : std::get<SourceId>(o.location) < e.sources.size()),
-                "invalid temperature output");
-        }
+        for (const auto& o : e.outputs)
+            require(!o.name.empty() && (!o.point || finite(*o.point)), "invalid temperature output");
     }
 
     std::shared_ptr<const Erom> read_erom(const std::filesystem::path& path)
@@ -203,9 +200,11 @@ namespace mhs::model {
             e->sources.push_back({reader.name(), reader.f64()});
         reader.check_count(no, 8);
         for (std::size_t i = 0; i < no; ++i) {
-            EromOutput output {reader.name(), reader.u32()};
-            if (std::get<SourceId>(output.location) == core::invalid_id)
-                output.location = Vec3 {reader.f64(), reader.f64(), reader.f64()};
+            EromOutput output {reader.name(), std::nullopt};
+            const auto has_point = reader.u32();
+            require(has_point <= 1, "invalid output point flag");
+            if (has_point)
+                output.point = Vec3 {reader.f64(), reader.f64(), reader.f64()};
             e->outputs.push_back(std::move(output));
         }
         reader.finish();

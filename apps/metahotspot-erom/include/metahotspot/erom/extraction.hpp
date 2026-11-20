@@ -8,7 +8,7 @@ namespace mhs::app::erom {
     struct HtcRange {
         double minimum, maximum;
     };
-    using HtcRanges = std::map<model::SurfaceId, HtcRange>;
+    using HtcRanges = std::map<model::BoundaryGroupId, HtcRange>;
 
     struct Statistics {
         int shifts = 0;

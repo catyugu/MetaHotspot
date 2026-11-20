@@ -92,7 +92,7 @@ TEST(DiscreteMesh, TypedBoundaryConditionsPreserveExpressionContextAndFlux)
         ASSERT_EQ(model.discrete.facets.size(), 6u);
         for (std::size_t id = 0; id < model.discrete.facets.size(); ++id) {
             const auto& facet = model.discrete.facets[id];
-            const auto& condition = model.boundary_groups[model.facet_boundary[id]].condition;
+            const auto& condition = model.boundary_groups[model.facet_boundary_group[id]].condition;
             if (facet.axis != Axis::X || facet.normal != 1) {
                 EXPECT_TRUE(std::holds_alternative<Neumann>(condition));
                 continue;

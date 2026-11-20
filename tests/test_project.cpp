@@ -50,12 +50,12 @@ namespace {
         }
         else
             e->outline.push_back({"left", {left}});
-        e->interfaces.push_back({right, 0.25, static_cast<SurfaceId>(e->boundary_groups.size())});
+        e->interfaces.push_back({right, 0.25, static_cast<BoundaryGroupId>(e->boundary_groups.size())});
         e->boundary_groups.push_back({"right", 1, 10, 1, 330});
         e->reference_temperature = reference;
         e->uniform_temperature_mode = {1};
         e->sources = {{"first", 0}, {"second", 1}};
-        e->outputs = {{"sensor", Vec3 {0.5, 0.25, 0.5}}, {"source mean", SourceId {0}}};
+        e->outputs = {{"sensor", Vec3 {0.5, 0.25, 0.5}}, {"source mean", std::nullopt}};
         return e;
     }
 
@@ -130,13 +130,13 @@ TEST(Project, PartialMixedContactUsesExposedBoundaryAndReferenceOffsets)
 {
     const auto erom = modal();
     const auto project = mhs::compiler::compile_project(
-        {{instance(1, cube(false, true)), instance(2, erom, {1, 0.5, 0})}, {{{1, 2}, 0.25}}});
+        {{instance(1, cube(false, true), {7, 13, 19}), instance(2, erom, {8, 13.5, 19})}, {{{1, 2}, 0.25}}});
     ASSERT_EQ(project.patches().size(), 3u);
     EXPECT_TRUE(project.patches()[0].contact);
     EXPECT_DOUBLE_EQ(project.patches()[0].area(), 0.5);
-    EXPECT_EQ(project.output_position(2, 0), (Vec3 {1.5, 0.75, 0.5}));
+    EXPECT_EQ(project.output_position(2, 0), (Vec3 {8.5, 13.75, 19.5}));
     EXPECT_FALSE(project.output_position(2, 1));
-    EXPECT_EQ(std::get<Vec3>(erom->outputs[0].location), (Vec3 {0.5, 0.25, 0.5}));
+    EXPECT_EQ(*erom->outputs[0].point, (Vec3 {0.5, 0.25, 0.5}));
 
     solver::ProjectAssembler assembler(project);
     const core::Vector<double> state {320, 40};
@@ -225,6 +225,6 @@ TEST(Project, RejectsDuplicateIdentityAndOverlappingContacts)
                      {{instance(1, fom), instance(2, fom, {1, 0, 0}), instance(3, fom, {1, 0.2, 0})}, {}}),
         std::invalid_argument);
     auto e = modal();
-    e->interfaces[1].surface = 0;
+    e->interfaces[1].boundary_group = 0;
     EXPECT_THROW(mhs::compiler::compile_project({{instance(1, e)}, {}}), std::invalid_argument);
 }

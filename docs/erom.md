@@ -30,9 +30,12 @@ point observations into world coordinates.
 
 The compiler locates opposing coplanar facets and couples their overlap by TPFA.
 `ProjectDefinition::contact_resistance` accepts area-specific contact
-resistances in m² K/W keyed by ascending component IDs. A connected patch
+resistances in m² K/W keyed by ascending component IDs. All `SurfacePatch::bounds` use world coordinates. Contact sides carry a component
+array index and a face index (FOM facet or EROM interface); component IDs are
+used only by the public configuration and output lookup. Boundary evaluation
+converts patches to component coordinates internally. A connected patch
 replaces the environment over its covered area. The remaining area keeps the
-surface's environment. FOMs use `facet_boundary` to select a thermal boundary group and its law. Instance overrides use `SurfaceId`. Contacts with
+surface's environment. FOMs use `facet_boundary_group` to select a thermal boundary group and its law. Instance overrides use `BoundaryGroupId`. Contacts with
 untrained EROM surfaces log a warning and leave both environment laws in effect. Fluid advection and
 hydraulic boundary terms operate within the individual FOM.
 
@@ -101,7 +104,7 @@ estimates use a preconditioned low-end Rayleigh–Ritz iteration and restarted,
 reorthogonalized high-end Krylov iteration. Both require a checked eigenpair
 residual. Elliptic matching points are positive real shifts, evaluated with
 arithmetic-geometric means using the complementary modulus. Training visits
-those shifts from low to high to learn the HTC-sensitive responses first.
+those shifts from high to low, matching the independent Python reference.
 Each input keeps its own response space. Ten successful log-uniform HTC
 residual probes advance each input to the next shift. The fixed C++ random
 seed gives reproducible native runs.
@@ -128,7 +131,7 @@ temperature difference divided by the larger of one kelvin and the magnitude
 of the FOM temperature rise. Accuracy after embedding depends on the attached
 geometry and loads.
 
-## Native .mherom v3
+## Native .mherom v4
 
 The binary stream is little-endian and unpadded. Counts and IDs are unsigned
 32-bit integers. Scalars and row-major matrix entries are IEEE 754 binary64.
@@ -136,7 +139,7 @@ Strings are UTF-8 bytes preceded by a 32-bit byte count.
 
 | Order | Record | Layout |
 | --- | --- | --- |
-| 1 | Header | Eight bytes `MHEROM\r\n`, version `3`, then counts `n, ns, no, nb, ng, nl` |
+| 1 | Header | Eight bytes `MHEROM\r\n`, version `4`, then counts `n, ns, no, nb, ng, nl` |
 | 2 | Temperature | Reference temperature |
 | 3 | Operators | `K[n,n], C[n,n], B[n,ns], L[no,n], Vb[nb,n]` |
 | 4 | Initialization | Uniform mode of length `n` |
@@ -144,15 +147,16 @@ Strings are UTF-8 bytes preceded by a 32-bit byte count.
 | 6 | HTC groups | `ng` records of name and four scalars (HTC min, max, default and ambient temperature) |
 | 7 | Outline | `nl` records of group name, facet count and facet geometries |
 | 8 | Sources | `ns` records of name and default power in watts |
-| 9 | Outputs | `no` records of name and source index. Point outputs use `0xffffffff` in place of the source index, followed by three coordinates |
+| 9 | Outputs | `no` records of name and a 32-bit point flag (0 or 1). A flag of 1 is followed by three component-local coordinates; averaged outputs have no point |
 
 Facet geometry contains axis (0/1/2), outward normal (0 for −, 1 for +),
 plane coordinate and four tangent bounds. Interface records correspond
 one-to-one to rows of `Vb`. Outline geometry is used for contact diagnostics.
+Averaged outputs retain their name and row of `L`, with no source back-reference.
 
 The operators use `C dq/dt + Kq = BP + f_external`, with internal surface-side
 temperature `T_ref + Vb q` and output temperature `T_ref + L q`. The native reader
-checks the version, truncation, numeric values, dimensions and group indices.
+rejects older versions and checks truncation, numeric values, dimensions and group indices.
 Regenerate older assets with the current extractor before loading them.
 
 FloTHERM exports use a separate format. See

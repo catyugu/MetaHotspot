@@ -41,29 +41,32 @@ FloTHERM solve excludes as well.
 ``h_ranges`` keeps the group order and gives every group the *physical* HTC
 range [1, 1e4] W/m2.K reported by ``report.rom``.  The public
 boundary-parameter space is the physical HTC ``h``: callers pass physical values
-to :meth:`~AffineParametricModel.full_reference`; the model maps them internally
-through :meth:`~AffineParametricModel.physical_to_effective` to the
+to :meth:`~Case1Model.full_reference`; the model maps them internally
+through :meth:`~Case1Model.physical_to_effective` to the
 surface-consistent effective coefficient ``p`` before assembling the affine
 ``K``.  The ROM is trained over the same effective ``p``
 (:func:`~metahotspot.macromodel.utils.assemble_reduced_k` fed
-``model.physical_to_effective(h)``; :meth:`~AffineParametricModel.h_ranges`
+``model.physical_to_effective(h)``; :meth:`~Case1Model.h_ranges`
 returns the effective training ranges).
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import asdict, dataclass
+from functools import cached_property
 
 import numpy as np
+import scipy.sparse as sp
 
 import metahotspot
 from metahotspot.enums import Face
-from metahotspot.macromodel.affine import (
-    AffineParametricModel,
-    BoundaryGroup,
-    SourcePort,
+from metahotspot.macromodel.geometry import BoundarySurface, CellGeometry
+from metahotspot.macromodel.utils import (
+    normalized_operators,
+    solve_rom_steady,
+    solve_rom_transient,
 )
-from metahotspot.macromodel.geometry import BoundarySurface
 
 # (kx, ky, kz, rho, c) SI — the four solids present in this model
 MATERIALS = {
@@ -197,10 +200,8 @@ class Case1Config:
         }
 
 
-def build_geometry(cfg: Case1Config, *, detail: bool, macro: bool):
+def build_geometry(cfg: Case1Config):
     """Assemble the Case-1 geometry (no boundary conditions; default Neumann)."""
-    if not detail and not macro:
-        raise ValueError("at least one domain must be enabled")
     model = metahotspot.Fom()
     model.set_reference_temperature(cfg.ambient_K)
     model.set_cartesian_mesh(
@@ -247,71 +248,135 @@ def merge_surfaces(*surfaces: BoundarySurface) -> BoundarySurface:
     )
 
 
-class Case1Model(AffineParametricModel):
-    """Concrete affine parametric model: BCI ROM Case 1."""
+@dataclass(frozen=True)
+class Case1Reference:
+    steady_temperature: np.ndarray
+    times: np.ndarray
+    history: np.ndarray
+    steady_s: float
+    transient_s: float
+
+
+class Case1Model:
+    """Case-1 operators, physical HTC mapping and numerical reference."""
+
+    name = "bci_case1"
 
     def __init__(self, cfg: Case1Config | None = None):
         self.config = cfg or Case1Config()
 
     @property
-    def name(self) -> str:
-        return "bci_case1"
+    def ambient_K(self):
+        return self.config.ambient_K
 
-    # ------------------------------------------------ geometry hooks
+    @cached_property
+    def _full(self):
+        return build_geometry(self.config).compile()
 
-    def build_geometry(self, *, detail, macro):
-        return build_geometry(self.config, detail=detail, macro=macro)
+    @cached_property
+    def geometry(self):
+        return CellGeometry(self._full.fields)
 
-    def source_ports(self) -> list[SourcePort]:
-        f = np.asarray(self.core.f, dtype=np.float64)
-        source_cells = np.flatnonzero(f > 0.0)
-        # All four dies sit in the same top z slab; split them into per-die
-        # ports by x/y footprint (block ids do not distinguish them).
-        return self._gate_by_geometry(source_cells)
+    @property
+    def full_cell_count(self):
+        return self._full.cell_count
 
-    def _gate_by_geometry(self, source_cells) -> list[SourcePort]:
-        centers = self.cell_layout.centers
-        ports = []
-        for (name, (xlo, xhi), (ylo, yhi)), power in zip(
-            DIES, DIE_POWER_W, strict=True
-        ):
-            mask = self._footprint(centers, xlo, xhi, ylo, yhi)
-            cells = source_cells[mask[source_cells]]
-            if not cells.size:
-                raise ValueError(f"no source cells inside die {name}")
-            ports.append(
-                SourcePort(cells=np.asarray(cells, dtype=np.int64), power_W=power)
-            )
-        return ports
+    @cached_property
+    def core(self):
+        return normalized_operators(*self._full.assemble())
 
-    def boundary_groups(self) -> tuple[BoundaryGroup, ...]:
-        """Sides, bottom, crowns — the FloTHERM export (Ambient:2/1/0) order."""
-        return (
-            BoundaryGroup(
-                surface=merge_surfaces(
-                    self.geometry.surface(Face.XM),
-                    self.geometry.surface(Face.XP),
-                    self.geometry.surface(Face.YM),
-                    self.geometry.surface(Face.YP),
-                ),
-                h_range=self.config.h_ranges[0],
-            ),
-            BoundaryGroup(
-                surface=self.geometry.surface(Face.ZM, coordinate=0.0),
-                h_range=self.config.h_ranges[1],
-            ),
-            BoundaryGroup(
-                surface=self.geometry.surface(Face.ZP),
-                h_range=self.config.h_ranges[2],
-            ),
-        )
+    @cached_property
+    def source_shape(self):
+        # build_geometry creates one native source column per die, in DIES order.
+        return self._full.source_operator().toarray() / self.nominal_power()
 
     @staticmethod
-    def _footprint(centers, xlo, xhi, ylo, yhi) -> np.ndarray:
-        """Boolean mask over cells whose x/y centre sits inside a die footprint."""
+    def nominal_power():
+        return np.asarray(DIE_POWER_W)
+
+    @cached_property
+    def _surfaces(self):
         return (
-            (centers[:, 0] >= xlo * 1.0e-3 - 1.0e-12)
-            & (centers[:, 0] <= xhi * 1.0e-3 + 1.0e-12)
-            & (centers[:, 1] >= ylo * 1.0e-3 - 1.0e-12)
-            & (centers[:, 1] <= yhi * 1.0e-3 + 1.0e-12)
+            merge_surfaces(
+                *(
+                    self.geometry.surface(f)
+                    for f in (Face.XM, Face.XP, Face.YM, Face.YP)
+                )
+            ),
+            self.geometry.surface(Face.ZM, coordinate=0.0),
+            self.geometry.surface(Face.ZP),
         )
+
+    def boundary_groups(self):
+        """Sides, bottom, crowns, restricted to the bounding-box planes."""
+        return self._surfaces
+
+    @cached_property
+    def boundary_terms(self):
+        terms = []
+        for surface in self._surfaces:
+            area = np.zeros(self.full_cell_count)
+            np.add.at(area, surface.cell_ids, surface.areas)
+            terms.append(sp.diags(area))
+        return terms
+
+    @cached_property
+    def _half_cell_resistances(self):
+        values = self._full.eval_materials()
+        conductivity = np.column_stack(
+            (values.conductivity_x, values.conductivity_y, values.conductivity_z)
+        )
+        return tuple(
+            self.geometry.half_sizes[
+                s.cell_ids, self.geometry.fields.facet_axis[s.facet_ids]
+            ]
+            / conductivity[s.cell_ids, self.geometry.fields.facet_axis[s.facet_ids]]
+            for s in self._surfaces
+        )
+
+    def physical_to_effective(self, physical_h):
+        """Area-average each group's series-condensed physical HTC."""
+        return np.asarray(
+            [
+                np.average(h / (1 + h * resistance), weights=surface.areas)
+                for h, resistance, surface in zip(
+                    physical_h, self._half_cell_resistances, self._surfaces, strict=True
+                )
+            ]
+        )
+
+    def h_ranges(self):
+        return np.column_stack(
+            [self.physical_to_effective(h) for h in np.asarray(self.config.h_ranges).T]
+        )
+
+    def full_reference(self, h_vec):
+        K = self.core.K.copy()
+        for h, term in zip(
+            self.physical_to_effective(h_vec), self.boundary_terms, strict=True
+        ):
+            K = K + h * term
+        started = time.perf_counter()
+        steady = self.ambient_K + solve_rom_steady(
+            K, self.source_shape, self.nominal_power()
+        )
+        steady_s = time.perf_counter() - started
+        started = time.perf_counter()
+        times, history = solve_rom_transient(
+            self.core.C,
+            K,
+            self.source_shape,
+            lambda _t: self.nominal_power(),
+            self.config.dt_s,
+            self.config.duration_s,
+        )
+        return Case1Reference(
+            steady,
+            times,
+            self.ambient_K + history,
+            steady_s,
+            time.perf_counter() - started,
+        )
+
+    def junction_temperature(self, field):
+        return self.ambient_K + (np.asarray(field) - self.ambient_K) @ self.source_shape
