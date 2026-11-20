@@ -149,7 +149,7 @@ namespace mhs::solver {
             const auto cell = facet.owner;
             const auto r = resistance(id);
             const auto [conductance, load] = boundary_terms(facet.geometry,
-                project ? project->face_partition(component, id) : nullptr,
+                project ? project->face_patches(component, id) : std::span<const model::FacePatch> {},
                 [&](const model::Facet& patch) { return evaluate_boundary(law, patch, temperature[cell], time, r); });
             operators_.K.values()[diagonal_positions_[cell]] += conductance;
             operators_.f[cell] += load;

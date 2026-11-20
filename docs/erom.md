@@ -31,10 +31,11 @@ point observations into world coordinates.
 
 The compiler locates opposing coplanar facets and couples their overlap by TPFA.
 `ProjectDefinition::contact_resistance` accepts area-specific contact
-resistances in m² K/W keyed by ascending component array indices. `Contact::bounds`
-uses world coordinates. `FacePartition` stores contact indices and exposed rectangles
-in component coordinates. Contact sides carry a component index and a face index
-(FOM facet or EROM interface). A connected patch
+resistances in m² K/W keyed by ascending component array indices. A `Contact`
+stores the matched area and identifies both sides by component and face index
+(FOM facet or EROM interface). `Project::face_patches` provides one sequence of
+component-local rectangles for each partitioned face, with a contact index on
+each connected patch. A connected patch
 replaces the environment over its covered area. The remaining area keeps the
 surface's environment. Each FOM exterior facet carries its thermal boundary group index. Instance overrides use `BoundaryGroupId`. Contacts with
 untrained EROM surfaces log a warning and leave both environment laws in effect. Fluid advection and

@@ -11,11 +11,11 @@ namespace mhs::model {
         }
     } // namespace
 
-    const FacePartition* Project::face_partition(std::size_t component_index, core::EntityIndex face_index) const
+    std::span<const FacePatch> Project::face_patches(std::size_t component_index, core::EntityIndex face_index) const
     {
-        const auto& partitions = face_partitions_.at(component_index);
-        const auto it = partitions.find(face_index);
-        return it == partitions.end() ? nullptr : &it->second;
+        const auto& faces = face_patches_.at(component_index);
+        const auto it = faces.find(face_index);
+        return it == faces.end() ? std::span<const FacePatch> {} : std::span<const FacePatch> {it->second};
     }
 
     std::optional<Vec3> Project::output_position(std::size_t component_index, OutputId output) const

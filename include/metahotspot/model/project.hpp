@@ -3,6 +3,7 @@
 #include "model/erom.hpp"
 #include "model/fom.hpp"
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -41,15 +42,17 @@ namespace mhs::model {
 
     struct Contact {
         ContactSide left, right;
-        Rect bounds; // world coordinates
+        double area;
         double resistance; // m² K/W
-
-        double area() const { return rect_area(bounds); }
     };
 
-    struct FacePartition {
-        core::Vector<std::size_t> contacts; // indices in Project::contacts()
-        core::Vector<Rect> exposed; // component coordinates; empty means fully covered
+    struct FacePatch {
+        static constexpr auto no_contact = std::numeric_limits<std::size_t>::max();
+
+        Rect bounds; // component coordinates
+        std::size_t contact = no_contact; // index in Project::contacts()
+
+        bool is_contact() const { return contact != no_contact; }
     };
 
     struct Project {
@@ -62,8 +65,8 @@ namespace mhs::model {
             return dof_offset(component_index + 1) - dof_offset(component_index);
         }
 
-        // A null partition means the original face is fully exposed.
-        const FacePartition* face_partition(std::size_t component_index, core::EntityIndex face_index) const;
+        // Contact patches precede exposed patches. An empty span means the whole face is exposed.
+        std::span<const FacePatch> face_patches(std::size_t component_index, core::EntityIndex face_index) const;
         std::optional<Vec3> output_position(std::size_t component_index, OutputId output) const;
 
     private:
@@ -71,6 +74,6 @@ namespace mhs::model {
         core::Vector<ComponentInstance> components_;
         core::Vector<Contact> contacts_;
         core::Vector<std::size_t> dof_offsets_ {0};
-        core::Vector<std::map<core::EntityIndex, FacePartition>> face_partitions_;
+        core::Vector<std::map<core::EntityIndex, core::Vector<FacePatch>>> face_patches_;
     };
 } // namespace mhs::model

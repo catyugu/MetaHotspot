@@ -91,15 +91,25 @@ namespace mhs::compiler {
             Vector<Node> nodes_;
         };
 
-        void cover(Vector<Rect>& exposed, const Rect& cut)
+        void cover(Vector<FacePatch>& patches, const Face& face, Rect cut, const Vec3& offset, std::size_t contact)
         {
-            Vector<Rect> remainder;
+            const auto& facet = *face.facet;
+            const auto [u, v] = tangential_axes(facet.axis);
+            for (std::size_t i = 0; i < cut.size(); ++i)
+                cut[i] = cut[i] == face.rect[i] ? facet.bounds[i] : cut[i] - offset[i < 2 ? u : v];
+            if (!positive_rect(cut))
+                throw std::invalid_argument("component translation exceeds contact precision");
+            if (patches.empty())
+                patches.push_back({facet.bounds});
+            const auto exposed = std::ranges::partition_point(patches, &FacePatch::is_contact);
+            Vector<FacePatch> remainder;
             auto append = [&](const Rect& r) {
                 if (positive_rect(r))
-                    remainder.push_back(r);
+                    remainder.push_back({r});
             };
             double removed = 0;
-            for (const auto& r : exposed) {
+            for (auto it = exposed; it != patches.end(); ++it) {
+                const auto& r = it->bounds;
                 if (const auto x = rect_intersection(r, cut)) {
                     removed += rect_area(*x);
                     append({r[0], (*x)[0], r[2], r[3]});
@@ -108,11 +118,13 @@ namespace mhs::compiler {
                     append({(*x)[0], (*x)[1], (*x)[3], r[3]});
                 }
                 else
-                    remainder.push_back(r);
+                    remainder.push_back(*it);
             }
             if (removed < rect_area(cut) * (1 - 1e-8))
                 throw std::invalid_argument("overlapping thermal contacts on one component facet");
-            exposed = std::move(remainder);
+            patches.erase(exposed, patches.end());
+            patches.push_back({cut, contact});
+            patches.insert(patches.end(), remainder.begin(), remainder.end());
         }
     } // namespace
 
@@ -121,7 +133,7 @@ namespace mhs::compiler {
         Project project;
         project.components_ = std::move(definition.components);
         const auto components = project.components();
-        project.face_partitions_.resize(components.size());
+        project.face_patches_.resize(components.size());
         std::set<const Erom*> validated;
         std::array<std::map<double, Plane>, 3> positive;
         std::array<Vector<Face>, 3> negative;
@@ -213,40 +225,15 @@ namespace mhs::compiler {
                                     l, left.name, r, right.name);
                             return;
                         }
-                        for (const auto* side : {&left, &right}) {
-                            auto& partitions = project.face_partitions_[side->component_index];
-                            auto [it, inserted] = partitions.try_emplace(side->face_index);
-                            if (inserted)
-                                it->second.exposed.push_back(side->rect);
-                            cover(it->second.exposed, cut);
-                            it->second.contacts.push_back(project.contacts_.size());
-                        }
+                        for (const auto* side : {&left, &right})
+                            cover(project.face_patches_[side->component_index][side->face_index], *side, cut,
+                                components[side->component_index].offset, project.contacts_.size());
                         const auto resistance = resistances.find(std::minmax(l, r));
-                        project.contacts_.push_back(
-                            {{left.component_index, left.face_index}, {right.component_index, right.face_index}, cut,
-                                resistance == resistances.end() ? 0.0 : resistance->second});
+                        project.contacts_.push_back({{l, left.face_index}, {r, right.face_index}, rect_area(cut),
+                            resistance == resistances.end() ? 0.0 : resistance->second});
                     });
             }
         }
-        // Finish exposed rectangles in component coordinates once, before solving.
-        for (std::size_t i = 0; i < components.size(); ++i)
-            for (auto& [face, partition] : project.face_partitions_[i]) {
-                const auto& facet = std::visit(
-                    [&](const auto& asset) -> const Facet& {
-                        using Asset = typename std::decay_t<decltype(asset)>::element_type;
-                        if constexpr (std::is_same_v<Asset, const Fom>)
-                            return asset->mesh.exterior_facets[face].geometry;
-                        else
-                            return asset->interfaces[face].facet;
-                    },
-                    components[i].asset);
-                const auto [u, v] = tangential_axes(facet.axis);
-                for (auto& rect : partition.exposed)
-                    for (std::size_t a = 0; a < rect.size(); ++a) {
-                        const auto shift = components[i].offset[a < 2 ? u : v];
-                        rect[a] = rect[a] == facet.bounds[a] + shift ? facet.bounds[a] : rect[a] - shift;
-                    }
-            }
         return project;
     }
 

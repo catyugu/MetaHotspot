@@ -22,33 +22,35 @@ namespace mhs::solver {
                 const auto& law
                     = *boundary_override(component.boundaries, surface, &m.boundary_groups[surface].condition);
                 auto ambient = [&](const Facet& patch) { return evaluate_boundary(law, patch, temperature, time, r); };
-                const auto* partition = project.face_partition(i, id);
-                if (!partition)
+                const auto patches = project.face_patches(i, id);
+                if (patches.empty())
                     return ambient(facet);
                 double integral = 0;
-                for (const auto index : partition->contacts) {
-                    const auto& c = project.contacts()[index];
-                    const auto geometry = local_patch(facet, c.bounds, component.offset);
-                    const auto other = c.left.component_index == i ? c.right : c.left;
-                    const double other_temperature = contact_side(project, other).temperature(state);
-                    const auto& asset = project.components()[other.component_index].asset;
-                    const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&asset);
-                    const double other_r = fom
-                        ? boundary_resistance(**fom, other.face_index, other_temperature, time)
-                        : std::get<std::shared_ptr<const Erom>>(asset)->interfaces[other.face_index].resistance;
-                    const auto t = temperature
-                        + (other_temperature - temperature) * r / contact_resistance(r, other_r, c.resistance);
-                    if (point && geometry.contains(*point))
-                        return {.temperature = t};
-                    integral += c.area() * t;
-                }
-                for (const auto& bounds : partition->exposed) {
-                    auto geometry = facet;
-                    geometry.bounds = bounds;
-                    const auto trace = ambient(geometry);
+                auto geometry = facet;
+                for (const auto& patch : patches) {
+                    geometry.bounds = patch.bounds;
+                    BoundaryEvaluation trace;
+                    double area;
+                    if (!patch.is_contact()) {
+                        trace = ambient(geometry);
+                        area = geometry.area();
+                    }
+                    else {
+                        const auto& c = project.contacts()[patch.contact];
+                        const auto other = c.left.component_index == i ? c.right : c.left;
+                        const double other_temperature = contact_side(project, other).temperature(state);
+                        const auto& asset = project.components()[other.component_index].asset;
+                        const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&asset);
+                        const double other_r = fom
+                            ? boundary_resistance(**fom, other.face_index, other_temperature, time)
+                            : std::get<std::shared_ptr<const Erom>>(asset)->interfaces[other.face_index].resistance;
+                        trace.temperature = temperature
+                            + (other_temperature - temperature) * r / contact_resistance(r, other_r, c.resistance);
+                        area = c.area;
+                    }
                     if (point && geometry.contains(*point))
                         return trace;
-                    integral += geometry.area() * trace.temperature;
+                    integral += area * trace.temperature;
                 }
                 return {.temperature = integral / facet.area()};
             };
