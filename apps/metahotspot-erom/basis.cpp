@@ -11,7 +11,7 @@
 namespace mhs::app::erom {
     core::Vector<double> matching_shifts(
         const Sparse& low, const Sparse& high, const Vector& capacity, double tolerance, Statistics& statistics);
-    Matrix compress_snapshots(const core::Vector<Vector>& snapshots, double tolerance);
+    Matrix compress_snapshots(core::Vector<Vector> snapshots, double tolerance);
 
     Sparse add_diagonal(const Sparse& matrix, const Vector& diagonal)
     {
@@ -83,13 +83,15 @@ namespace mhs::app::erom {
             const Prepared& project, const core::Vector<int>& regions)
         {
             core::Vector<bool> driven(static_cast<std::size_t>(*std::ranges::max_element(regions) + 1), false);
-            for (Eigen::Index cell = 0; cell < project.B.rows(); ++cell)
-                if (project.B.row(cell).squaredNorm() > 0)
-                    driven[regions[cell]] = true;
+            const auto weights = project.source_weights();
+            for (auto row = project.L.rows() - weights.rows(); row < project.L.rows(); ++row)
+                for (Sparse::InnerIterator entry(project.L, row); entry; ++entry)
+                    if (entry.value() > 0)
+                        driven[regions[entry.col()]] = true;
             std::set<std::pair<Eigen::Index, int>> inputs;
             for (std::size_t id = 0; id < project.boundary_cells.size(); ++id)
                 if (const auto region = regions[project.boundary_cells[id]]; !driven[region])
-                    inputs.emplace(project.interfaces[id].boundary_group, region);
+                    inputs.emplace(project.asset.interfaces[id].boundary_group, region);
             return {inputs.begin(), inputs.end()};
         }
     } // namespace
@@ -105,16 +107,15 @@ namespace mhs::app::erom {
         const Vector log_lower = lower.array().log(), log_upper = upper.array().log();
         Vector diagonal = Vector::Zero(n);
         Vector closure(nb);
-        project.set_conductances(closure, lower);
-        project.add_boundary(diagonal, closure);
+        project.add_convection(diagonal, closure, lower);
         const Sparse minimum = add_diagonal(K, diagonal);
         diagonal.setZero();
-        project.set_conductances(closure, upper);
-        project.add_boundary(diagonal, closure);
+        project.add_convection(diagonal, closure, upper);
         const Sparse maximum = add_diagonal(K, diagonal);
         const auto shifts = matching_shifts(minimum, maximum, capacity, tolerance, statistics);
         const auto passive = passive_inputs(project, regions);
-        const auto powered = static_cast<std::size_t>(project.B.cols());
+        const auto weights = project.source_weights();
+        const auto powered = static_cast<std::size_t>(weights.rows());
         core::Vector<ResponseSpace> spaces;
         for (std::size_t port = 0; port < powered + passive.size(); ++port)
             spaces.emplace_back(n, nb);
@@ -126,7 +127,7 @@ namespace mhs::app::erom {
             const Vector shifted_capacity = shift * capacity;
             for (std::size_t port = 0; port < spaces.size(); ++port) {
                 const bool is_passive = port >= powered;
-                Vector g = is_passive ? Vector::Zero(n).eval() : Vector(project.B.col(static_cast<Eigen::Index>(port)));
+                Vector g = is_passive ? Vector::Zero(n).eval() : Vector(weights.row(port).transpose());
                 Vector ambient(is_passive ? nb : 0);
                 double norm = is_passive ? 0 : g.norm();
                 auto& space = spaces[port];
@@ -136,17 +137,20 @@ namespace mhs::app::erom {
                     for (Eigen::Index i = 0; i < h.size(); ++i)
                         h[i] = std::clamp(
                             std::exp(std::lerp(log_lower[i], log_upper[i], uniform(random))), lower[i], upper[i]);
-                    project.set_conductances(closure, h);
                     diagonal = shifted_capacity;
-                    project.add_boundary(diagonal, closure);
+                    project.add_convection(diagonal, closure, h);
                     if (is_passive) {
                         const auto [group, region] = passive[port - powered];
                         ambient.setZero();
-                        for (auto id = project.training[group].begin; id < project.training[group].end; ++id)
-                            if (regions[project.boundary_cells[id]] == region)
-                                ambient[id] = closure[id];
                         g.setZero();
-                        project.add_boundary(g, ambient);
+                        for (auto id = project.boundary_offsets[group]; id < project.boundary_offsets[group + 1];
+                            ++id) {
+                            const auto cell = project.boundary_cells[id];
+                            if (regions[cell] == region) {
+                                ambient[id] = closure[id];
+                                g[cell] += ambient[id];
+                            }
+                        }
                         norm = g.norm();
                     }
                     Vector initial = Vector::Zero(n);
@@ -176,6 +180,7 @@ namespace mhs::app::erom {
         }
         if (snapshots.empty())
             throw std::runtime_error("EROM extraction has no nonzero training input");
-        return compress_snapshots(snapshots, tolerance);
+        spaces.clear();
+        return compress_snapshots(std::move(snapshots), tolerance);
     }
 } // namespace mhs::app::erom

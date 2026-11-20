@@ -88,16 +88,14 @@ namespace mhs::app::erom {
                     return std::tuple {f.axis, f.normal, f.coordinate, f.bounds[other], f.bounds[other + 1]};
                 };
                 std::ranges::stable_sort(facets, {}, [&](const Facet& f) { return std::pair {key(f), f.bounds[lo]}; });
-                core::Vector<Facet> merged;
+                auto end = facets.begin();
                 for (const auto& f : facets) {
-                    if (!merged.empty() && key(merged.back()) == key(f)
-                        && merged.back().bounds[lo + 1] == f.bounds[lo]) {
-                        merged.back().bounds[lo + 1] = f.bounds[lo + 1];
-                        continue;
-                    }
-                    merged.push_back(f);
+                    if (end != facets.begin() && key(end[-1]) == key(f) && end[-1].bounds[lo + 1] == f.bounds[lo])
+                        end[-1].bounds[lo + 1] = f.bounds[lo + 1];
+                    else
+                        *end++ = f;
                 }
-                facets = std::move(merged);
+                facets.erase(end, facets.end());
             }
             return facets;
         }
@@ -147,12 +145,13 @@ namespace mhs::app::erom {
         solver::ThermalAssembler assembler(model);
         core::Vector<double> state(mesh.cell_count(), model.reference_temperature);
         const auto& operators = assembler.assemble_internal(state, 0);
-        Prepared result {};
+        Prepared result;
+        auto& asset = result.asset;
         const auto n = static_cast<Eigen::Index>(mesh.cell_count());
         result.K = Eigen::Map<const Sparse>(n, n, static_cast<Eigen::Index>(operators.K.nnz()),
             operators.K.row_ptr().data(), operators.K.col_idx().data(), operators.K.values().data());
         result.capacity = Eigen::Map<const Vector>(operators.C.values().data(), n);
-        result.reference_temperature = model.reference_temperature;
+        asset.reference_temperature = model.reference_temperature;
         for (BoundaryGroupId surface = 0; surface < model.boundary_groups.size(); ++surface) {
             const auto& facets = facets_by_surface[surface];
             const auto range = ranges.find(surface);
@@ -171,22 +170,21 @@ namespace mhs::app::erom {
                     + " has a Dirichlet or nonzero Neumann condition unsupported by EROM extraction");
 
             if (trained) {
-                const auto group = static_cast<BoundaryGroupId>(result.training.size());
+                const auto group = static_cast<BoundaryGroupId>(asset.boundary_groups.size());
                 const double ambient
-                    = htc ? constant(htc->ambient_temperature, "Ambient temperature") : result.reference_temperature;
-                const auto begin = static_cast<Eigen::Index>(result.interfaces.size());
-                result.training.push_back({{name, range->second.minimum, range->second.maximum, h, ambient}, begin,
-                    begin + static_cast<Eigen::Index>(facets.size())});
+                    = htc ? constant(htc->ambient_temperature, "Ambient temperature") : asset.reference_temperature;
+                asset.boundary_groups.push_back({name, range->second.minimum, range->second.maximum, h, ambient});
                 for (const auto id : facets) {
-                    result.interfaces.push_back({mesh.exterior_facets[id].geometry, assembler.resistance(id), group});
+                    asset.interfaces.push_back({mesh.exterior_facets[id].geometry, assembler.resistance(id), group});
                     result.boundary_cells.push_back(mesh.exterior_facets[id].owner);
                 }
+                result.boundary_offsets.push_back(static_cast<Eigen::Index>(asset.interfaces.size()));
             }
             else {
                 core::Vector<Facet> geometry;
                 for (const auto id : facets)
                     geometry.push_back(mesh.exterior_facets[id].geometry);
-                result.outline.push_back({name, outline(std::move(geometry))});
+                asset.outline.push_back({name, outline(std::move(geometry))});
             }
         }
 
@@ -195,7 +193,7 @@ namespace mhs::app::erom {
         for (std::size_t i = 0; i < model.point_probes.size(); ++i) {
             const auto id = static_cast<OutputId>(i);
             project_probe(model, ranges, id, state, weights);
-            result.outputs.push_back({model.point_probes[i].name, model.point_probes[i].point});
+            asset.outputs.push_back({model.point_probes[i].name, model.point_probes[i].point});
         }
 
         core::Vector<double> volumes(model.heat_source_table.size());
@@ -211,19 +209,17 @@ namespace mhs::app::erom {
             auto name = definition.sources[id].name;
             if (name.empty())
                 name = "source " + std::to_string(id);
-            columns[id] = static_cast<SourceId>(result.sources.size());
-            result.outputs.push_back({name + " temperature", std::nullopt});
-            result.sources.push_back({std::move(name), density * volumes[id]});
+            columns[id] = static_cast<SourceId>(asset.sources.size());
+            asset.outputs.push_back({name + " temperature", std::nullopt});
+            asset.sources.push_back({std::move(name), density * volumes[id]});
         }
 
-        result.B = Matrix::Zero(n, static_cast<Eigen::Index>(result.sources.size()));
         for (const auto& term : model.source_terms)
             if (const auto col = columns[term.source]; col != core::invalid_id) {
                 const double weight = mesh.cell(term.cell).volume() / volumes[term.source];
-                result.B(term.cell, col) += weight;
                 weights.emplace_back(model.point_probes.size() + col, term.cell, weight);
             }
-        result.L.resize(static_cast<Eigen::Index>(result.outputs.size()), n);
+        result.L.resize(static_cast<Eigen::Index>(asset.outputs.size()), n);
         result.L.setFromTriplets(weights.begin(), weights.end());
         return result;
     }

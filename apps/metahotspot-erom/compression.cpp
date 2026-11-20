@@ -7,23 +7,27 @@
 #include <stdexcept>
 
 namespace mhs::app::erom {
-    Matrix compress_snapshots(const core::Vector<Vector>& snapshots, double tolerance)
+    Matrix compress_snapshots(core::Vector<Vector> snapshots, double tolerance)
     {
         const auto n = snapshots.front().size();
         Matrix centered(n, static_cast<Eigen::Index>(snapshots.size()));
         Eigen::Index count = 0;
         for (const auto& response : snapshots) {
-            Vector column = response.array() - response.mean();
+            auto column = centered.col(count);
+            column = response.array() - response.mean();
             const double norm = column.norm();
-            if (norm > std::numeric_limits<double>::epsilon() * response.norm())
-                centered.col(count++) = column / norm;
+            if (norm > std::numeric_limits<double>::epsilon() * response.norm()) {
+                column /= norm;
+                ++count;
+            }
         }
+        snapshots.clear();
         centered.conservativeResize(Eigen::NoChange, count);
         Matrix basis(n, 0);
         if (count) {
             // Thin QR followed by a small SVD avoids forming a squared-condition
             // Gram matrix while keeping the tall snapshot SVD out of the SDK.
-            Eigen::HouseholderQR<Matrix> qr(centered);
+            Eigen::HouseholderQR<Eigen::Ref<Matrix>> qr(centered);
             const auto r = std::min(n, count);
             const Matrix triangular = qr.matrixQR().topRows(r).template triangularView<Eigen::Upper>();
             Eigen::JacobiSVD<Matrix> svd(triangular, Eigen::ComputeThinU);

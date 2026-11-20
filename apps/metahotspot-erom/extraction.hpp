@@ -13,21 +13,13 @@ namespace mhs::app::erom {
     struct Prepared {
         Sparse K, L;
         Vector capacity;
-        Matrix B;
-        struct HtcGroup {
-            model::EromBoundaryGroup boundary_group;
-            Eigen::Index begin, end;
-        };
-        double reference_temperature;
-        core::Vector<HtcGroup> training;
-        core::Vector<model::EromInterface> interfaces;
+        model::Erom asset;
+        core::Vector<Eigen::Index> boundary_offsets {0}; // interface rows grouped by HTC group
         core::Vector<model::CellId> boundary_cells; // one per interface row
-        core::Vector<model::EromOutline> outline;
-        core::Vector<model::EromSource> sources;
-        core::Vector<model::EromOutput> outputs;
 
-        void set_conductances(Eigen::Ref<Vector> values, const Vector& h) const;
-        void add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const;
+        // Each source uses the same cell weights for distributing power and averaging temperature.
+        auto source_weights() const { return L.bottomRows(static_cast<Eigen::Index>(asset.sources.size())); }
+        void add_convection(Vector& diagonal, Vector& conductances, const Vector& h) const;
     };
 
     Prepared prepare(const model::Fom& fom, const model::FomDefinition& definition, const HtcRanges& ranges);
