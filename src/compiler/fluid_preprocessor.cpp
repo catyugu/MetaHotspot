@@ -215,10 +215,10 @@ namespace mhs::compiler::fluid {
                             return bc.temperature.value_or(model.reference_temperature);
                     },
                     condition);
-                fluid.boundary_terms.push_back({facet_id, mass, temperature});
+                fluid.boundary_terms.push_back({facet_id, FluidInflow {-mass, temperature}});
             }
             else {
-                fluid.boundary_terms.push_back({facet_id, mass, 0});
+                fluid.boundary_terms.push_back({facet_id, FluidOutflow {mass}});
             }
         }
         for (std::size_t id = 0; id < mesh.facets.size(); ++id)

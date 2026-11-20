@@ -3,6 +3,7 @@
 #include "thermal_physics.hpp"
 #include <numeric>
 #include <stdexcept>
+#include <type_traits>
 
 namespace mhs::solver {
     namespace {
@@ -127,11 +128,15 @@ namespace mhs::solver {
             const auto cell = model.discrete.cell_facets[term.facet].owner();
             const auto row = static_cast<SparseIndex>(cell);
             const auto cp = specific_heat_[model.fluid.global_to_fluid[cell]];
-            const auto enthalpy = term.mass_flow_rate * cp;
-            if (term.mass_flow_rate < 0)
-                rhs[row] -= enthalpy * term.inlet_temperature;
-            else
-                values[diagonal_positions_[row]] += enthalpy;
+            std::visit(
+                [&](const auto& flow) {
+                    using T = std::decay_t<decltype(flow)>;
+                    if constexpr (std::is_same_v<T, FluidInflow>)
+                        rhs[row] += flow.mass_flow_rate * cp * flow.temperature;
+                    else
+                        values[diagonal_positions_[row]] += flow.mass_flow_rate * cp;
+                },
+                term.condition);
         }
         return operators_;
     }

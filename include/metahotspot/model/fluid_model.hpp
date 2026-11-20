@@ -2,13 +2,26 @@
 
 #include "core/vector.hpp"
 #include "model/types.hpp"
+#include <variant>
 
 namespace mhs::model {
 
+    // Nonnegative frozen mass flow rates (kg/s), classified by actual flow
+    // direction after the pressure solve, including reversed pressure boundaries.
+    struct FluidInflow {
+        double mass_flow_rate;
+        double temperature;
+    };
+
+    struct FluidOutflow {
+        double mass_flow_rate;
+    };
+
+    using FluidTransportCondition = std::variant<FluidInflow, FluidOutflow>;
+
     struct FluidBoundaryTerm {
-        FacetId facet = core::invalid_id;
-        double mass_flow_rate; // kg/s, positive outward
-        double inlet_temperature; // used only for negative mass flow
+        FacetId facet = mhs::core::invalid_id;
+        FluidTransportCondition condition;
     };
 
     struct FluidModel {
