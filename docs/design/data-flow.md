@@ -45,7 +45,7 @@ FOM 的 `ExteriorFacet` 保存几何、所属单元和热边界组。`boundary_o
 
 `ComponentInstance` 保存 `shared_ptr<const Fom/Erom>` variant、平移和稠密可选实例覆盖；组件身份统一为 `components` 数组下标。FOM 的源表达式归资产；EROM 的 `powers` 以 SourceId 替换指定源的默认瓦数，其他源保持默认值，覆盖不叠加。`boundaries` 以 BoundaryGroupId 替换未被接触覆盖部分的环境条件，不修改共享资产。
 
-`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面。`Contact` 保存接触交集，`FacePartition` 保存逐面接触下标和局部坐标的外露矩形，供装配和探针重建共用。工程对每个接触面片只装配一次。接触未训练 EROM 轮廓时，编译器记录去重的日志警告，双方继续施加各自的环境条件。
+`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面。`Contact` 保存两侧索引、接触面积和热阻。每个被分割的面保存一份组件局部坐标下的 `FacePatch` 序列，接触面片携带对应的接触下标，供边界装配和探针重建共用。工程对每个接触面片只装配一次。接触未训练 EROM 轮廓时，编译器记录去重的日志警告，双方继续施加各自的环境条件。
 
 `ThermalAssembler` 组装 FOM 内部与剩余外边界，`ProjectAssembler` 合并组件算子并用两侧温度映射装配接触。FOM 外部接触采用法向半单元 `d/k`，内部流固面另用冻结流场的膜阻；跨组件接触不承担水力连通或流固膜模型推断。单 FOM 工程直接返回局部装配结果。全局 CSR 模式用连续缓冲区两遍构建；纯 EROM 工程缓存不随状态、时间变化的接触算子，混合工程保留逐次求值的 FOM 热阻。
 

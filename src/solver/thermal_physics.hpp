@@ -68,29 +68,17 @@ namespace mhs::solver {
     BoundaryEvaluation evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
         double temperature, double time, double resistance);
 
-    // Boundary expressions and point probes use component coordinates.
-    inline model::Facet local_patch(
-        const model::Facet& facet, const model::Rect& world_bounds, const model::Vec3& offset)
-    {
-        auto result = facet;
-        const auto [u, v] = model::tangential_axes(facet.axis);
-        for (std::size_t i = 0; i < world_bounds.size(); ++i) {
-            const double shift = offset[i < 2 ? u : v];
-            result.bounds[i] = world_bounds[i] == facet.bounds[i] + shift ? facet.bounds[i] : world_bounds[i] - shift;
-        }
-        return result;
-    }
-
     inline std::pair<double, double> boundary_terms(
-        model::Facet facet, const model::FacePartition* partition, const auto& evaluate)
+        model::Facet facet, std::span<const model::FacePatch> patches, const auto& evaluate)
     {
-        if (!partition) {
+        if (patches.empty()) {
             const auto trace = evaluate(facet);
             return {trace.conductance, trace.load};
         }
         double conductance = 0, load = 0;
-        for (const auto& bounds : partition->exposed) {
-            facet.bounds = bounds;
+        for (auto it = std::ranges::partition_point(patches, &model::FacePatch::is_contact); it != patches.end();
+            ++it) {
+            facet.bounds = it->bounds;
             const auto trace = evaluate(facet);
             conductance += trace.conductance;
             load += trace.load;

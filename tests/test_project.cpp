@@ -104,8 +104,8 @@ TEST(Project, MatchingAndNonmatchingFomContactConserveHeat)
         const auto& ops = assembler.assemble(t, 0);
         double area = 0;
         for (const auto& patch : project.contacts()) {
-            area += patch.area();
-            EXPECT_NEAR(patch.area(), 1.0 / count, 1e-14);
+            area += patch.area;
+            EXPECT_NEAR(patch.area, 1.0 / count, 1e-14);
         }
         EXPECT_NEAR(area, 1.0, 1e-14);
         EXPECT_NEAR(ops.K.coeff(0, 0), 2.8, 1e-14);
@@ -127,7 +127,7 @@ TEST(Project, PartialMixedContactUsesExposedBoundaryAndReferenceOffsets)
     const auto project = mhs::compiler::compile_project(
         {{instance(cube(false, true), {7, 13, 19}), instance(erom, {8, 13.5, 19})}, {{{0, 1}, 0.25}}});
     ASSERT_EQ(project.contacts().size(), 1u);
-    EXPECT_DOUBLE_EQ(project.contacts()[0].area(), 0.5);
+    EXPECT_DOUBLE_EQ(project.contacts()[0].area, 0.5);
     EXPECT_EQ(project.output_position(1, 0), (Vec3 {8.5, 13.75, 19.5}));
     EXPECT_FALSE(project.output_position(1, 1));
     EXPECT_EQ(*erom->outputs[0].point, (Vec3 {0.5, 0.25, 0.5}));

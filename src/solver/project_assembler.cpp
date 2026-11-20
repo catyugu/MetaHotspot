@@ -94,7 +94,7 @@ namespace mhs::solver {
         for (const auto& c : project_.contacts()) {
             const auto left = contact_side(project_, c.left);
             const auto right = contact_side(project_, c.right);
-            const auto g = c.area() / contact_resistance(resistance(c.left), resistance(c.right), c.resistance);
+            const auto g = c.area / contact_resistance(resistance(c.left), resistance(c.right), c.resistance);
             add_block(operators_.K, left, left, g);
             add_block(operators_.K, right, right, g);
             add_block(operators_.K, left, right, -g);
@@ -217,7 +217,7 @@ namespace mhs::solver {
                 const Side side {offset, e.Vb.row(interface_index), e.reference_temperature};
                 const double temperature = law ? side.temperature(state) : 0;
                 const auto [g, load]
-                    = boundary_terms(face.facet, project_.face_partition(i, interface_index), [&](const Facet& patch) {
+                    = boundary_terms(face.facet, project_.face_patches(i, interface_index), [&](const Facet& patch) {
                           if (law)
                               return evaluate_boundary(*law, patch, temperature, time, face.resistance);
                           const double g = convection_conductance(patch.area(), surface.coefficient, face.resistance);
