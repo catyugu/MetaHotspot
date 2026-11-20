@@ -601,7 +601,7 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
         SET_ERR("NULL cell field buffer");
         return MHS_ERROR;
     }
-    const bool missing_facet_buffer = !fields->facet_minus || !fields->facet_plus || !fields->facet_axis
+    const bool missing_facet_buffer = !fields->facet_owner || !fields->facet_normal || !fields->facet_axis
         || !fields->facet_coordinate || !fields->facet_bounds;
     if (fields->facet_count && missing_facet_buffer) {
         SET_ERR("NULL facet field buffer");
@@ -624,8 +624,8 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
     for (size_t id = 0; id < mesh.exterior_facets.size(); ++id) {
         const auto& face = mesh.exterior_facets[id];
         const auto& facet = face.geometry;
-        fields->facet_minus[id] = facet.normal > 0 ? face.owner : MHS_INVALID_INDEX;
-        fields->facet_plus[id] = facet.normal < 0 ? face.owner : MHS_INVALID_INDEX;
+        fields->facet_owner[id] = face.owner;
+        fields->facet_normal[id] = facet.normal;
         fields->facet_axis[id] = static_cast<mhs_axis_t>(facet.axis);
         fields->facet_coordinate[id] = facet.coordinate;
         for (size_t a = 0; a < 4; ++a)

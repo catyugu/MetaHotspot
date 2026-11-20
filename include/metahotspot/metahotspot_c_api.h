@@ -153,18 +153,17 @@ typedef struct {
 } mhs_compiled_info_t;
 
 /** Caller-owned arrays. XYZ bounds are flattened (count,3), all IDs zero-based.
- * Facet bounds are (facet_count,4) in ascending
- * tangential axes: YZ for X, XZ for Y, XY for Z, each [a_min,a_max,b_min,b_max].
- * Facet coordinates are (facet_count,) in the normal axis. Positive flux
- * runs facet_minus -> facet_plus along facet_axis. Exterior facets
- * have exactly one MHS_INVALID_INDEX cell; the missing side determines the normal. */
+ * facet_count counts exterior facets. Bounds have shape (facet_count,4)
+ * in ascending tangential axes (YZ, XZ, XY), as [a_min,a_max,b_min,b_max].
+ * Each facet has an owning CellId and an outward sign (-1 or +1)
+ * along facet_axis. facet_coordinate gives the plane position. */
 typedef struct {
     size_t cell_count, facet_count, projection_count;
     double* cell_min;
     double* cell_max;
     mhs_index_t* material_id;
-    mhs_index_t* facet_minus;
-    mhs_index_t* facet_plus;
+    mhs_index_t* facet_owner;
+    int32_t* facet_normal;
     mhs_axis_t* facet_axis;
     double* facet_coordinate;
     double* facet_bounds;

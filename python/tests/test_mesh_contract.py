@@ -14,6 +14,8 @@ def test_conformal_sources_keep_independent_power_columns():
     second = model.add_volume(0, model.add_source("2e6"))
     model.add_box(second, [0, 0, 0], [0.00025, 0.001, 0.001])
     compiled = model.compile()
+    assert compiled.info.facet_count == 10
+    np.testing.assert_array_equal(np.bincount(compiled.fields.facet_owner), [5, 5])
     q = compiled.source_operator()
     np.testing.assert_allclose(q.toarray(), [[0, 0.0005], [0.00075, 0]])
     np.testing.assert_allclose(q.sum(axis=1).A.ravel(), compiled.assemble().f)

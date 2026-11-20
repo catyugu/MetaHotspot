@@ -1,5 +1,5 @@
 #include "vtu.hpp"
-#include <map>
+#include <unordered_map>
 
 #include <tinyxml2.h>
 
@@ -17,20 +17,19 @@ namespace mhs::app::output {
         using namespace tinyxml2;
         if (cell_temperature.size() != mesh.cell_count())
             throw std::invalid_argument("VTU state size mismatch");
-        std::map<mhs::model::Vec3, std::size_t> points;
+        std::unordered_map<std::size_t, std::size_t> points;
         char buf[256];
         std::string coords_str, conn_str, off_str, type_str, cell_temp_str;
-        constexpr int corners[8][3]
+        constexpr std::size_t corners[8][3]
             = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}};
         uint64_t cell_num = 0;
         for (size_t c = 0; c < mesh.cell_count(); ++c) {
-            const auto& cell = mesh.cell(c);
+            const auto [i, j, k] = mesh.cell_coords(c);
             for (const auto& corner : corners) {
-                mhs::model::Vec3 p;
-                for (int a = 0; a < 3; ++a)
-                    p[a] = corner[a] ? cell.max[a] : cell.min[a];
-                const auto [it, inserted] = points.try_emplace(p, points.size());
+                const auto x = i + corner[0], y = j + corner[1], z = k + corner[2];
+                const auto [it, inserted] = points.try_emplace(mesh.vertex_index(x, y, z), points.size());
                 if (inserted) {
+                    const auto p = mesh.vertex(x, y, z);
                     std::snprintf(buf, sizeof(buf), "%.17g %.17g %.17g\n", p[0], p[1], p[2]);
                     coords_str += buf;
                 }

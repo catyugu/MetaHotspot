@@ -23,8 +23,8 @@ class CompiledFields:
     cell_min: np.ndarray
     cell_max: np.ndarray
     material_id: np.ndarray
-    facet_minus: np.ndarray
-    facet_plus: np.ndarray
+    facet_owner: np.ndarray
+    facet_normal: np.ndarray
     facet_axis: np.ndarray
     facet_coordinate: np.ndarray
     facet_bounds: np.ndarray

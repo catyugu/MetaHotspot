@@ -37,6 +37,14 @@ namespace mhs::model {
         {
             return (x * extent(1) + y) * extent(2) + z;
         }
+        std::size_t vertex_index(std::size_t x, std::size_t y, std::size_t z) const
+        {
+            return (x * vertices[1].size() + y) * vertices[2].size() + z;
+        }
+        Vec3 vertex(std::size_t x, std::size_t y, std::size_t z) const
+        {
+            return {vertices[0][x], vertices[1][y], vertices[2][z]};
+        }
         std::array<std::size_t, 3> cell_coords(std::size_t id) const
         {
             auto index = cell_to_grid[id];
@@ -45,9 +53,8 @@ namespace mhs::model {
         }
         CellGeometry cell(std::size_t id) const
         {
-            const auto p = cell_coords(id);
-            return {{vertices[0][p[0]], vertices[1][p[1]], vertices[2][p[2]]},
-                {vertices[0][p[0] + 1], vertices[1][p[1] + 1], vertices[2][p[2] + 1]}};
+            const auto [x, y, z] = cell_coords(id);
+            return {vertex(x, y, z), vertex(x + 1, y + 1, z + 1)};
         }
         double cell_width(std::size_t id, std::size_t axis) const
         {

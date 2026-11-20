@@ -13,19 +13,12 @@ thermal conditions must be evaluated at physical surface temperature.
 
 ## Decision
 
-`DiscreteMesh::facets` is the unique collection of rectangular flux integration
-regions. `Facet` stores the normal axis, outward sign, plane coordinate and tangential
-bounds, and supplies area, center and membership. `CellFacet` stores the adjacent
-cells (one invalid for an exterior surface) and supplies the owning cell. `FacetId` identifies one canonical integration region.
-
-The geometry compiler partitions exterior facets against the union of thermal and
-fluid boundary region cuts **before** building cell-facet incidence. A partially
-covered rectangle creates several Facets, including uncovered pieces. The compiler
-then binds exterior FacetIds to `Fom::facet_surface`. The surface ID indexes both
-the thermal boundary condition and the geometric group. Fluid boundaries use
-the same FacetIds. Later regions take precedence within
-each physics. The default thermal condition applies to uncovered exterior facets.
-Internal facet geometry does not depend on exterior boundary assignments.
+Each `ExteriorFacet` stores a rectangular `Facet`, the owner CellId and the
+thermal boundary group. The geometry compiler partitions exterior faces at
+thermal and fluid region cuts, including uncovered pieces. FacetIds are grouped
+by owner and fluid tags are consumed during preprocessing. Later regions take
+precedence within each physics. Uncovered pieces use the default thermal law.
+Internal neighbors come from the Cartesian index.
 
 For cell temperature `T`, trace `lambda`, normal conductivity `k`, center-to-wall
 distance `d`, and facet area `A`, conductive flux is `F = k A (T - lambda) / d`.

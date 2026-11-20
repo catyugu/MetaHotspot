@@ -47,13 +47,11 @@ def test_model_native_calls_compile_and_assemble():
     assert fields.facet_coordinate.shape == (compiled.info.facet_count,)
     for axis in range(3):
         ids = np.flatnonzero(fields.facet_axis == axis)
-        owners = np.where(
-            fields.facet_minus[ids] == np.iinfo(np.uint32).max,
-            fields.facet_plus[ids],
-            fields.facet_minus[ids],
-        )
+        owners = fields.facet_owner[ids]
+        np.testing.assert_array_equal(owners, [0, 0])
+        np.testing.assert_array_equal(np.sort(fields.facet_normal[ids]), [-1, 1])
         expected = np.where(
-            fields.facet_minus[ids] == np.iinfo(np.uint32).max,
+            fields.facet_normal[ids] < 0,
             fields.cell_min[owners, axis],
             fields.cell_max[owners, axis],
         )

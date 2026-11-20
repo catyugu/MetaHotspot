@@ -12,7 +12,6 @@ namespace test_pta {
     }
 
     struct Model : mhs::model::Fom {
-        mhs::model::MeshSpec sampling_grid;
         struct {
             mhs::core::Vector<mhs::model::Vec3> points;
             std::array<std::size_t, 3> cartesian_shape {};
@@ -22,7 +21,6 @@ namespace test_pta {
     {
         Model m;
         static_cast<mhs::model::Fom&>(m) = mhs::compiler::compile_fom(d, mesh);
-        m.sampling_grid = mesh;
         m.output.cartesian_shape = {mesh.x_vertices.size(), mesh.y_vertices.size(), mesh.z_vertices.size()};
         for (double x : mesh.x_vertices)
             for (double y : mesh.y_vertices)
@@ -38,6 +36,6 @@ namespace test_pta {
     inline Model compile_fom(const mhs::app::pta::Input& input) { return compile_fom(input.model, input.mesh); }
     inline auto interpolate_cell_to_node(const Model& m, std::span<const double> t, double time)
     {
-        return mhs::app::postprocess::interpolate_cell_to_node(m, m.sampling_grid, t, time);
+        return mhs::app::postprocess::interpolate_cell_to_node(m, t, time);
     }
 }

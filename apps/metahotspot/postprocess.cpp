@@ -5,7 +5,6 @@
 #include <array>
 #include <cmath>
 #include <limits>
-#include <map>
 #include <ranges>
 #include <stdexcept>
 
@@ -27,38 +26,33 @@ namespace mhs::app::postprocess {
 
     } // namespace
 
-    mhs::core::Vector<double> interpolate_cell_to_node(const mhs::model::Fom& model, const mhs::model::MeshSpec& grid,
-        std::span<const double> cell_temperature, double time)
+    mhs::core::Vector<double> interpolate_cell_to_node(
+        const mhs::model::Fom& model, std::span<const double> cell_temperature, double time)
     {
-        if (cell_temperature.size() != model.mesh.cell_count())
+        const auto& mesh = model.mesh;
+        if (cell_temperature.size() != mesh.cell_count())
             throw std::invalid_argument("node sampling state size mismatch");
-        std::map<mhs::model::Vec3, std::size_t> nodes;
-        for (double x : grid.x_vertices)
-            for (double y : grid.y_vertices)
-                for (double z : grid.z_vertices)
-                    nodes.emplace(mhs::model::Vec3 {x, y, z}, nodes.size());
-        mhs::core::Vector<double> node_T(nodes.size(), 0.0), weight(nodes.size(), 0.0);
-        for (std::size_t c = 0; c < model.mesh.cell_count(); ++c) {
-            const auto& cell = model.mesh.cell(c);
+        const auto& vertices = mesh.vertices;
+        const auto node_count = vertices[0].size() * vertices[1].size() * vertices[2].size();
+        mhs::core::Vector<double> node_T(node_count, 0.0), weight(node_count, 0.0);
+        for (mhs::model::CellId c = 0; c < mesh.cell_count(); ++c) {
+            const auto [i, j, k] = mesh.cell_coords(c);
+            const auto cell = mesh.cell(c);
             const auto center = cell.center();
             const auto temperature = cell_temperature[c];
             const mhs::expression::FieldContext ctx {center[0], center[1], center[2], temperature, time};
             const auto& mat = model.material_table[model.cell_material[c]];
             const mhs::model::Vec3 conductivity {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
-            for (double x : {cell.min[0], cell.max[0]})
-                for (double y : {cell.min[1], cell.max[1]})
-                    for (double z : {cell.min[2], cell.max[2]}) {
-                        const mhs::model::Vec3 point {x, y, z};
-                        const auto it = nodes.find(point);
-                        if (it == nodes.end())
-                            continue;
-                        const auto v = it->second;
-                        const double sample = boundary_value_at(
-                            model, cell_temperature, time, static_cast<mhs::model::CellId>(c), point)
-                                                  .value_or(temperature);
+            for (auto x : {i, i + 1})
+                for (auto y : {j, j + 1})
+                    for (auto z : {k, k + 1}) {
+                        const auto point = mesh.vertex(x, y, z);
+                        const auto index = mesh.vertex_index(x, y, z);
+                        const double sample
+                            = boundary_value_at(model, cell_temperature, time, c, point).value_or(temperature);
                         const double w = anisotropic_weight(center, point, conductivity);
-                        node_T[v] += w * sample;
-                        weight[v] += w;
+                        node_T[index] += w * sample;
+                        weight[index] += w;
                     }
         }
         for (std::size_t v = 0; v < node_T.size(); ++v)

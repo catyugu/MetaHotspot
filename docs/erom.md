@@ -36,7 +36,7 @@ uses world coordinates. `FacePartition` stores contact indices and exposed recta
 in component coordinates. Contact sides carry a component index and a face index
 (FOM facet or EROM interface). A connected patch
 replaces the environment over its covered area. The remaining area keeps the
-surface's environment. FOMs use `facet_boundary_group` to select a thermal boundary group and its law. Instance overrides use `BoundaryGroupId`. Contacts with
+surface's environment. Each FOM exterior facet carries its thermal boundary group index. Instance overrides use `BoundaryGroupId`. Contacts with
 untrained EROM surfaces log a warning and leave both environment laws in effect. Fluid advection and
 hydraulic boundary terms operate within the individual FOM.
 

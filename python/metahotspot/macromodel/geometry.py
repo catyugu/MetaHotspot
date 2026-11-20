@@ -1,4 +1,4 @@
-"""Explicit cell geometry and canonical facet topology, independent of mesh origin."""
+"""Compiled cell geometry and exterior facet selection."""
 
 from __future__ import annotations
 
@@ -46,10 +46,7 @@ class CellGeometry:
         axis = int(face) // 2
         sign = -1 if int(face) % 2 == 0 else 1
         f = self.fields
-        invalid = np.iinfo(f.facet_minus.dtype).max
-        cells = f.facet_minus if sign > 0 else f.facet_plus
-        missing = f.facet_plus if sign > 0 else f.facet_minus
-        ids = np.flatnonzero((missing == invalid) & (f.facet_axis == axis))
+        ids = np.flatnonzero((f.facet_normal == sign) & (f.facet_axis == axis))
         if coordinate is None:
             coordinate = (
                 f.cell_min[:, axis].min() if sign < 0 else f.cell_max[:, axis].max()
@@ -57,4 +54,6 @@ class CellGeometry:
         ids = ids[np.isclose(f.facet_coordinate[ids], coordinate, atol=1e-9, rtol=0)]
         bounds = f.facet_bounds[ids]
         areas = (bounds[:, 1] - bounds[:, 0]) * (bounds[:, 3] - bounds[:, 2])
-        return BoundarySurface(cells[ids].astype(np.int64), areas, ids.astype(np.int64))
+        return BoundarySurface(
+            f.facet_owner[ids].astype(np.int64), areas, ids.astype(np.int64)
+        )
