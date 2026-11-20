@@ -183,9 +183,6 @@ workspace performs twenty assemblies. The FOM pair has 40³ cells per cube and
 | 96-DOF EROM pair: workspace setup | 0.141 ms | 1.71 ms |
 | EROM pair: one assembly | 1.83 ms | 0.0284 ms |
 
-The EROM cache moves constant contact work into setup and adds one CSR-sized
-coefficient array plus one load vector for reduced-only projects. Mixed
-projects keep dynamic FOM resistance evaluation without this cache. CSR
-structures match the baseline exactly; all K/C/load entries agree within
-`rtol=atol=1e-12`. These measurements cover assembly, not extraction or complete
-simulation time.
+The EROM figures used a reduced-only contact cache. The current assembler
+computes contact terms in the shared global path for all projects with EROMs
+or multiple FOMs.

@@ -22,11 +22,14 @@ namespace mhs::solver {
 
         void add_block(core::CSRMatrix<double>& matrix, const Side& rows, const Side& cols, double scale)
         {
+            // Every row of a modal block has the same column pattern.
+            const auto offsets = matrix.row_ptr();
+            const auto column = slot(matrix, rows.first, cols.first) - offsets[rows.first];
             for (std::size_t i = 0; i < rows.weights.size(); ++i) {
-                const auto idx = slot(matrix, rows.first + i, cols.first);
+                auto* values = matrix.values().data() + offsets[rows.first + i] + column;
                 const auto factor = scale * rows.weights[i];
                 for (std::size_t j = 0; j < cols.weights.size(); ++j)
-                    matrix.values()[idx + j] += factor * cols.weights[j];
+                    values[j] += factor * cols.weights[j];
             }
         }
 
@@ -66,20 +69,13 @@ namespace mhs::solver {
         if (thermal_.size() == 1 && thermal_.front())
             return;
         operators_ = make_operators();
-        const bool reduced_only = std::ranges::none_of(thermal_, [](const auto& assembler) { return bool(assembler); });
         for (std::size_t i = 0; i < thermal_.size(); ++i)
             if (!thermal_[i]) {
                 const auto offset = project_.dof_offset(i);
                 const auto& e = *std::get<std::shared_ptr<const Erom>>(project_.components()[i].asset);
                 std::copy_n(e.C.data(), e.C.rows() * e.C.cols(),
                     operators_.C.values().begin() + operators_.C.row_ptr()[offset]);
-                if (reduced_only)
-                    copy_dense(e.K, operators_.K, offset);
             }
-        if (reduced_only) {
-            assemble_contacts();
-            fixed_.emplace(FixedContacts {{operators_.K.values().begin(), operators_.K.values().end()}, operators_.f});
-        }
     }
 
     void ProjectAssembler::assemble_contacts()
@@ -175,13 +171,8 @@ namespace mhs::solver {
             return thermal_.front()->assemble(
                 state, time, project_.components().front().boundaries.empty() ? nullptr : &project_);
 
-        const bool cached = fixed_.has_value();
-        if (cached) {
-            std::ranges::copy(fixed_->stiffness, operators_.K.values().begin());
-            std::ranges::copy(fixed_->load, operators_.f.begin());
-        }
-        else
-            std::ranges::fill(operators_.K.values(), 0.0);
+        std::ranges::fill(operators_.K.values(), 0.0);
+        std::ranges::fill(operators_.f, 0.0);
         for (std::size_t i = 0; i < thermal_.size(); ++i) {
             const auto& component = project_.components()[i];
             const auto offset = project_.dof_offset(i);
@@ -195,10 +186,7 @@ namespace mhs::solver {
             }
 
             const auto& e = *std::get<std::shared_ptr<const Erom>>(component.asset);
-            if (!cached) {
-                copy_dense(e.K, operators_.K, offset);
-                std::fill_n(operators_.f.begin() + offset, e.K.rows(), 0.0);
-            }
+            copy_dense(e.K, operators_.K, offset);
             for (SourceId s = 0; s < e.sources.size(); ++s) {
                 const auto& source = e.sources[s];
                 const double power = s < component.powers.size() && component.powers[s] ? component.powers[s](time)
@@ -230,8 +218,7 @@ namespace mhs::solver {
             }
         }
 
-        if (!cached)
-            assemble_contacts();
+        assemble_contacts();
         return operators_;
     }
 
