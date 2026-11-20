@@ -4,8 +4,8 @@
 #include "model/surface.hpp"
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
-#include <variant>
 
 namespace mhs::model {
     struct EromSource {
@@ -15,7 +15,7 @@ namespace mhs::model {
 
     struct EromOutput {
         std::string name;
-        std::variant<Vec3, SourceId> location = core::invalid_id; // point or source-volume average
+        std::optional<Vec3> point; // component coordinates; absent for averaged outputs
     };
 
     struct EromBoundaryGroup {
@@ -28,7 +28,7 @@ namespace mhs::model {
     struct EromInterface {
         Facet facet;
         double resistance; // m² K/W
-        SurfaceId surface;
+        BoundaryGroupId boundary_group;
     };
 
     struct EromOutline {
@@ -39,7 +39,7 @@ namespace mhs::model {
     struct Erom {
         core::Matrix<double> K, C, B, L, Vb;
         core::Vector<EromInterface> interfaces; // indexed by Vb row
-        core::Vector<EromBoundaryGroup> boundary_groups; // connectable HTC groups, indexed by SurfaceId
+        core::Vector<EromBoundaryGroup> boundary_groups; // connectable HTC groups, indexed by BoundaryGroupId
         core::Vector<EromOutline> outline; // untrained groups used only for contact diagnostics
         core::Vector<EromSource> sources;
         core::Vector<EromOutput> outputs;

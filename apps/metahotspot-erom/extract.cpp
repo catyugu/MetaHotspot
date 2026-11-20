@@ -13,7 +13,7 @@ namespace mhs::app::erom {
     {
         for (Eigen::Index id = 0; id < values.size(); ++id) {
             const auto& face = interfaces[id];
-            values[id] = solver::convection_conductance(face.facet.area(), h[face.surface], face.resistance);
+            values[id] = solver::convection_conductance(face.facet.area(), h[face.boundary_group], face.resistance);
         }
     }
 
@@ -97,7 +97,7 @@ namespace mhs::app::erom {
                         Vector ambient_exact(ng), ambient_approximate(ng);
                         for (Eigen::Index i = 0; i < ng; ++i) {
                             ambient_exact[i] = ambient_approximate[i] = 0;
-                            for (const auto id : project.training[i].facets) {
+                            for (const auto id : project.training[i].interfaces) {
                                 ambient_exact[i] += closure[id] * exact[project.boundary_cells[id]];
                                 ambient_approximate[i] += closure[id] * reduced_trace[id];
                             }
@@ -128,8 +128,8 @@ namespace mhs::app::erom {
                         load.setZero();
                     }
                     const auto& group = project.training[i];
-                    const double delta = defaults ? group.surface.ambient - project.reference_temperature : 1;
-                    for (const auto id : group.facets) {
+                    const double delta = defaults ? group.boundary_group.ambient - project.reference_temperature : 1;
+                    for (const auto id : group.interfaces) {
                         const double power = closure[id] * delta;
                         rhs[project.boundary_cells[id]] += power;
                         load.noalias() += power * boundary.row(id).transpose();
@@ -152,7 +152,7 @@ namespace mhs::app::erom {
                 }
             Vector defaults(ng);
             for (Eigen::Index i = 0; i < ng; ++i)
-                defaults[i] = project.training[i].surface.coefficient;
+                defaults[i] = project.training[i].boundary_group.coefficient;
             check(defaults, true);
             if (worst > tolerance) {
                 std::ostringstream message;
@@ -194,8 +194,8 @@ namespace mhs::app::erom {
         const auto ng = static_cast<Eigen::Index>(project.training.size());
         Vector lower(ng), upper(ng);
         for (Eigen::Index i = 0; i < ng; ++i) {
-            lower[i] = project.training[i].surface.minimum;
-            upper[i] = project.training[i].surface.maximum;
+            lower[i] = project.training[i].boundary_group.minimum;
+            upper[i] = project.training[i].boundary_group.maximum;
         }
         const Matrix basis = build_basis(project, lower, upper, regions, tolerance, statistics);
         Matrix C = basis.transpose() * (project.capacity.asDiagonal() * basis);
@@ -211,7 +211,7 @@ namespace mhs::app::erom {
         core::Vector<model::EromBoundaryGroup> surfaces;
         surfaces.reserve(project.training.size());
         for (auto& group : project.training)
-            surfaces.push_back(std::move(group.surface));
+            surfaces.push_back(std::move(group.boundary_group));
         model::Erom asset {native(K), native(C), native(B), native(L), native(boundary), std::move(project.interfaces),
             std::move(surfaces), std::move(project.outline), std::move(project.sources), std::move(project.outputs),
             project.reference_temperature, {uniform.begin(), uniform.end()}};

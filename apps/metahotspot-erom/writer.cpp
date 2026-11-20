@@ -84,7 +84,7 @@ namespace mhs::app::erom {
         for (const auto& face : e.interfaces) {
             write_facet(face.facet);
             writer.scalar(face.resistance);
-            writer.count(face.surface);
+            writer.count(face.boundary_group);
         }
         for (const auto& surface : e.boundary_groups) {
             writer.name(surface.name);
@@ -103,12 +103,9 @@ namespace mhs::app::erom {
         }
         for (const auto& output : e.outputs) {
             writer.name(output.name);
-            if (const auto* point = std::get_if<model::Vec3>(&output.location)) {
-                writer.count(core::invalid_id);
-                writer.values(std::span<const double>(*point));
-            }
-            else
-                writer.count(std::get<model::SourceId>(output.location));
+            writer.count(output.point.has_value());
+            if (output.point)
+                writer.values(std::span<const double>(*output.point));
         }
         writer.close();
 #ifdef _WIN32

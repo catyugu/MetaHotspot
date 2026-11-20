@@ -7,7 +7,7 @@ namespace mhs::solver {
     namespace {
         BoundaryEvaluation exterior_sample(const model::Fom& model, double temperature, double time, model::FacetId id)
         {
-            return evaluate_boundary(model.boundary_groups[model.facet_boundary[id]].condition,
+            return evaluate_boundary(model.boundary_groups[model.facet_boundary_group[id]].condition,
                 model.discrete.facets[id], temperature, time, boundary_resistance(model, id, temperature, time));
         }
 

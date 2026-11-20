@@ -29,7 +29,8 @@ static const Condition* find_condition(const Fom& model, std::size_t cell_idx, F
         const auto& facet = model.discrete.facets[id];
         if (static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
             && facet.normal == (static_cast<int>(dir) % 2 ? 1 : -1))
-            if (auto* condition = std::get_if<Condition>(&model.boundary_groups[model.facet_boundary[id]].condition))
+            if (auto* condition
+                = std::get_if<Condition>(&model.boundary_groups[model.facet_boundary_group[id]].condition))
                 return condition;
     }
     return nullptr;

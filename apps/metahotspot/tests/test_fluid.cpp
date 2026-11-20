@@ -100,7 +100,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     const mhs::core::Vector<double> state(model.discrete.cells.size(), 300);
     // Suppress diffusion/sources to inspect advection through the main assembler.
     auto transport = model;
-    std::fill(transport.facet_boundary.begin(), transport.facet_boundary.end(), mhs::core::invalid_id);
+    std::fill(transport.facet_boundary_group.begin(), transport.facet_boundary_group.end(), mhs::core::invalid_id);
     transport.source_terms.clear();
     for (auto& material : transport.material_table)
         material.kx = material.ky = material.kz = mhs::expression::CompiledExpression::make_constant(0);

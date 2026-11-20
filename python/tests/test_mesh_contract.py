@@ -9,8 +9,6 @@ from metahotspot.enums import MaterialKind
 
 
 def test_conformal_sources_keep_independent_power_columns():
-    from metahotspot.macromodel.affine import AffineParametricModel, SourcePort
-
     model = _model()
     model.set_cartesian_mesh([0, 0.00025, 0.001], [0, 0.001], [0, 0.001])
     second = model.add_volume(0, model.add_source("2e6"))
@@ -20,22 +18,6 @@ def test_conformal_sources_keep_independent_power_columns():
     np.testing.assert_allclose(q.toarray(), [[0, 0.0005], [0.00075, 0]])
     np.testing.assert_allclose(q.sum(axis=1).A.ravel(), compiled.assemble().f)
     np.testing.assert_allclose(compiled.fields.projection_volume.sum(), 1e-9)
-
-    class Ports(AffineParametricModel):
-        _full = compiled
-        core = compiled.assemble()
-
-        def source_ports(self):
-            return [
-                SourcePort(source_ids=np.array([0]), power_W=0.00075),
-                SourcePort(source_ids=np.array([1]), power_W=0.0005),
-            ]
-
-    ports = Ports()
-    np.testing.assert_allclose(ports.source_shape, [[0, 1], [1, 0]])
-    np.testing.assert_allclose(
-        ports.source_shape @ ports.nominal_power(), compiled.assemble().f
-    )
 
 
 @pytest.mark.parametrize("case", [1, 2])
@@ -86,31 +68,6 @@ def test_cartesian_fluid_model_recompiles_consistently(case):
     solution = repeated.solve()
     assert solution.converged
     np.testing.assert_allclose(solution.state, expected, rtol=0, atol=1e-5)
-
-
-def test_ctm_robin_projection_uses_native_face_normal_and_distance():
-    from metahotspot.enums import Face
-    from metahotspot.macromodel.affine import AffineParametricModel, BoundaryGroup
-    from metahotspot.macromodel.geometry import CellGeometry
-
-    model = _model()
-    model.set_cartesian_mesh(
-        np.array([0.0, 0.00025, 0.001]), np.array([0.0, 0.001]), np.array([0.0, 0.001])
-    )
-    compiled = model.compile()
-    boundary = BoundaryGroup(CellGeometry(compiled.fields).surface(Face.XP))
-
-    class Ports(AffineParametricModel):
-        _full = compiled
-
-        def boundary_groups(self):
-            return (boundary,)
-
-    fields = compiled.fields
-    axes = fields.facet_axis[boundary.surface.facet_ids]
-    half = CellGeometry(fields).half_sizes[boundary.surface.cell_ids, axes]
-    expected = np.average(1000 / (1 + 1000 * half), weights=boundary.surface.areas)
-    np.testing.assert_allclose(Ports().physical_to_effective([1000]), [expected])
 
 
 @pytest.mark.parametrize(

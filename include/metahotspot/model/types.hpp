@@ -7,7 +7,7 @@ namespace mhs::model {
     using MaterialId = core::EntityIndex;
     using ComponentId = core::EntityIndex;
     using OutputId = core::EntityIndex;
-    using SurfaceId = core::EntityIndex;
+    using BoundaryGroupId = core::EntityIndex;
     using SourceId = core::EntityIndex;
     using FluidCellId = core::EntityIndex;
     using PointId = core::EntityIndex;

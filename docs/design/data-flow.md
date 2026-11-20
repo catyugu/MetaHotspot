@@ -43,9 +43,9 @@
 
 ## 混合工程
 
-编译后的 FOM 用 `facet_boundary` 将外部 Facet 映射到热边界组索引 `SurfaceId`。内部 Facet 使用 `invalid_id`。
+编译后的 FOM 用 `facet_boundary_group` 将外部 Facet 映射到热边界组索引 `BoundaryGroupId`。内部 Facet 使用 `invalid_id`。
 
-`ComponentInstance` 保存 `shared_ptr<const Fom/Erom>` variant、稳定 ID、平移和实例覆盖。FOM 的源表达式归资产；EROM 的 `powers` 以 SourceId 替换指定源的默认瓦数，其他源保持默认值，覆盖不叠加。`boundaries` 以 SurfaceId 替换未被接触覆盖部分的环境条件，不修改共享资产。
+`ComponentInstance` 保存 `shared_ptr<const Fom/Erom>` variant、稳定 ID、平移和实例覆盖。FOM 的源表达式归资产；EROM 的 `powers` 以 SourceId 替换指定源的默认瓦数，其他源保持默认值，覆盖不叠加。`boundaries` 以 BoundaryGroupId 替换未被接触覆盖部分的环境条件，不修改共享资产。
 
 `compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面。二维矩形同时描述接触交集和剩余外露面片；逐 Facet 索引供装配和探针重建共用。工程对每个接触面片只装配一次。接触未训练 EROM 轮廓时，编译器记录去重的日志警告，双方继续施加各自的环境条件。
 

@@ -41,7 +41,7 @@ namespace mhs::app::erom {
                     continue;
                 }
                 const auto axis = static_cast<std::size_t>(facet.axis);
-                if (ranges.contains(model.facet_boundary[f])
+                if (ranges.contains(model.facet_boundary_group[f])
                     && (on_boundary ? facet.contains(probe.point) : probe.point[axis] != center[axis]))
                     throw std::invalid_argument("probe " + probe.name
                         + " depends directly on HTC boundary temperature and cannot be represented by L");
@@ -118,8 +118,8 @@ namespace mhs::app::erom {
         }
 
         core::Vector<core::Vector<FacetId>> facets_by_surface(model.boundary_groups.size());
-        for (std::size_t id = 0; id < model.facet_boundary.size(); ++id)
-            if (const auto surface = model.facet_boundary[id]; surface != core::invalid_id)
+        for (std::size_t id = 0; id < model.facet_boundary_group.size(); ++id)
+            if (const auto surface = model.facet_boundary_group[id]; surface != core::invalid_id)
                 facets_by_surface[surface].push_back(static_cast<FacetId>(id));
         auto bounds = mesh.cells.front();
         for (const auto& cell : mesh.cells)
@@ -150,7 +150,7 @@ namespace mhs::app::erom {
             operators.K.row_ptr().data(), operators.K.col_idx().data(), operators.K.values().data());
         result.capacity = Eigen::Map<const Vector>(operators.C.values().data(), n);
         result.reference_temperature = model.reference_temperature;
-        for (SurfaceId surface = 0; surface < model.boundary_groups.size(); ++surface) {
+        for (BoundaryGroupId surface = 0; surface < model.boundary_groups.size(); ++surface) {
             const auto& facets = facets_by_surface[surface];
             const auto range = ranges.find(surface);
             if (facets.empty())
@@ -168,14 +168,14 @@ namespace mhs::app::erom {
                     + " has a Dirichlet or nonzero Neumann condition unsupported by EROM extraction");
 
             if (trained) {
-                const auto group = static_cast<SurfaceId>(result.training.size());
+                const auto group = static_cast<BoundaryGroupId>(result.training.size());
                 const double ambient
                     = htc ? constant(htc->ambient_temperature, "Ambient temperature") : result.reference_temperature;
                 auto& training = result.training.emplace_back(
                     Prepared::HtcGroup {{name, range->second.minimum, range->second.maximum, h, ambient}, {}});
-                training.facets.reserve(facets.size());
+                training.interfaces.reserve(facets.size());
                 for (const auto id : facets) {
-                    training.facets.push_back(static_cast<Eigen::Index>(result.interfaces.size()));
+                    training.interfaces.push_back(static_cast<Eigen::Index>(result.interfaces.size()));
                     result.interfaces.push_back({mesh.facets[id], assembler.resistance(id), group});
                     result.boundary_cells.push_back(mesh.cell_facets[id].owner());
                 }
@@ -210,7 +210,7 @@ namespace mhs::app::erom {
             if (name.empty())
                 name = "source " + std::to_string(id);
             columns[id] = static_cast<SourceId>(result.sources.size());
-            result.outputs.push_back({name + " temperature", columns[id]});
+            result.outputs.push_back({name + " temperature", std::nullopt});
             result.sources.push_back({std::move(name), density * volumes[id]});
         }
 

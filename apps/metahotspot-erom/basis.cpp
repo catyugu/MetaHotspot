@@ -89,7 +89,7 @@ namespace mhs::app::erom {
             std::set<std::pair<Eigen::Index, int>> inputs;
             for (std::size_t id = 0; id < project.boundary_cells.size(); ++id)
                 if (const auto region = regions[project.boundary_cells[id]]; !driven[region])
-                    inputs.emplace(project.interfaces[id].surface, region);
+                    inputs.emplace(project.interfaces[id].boundary_group, region);
             return {inputs.begin(), inputs.end()};
         }
     } // namespace
@@ -142,7 +142,7 @@ namespace mhs::app::erom {
                     if (is_passive) {
                         const auto [group, region] = passive[port - powered];
                         ambient.setZero();
-                        for (const auto id : project.training[group].facets)
+                        for (const auto id : project.training[group].interfaces)
                             if (regions[project.boundary_cells[id]] == region)
                                 ambient[id] = closure[id];
                         g.setZero();

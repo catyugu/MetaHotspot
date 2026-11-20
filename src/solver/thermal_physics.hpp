@@ -6,9 +6,9 @@
 namespace mhs::solver {
 
     inline const model::BoundaryCondition* boundary_override(const model::BoundaryOverrides& overrides,
-        model::SurfaceId surface, const model::BoundaryCondition* fallback = nullptr)
+        model::BoundaryGroupId boundary_group, const model::BoundaryCondition* fallback = nullptr)
     {
-        const auto it = overrides.find(surface);
+        const auto it = overrides.find(boundary_group);
         return it == overrides.end() ? fallback : &it->second;
     }
 
@@ -71,10 +71,23 @@ namespace mhs::solver {
     BoundaryEvaluation evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
         double temperature, double time, double resistance);
 
-    inline std::pair<double, double> boundary_terms(const model::Project* project, std::size_t component,
-        model::FacetId id, model::Facet facet, const auto& evaluate)
+    // Boundary expressions and point probes use component coordinates.
+    inline model::Facet local_patch(
+        const model::Facet& facet, const model::Rect& world_bounds, const model::Vec3& offset)
     {
-        const auto indices = project && !project->patches().empty() ? project->facet_patches(component, id)
+        auto result = facet;
+        const auto [u, v] = model::tangential_axes(facet.axis);
+        for (std::size_t i = 0; i < world_bounds.size(); ++i) {
+            const double shift = offset[i < 2 ? u : v];
+            result.bounds[i] = world_bounds[i] == facet.bounds[i] + shift ? facet.bounds[i] : world_bounds[i] - shift;
+        }
+        return result;
+    }
+
+    inline std::pair<double, double> boundary_terms(const model::Project* project, std::size_t component_index,
+        core::EntityIndex face_index, model::Facet facet, const auto& evaluate)
+    {
+        const auto indices = project && !project->patches().empty() ? project->face_patches(component_index, face_index)
                                                                     : std::span<const std::size_t> {};
         if (indices.empty()) {
             const auto trace = evaluate(facet);
@@ -85,8 +98,8 @@ namespace mhs::solver {
             const auto& patch = project->patches()[index];
             if (patch.contact)
                 continue;
-            facet.bounds = patch.bounds;
-            const auto trace = evaluate(facet);
+            const auto trace
+                = evaluate(local_patch(facet, patch.bounds, project->components()[component_index].offset));
             conductance += trace.conductance;
             load += trace.load;
         }

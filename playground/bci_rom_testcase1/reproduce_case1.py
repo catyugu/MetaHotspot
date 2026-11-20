@@ -93,7 +93,7 @@ def run():
     print(
         f"model: {model.name}  grid cells={model.config.grid_cell_count}  "
         f"solid cells={model.full_cell_count}  "
-        f"ports={len(model.source_ports())}  groups={len(model.boundary_groups())}"
+        f"ports={model.source_shape.shape[1]}  groups={len(model.boundary_groups())}"
     )
 
     core = model.core

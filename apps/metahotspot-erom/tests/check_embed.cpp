@@ -55,11 +55,12 @@ namespace {
             "wrong matrix dimensions");
         check(e.boundary_groups.size() == 2 && e.outline.size() == 1 && e.outline[0].facets.size() == 4,
             "wrong HTC groups or outline");
-        check(e.boundary_groups[0].name == "upstream" && e.interfaces.size() == 4 && e.interfaces[0].surface == 0
-                && e.interfaces[1].surface == 0 && e.interfaces[2].surface == 1 && e.interfaces[3].surface == 1,
+        check(e.boundary_groups[0].name == "upstream" && e.interfaces.size() == 4 && e.interfaces[0].boundary_group == 0
+                && e.interfaces[1].boundary_group == 0 && e.interfaces[2].boundary_group == 1
+                && e.interfaces[3].boundary_group == 1,
             "wrong facet ownership");
         check(e.sources[0].name == "heater A" && e.sources[1].name == "heater B" && e.outputs[0].name == "off center"
-                && std::get<SourceId>(e.outputs[1].location) == 0 && std::get<SourceId>(e.outputs[2].location) == 1,
+                && !e.outputs[1].point && !e.outputs[2].point,
             "wrong source or output identity");
         near(e.sources[0].default_power, 5);
         near(e.sources[1].default_power, 8);
@@ -126,7 +127,8 @@ namespace {
         check(result.statistics.output_error <= tolerance, "sampled output error exceeds extraction tolerance");
         if (variant == "partial") {
             const auto& e = result.asset;
-            check(e.interfaces[0].surface == 0 && e.interfaces[1].surface == 0 && e.interfaces[2].surface == 1,
+            check(e.interfaces[0].boundary_group == 0 && e.interfaces[1].boundary_group == 0
+                    && e.interfaces[2].boundary_group == 1,
                 "wrong facet partition for the partial HTC group");
             near(e.interfaces[0].facet.area() + e.interfaces[1].facet.area(), 0.75);
             near(e.interfaces[0].resistance, 0.25);

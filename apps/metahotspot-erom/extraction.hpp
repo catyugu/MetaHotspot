@@ -15,8 +15,8 @@ namespace mhs::app::erom {
         Vector capacity;
         Matrix B;
         struct HtcGroup {
-            model::EromBoundaryGroup surface;
-            core::Vector<Eigen::Index> facets;
+            model::EromBoundaryGroup boundary_group;
+            core::Vector<Eigen::Index> interfaces;
         };
         double reference_temperature;
         core::Vector<HtcGroup> training;

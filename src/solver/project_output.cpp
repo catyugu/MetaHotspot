@@ -17,35 +17,30 @@ namespace mhs::solver {
                 const auto& facet = m.discrete.facets[id];
                 const double temperature = local[m.discrete.cell_facets[id].owner()];
                 const double r = boundary_resistance(m, id, temperature, time);
-                const auto surface = m.facet_boundary[id];
+                const auto surface = m.facet_boundary_group[id];
                 const auto& law
                     = *boundary_override(component.boundaries, surface, &m.boundary_groups[surface].condition);
                 auto ambient = [&](const Facet& patch) { return evaluate_boundary(law, patch, temperature, time, r); };
-                const auto indices = project.facet_patches(i, id);
+                const auto indices = project.face_patches(i, id);
                 if (indices.empty())
                     return ambient(facet);
                 double integral = 0;
                 for (const auto index : indices) {
                     const auto& patch = project.patches()[index];
-                    auto geometry = facet;
-                    geometry.bounds = patch.bounds;
+                    const auto geometry = local_patch(facet, patch.bounds, component.offset);
                     if (const auto& contact = patch.contact) {
                         const auto& c = *contact;
-                        const auto other = c.left.component == i ? c.right : c.left;
+                        const auto other = c.left.component_index == i ? c.right : c.left;
                         const double other_temperature = contact_side(project, other).temperature(state);
-                        const auto& asset = project.components()[other.component].asset;
+                        const auto& asset = project.components()[other.component_index].asset;
                         const auto* fom = std::get_if<std::shared_ptr<const Fom>>(&asset);
                         const double other_r = fom
-                            ? boundary_resistance(**fom, other.facet, other_temperature, time)
-                            : std::get<std::shared_ptr<const Erom>>(asset)->interfaces[other.facet].resistance;
+                            ? boundary_resistance(**fom, other.face_index, other_temperature, time)
+                            : std::get<std::shared_ptr<const Erom>>(asset)->interfaces[other.face_index].resistance;
                         const auto t = temperature
                             + (other_temperature - temperature) * r / contact_resistance(r, other_r, c.resistance);
-                        if (point) {
-                            const auto [u, v] = tangential_axes(facet.axis);
-                            if (rect_contains(
-                                    patch.bounds, (*point)[u] + component.offset[u], (*point)[v] + component.offset[v]))
-                                return {.temperature = t};
-                        }
+                        if (point && geometry.contains(*point))
+                            return {.temperature = t};
                         integral += patch.area() * t;
                     }
                     else {

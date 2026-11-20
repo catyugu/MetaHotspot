@@ -18,7 +18,7 @@ namespace mhs::compiler {
 }
 
 namespace mhs::model {
-    using BoundaryOverrides = std::map<SurfaceId, BoundaryCondition>;
+    using BoundaryOverrides = std::map<BoundaryGroupId, BoundaryCondition>;
 
     struct ComponentInstance {
         ComponentId id = core::invalid_id;
@@ -36,8 +36,8 @@ namespace mhs::model {
     };
 
     struct ContactSide {
-        std::size_t component; // index in Project::components()
-        FacetId facet;
+        std::size_t component_index; // index in Project::components()
+        core::EntityIndex face_index; // FOM facet index or EROM interface index
     };
 
     struct SurfacePatch {
@@ -45,7 +45,7 @@ namespace mhs::model {
             ContactSide left, right;
             double resistance; // m² K/W
         };
-        Rect bounds; // world coordinates for contact, component coordinates for exposure
+        Rect bounds; // world coordinates for both contact and exposure
         std::optional<Contact> contact;
 
         double area() const { return rect_area(bounds); }
@@ -55,18 +55,21 @@ namespace mhs::model {
         auto components() const { return std::span<const ComponentInstance>(components_); }
         auto patches() const { return std::span<const SurfacePatch>(patches_); }
         std::size_t dof_count() const { return dof_offsets_.back(); }
-        std::size_t dof_offset(std::size_t component) const { return dof_offsets_.at(component); }
-        std::size_t dof_size(std::size_t component) const { return dof_offset(component + 1) - dof_offset(component); }
+        std::size_t dof_offset(std::size_t component_index) const { return dof_offsets_.at(component_index); }
+        std::size_t dof_size(std::size_t component_index) const
+        {
+            return dof_offset(component_index + 1) - dof_offset(component_index);
+        }
 
-        // An empty span means the original facet is fully exposed.
-        std::span<const std::size_t> facet_patches(std::size_t component, FacetId facet) const;
-        std::optional<Vec3> output_position(ComponentId component, OutputId output) const;
+        // An empty span means the original FOM facet or EROM interface is fully exposed.
+        std::span<const std::size_t> face_patches(std::size_t component_index, core::EntityIndex face_index) const;
+        std::optional<Vec3> output_position(ComponentId component_id, OutputId output) const;
 
     private:
         friend Project compiler::compile_project(model::ProjectDefinition definition);
         core::Vector<ComponentInstance> components_;
         core::Vector<SurfacePatch> patches_;
         core::Vector<std::size_t> dof_offsets_ {0};
-        core::Vector<std::map<FacetId, core::Vector<std::size_t>>> facet_patches_;
+        core::Vector<std::map<core::EntityIndex, core::Vector<std::size_t>>> face_patches_;
     };
 } // namespace mhs::model
