@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 
 namespace mhs::compiler {
 
@@ -27,10 +28,14 @@ namespace mhs::compiler {
         return std::nullopt;
     }
 
-    void refine_exterior_facets(mhs::model::DiscreteMesh& mesh, std::span<const TaggedSurfaceRegion> thermal,
-        std::span<const TaggedSurfaceRegion> fluid)
+    std::array<mhs::core::Vector<SurfaceTag>, 2> compile_exterior_facets(mhs::model::DiscreteMesh& mesh,
+        std::span<const TaggedSurfaceRegion> thermal, std::span<const TaggedSurfaceRegion> fluid,
+        SurfaceTag thermal_fallback)
     {
         using namespace mhs::model;
+        std::array<mhs::core::Vector<SurfaceTag>, 2> assigned;
+        const std::array regions {thermal, fluid};
+        const std::array fallback {thermal_fallback, mhs::core::invalid_id};
         mhs::core::Vector<Facet> refined;
         refined.reserve(mesh.facets.size());
         mhs::core::Vector<CellFacet> topology;
@@ -38,22 +43,36 @@ namespace mhs::compiler {
         for (std::size_t id = 0; id < mesh.facets.size(); ++id) {
             const auto& facet = mesh.facets[id];
             const auto& cells = mesh.cell_facets[id];
+            std::array<mhs::core::Vector<const TaggedSurfaceRegion*>, 2> candidates;
             auto append = [&](const Facet& piece) {
                 refined.push_back(piece);
                 topology.push_back(cells);
+                const auto a = std::midpoint(piece.bounds[0], piece.bounds[1]);
+                const auto b = std::midpoint(piece.bounds[2], piece.bounds[3]);
+                for (std::size_t physics = 0; physics < assigned.size(); ++physics) {
+                    auto tag = cells.exterior() ? fallback[physics] : mhs::core::invalid_id;
+                    for (auto it = candidates[physics].rbegin(); it != candidates[physics].rend(); ++it)
+                        if (rect_contains((*it)->region.bounds, a, b)) {
+                            tag = (*it)->tag;
+                            break;
+                        }
+                    assigned[physics].push_back(tag);
+                }
             };
             if (!cells.exterior()) {
                 append(facet);
                 continue;
             }
             mhs::core::Vector<double> a, b;
-            for (const auto regions : {thermal, fluid})
-                for (const auto& [region, tag] : regions) {
+            for (std::size_t physics = 0; physics < regions.size(); ++physics)
+                for (const auto& tagged : regions[physics]) {
+                    const auto& region = tagged.region;
                     if (region.axis != facet.axis || std::abs(region.coordinate - facet.coordinate) >= EPS)
                         continue;
                     const auto hit = rect_intersection(region.bounds, facet.bounds);
                     if (!hit)
                         continue;
+                    candidates[physics].push_back(&tagged);
                     if (a.empty()) {
                         a = {facet.bounds[0], facet.bounds[1]};
                         b = {facet.bounds[2], facet.bounds[3]};
@@ -82,27 +101,7 @@ namespace mhs::compiler {
         }
         mesh.facets = std::move(refined);
         mesh.cell_facets = std::move(topology);
-    }
-
-    mhs::core::Vector<SurfaceTag> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<TaggedSurfaceRegion>& regions, SurfaceTag fallback)
-    {
-        mhs::core::Vector<SurfaceTag> assigned(mesh.facets.size(), mhs::core::invalid_id);
-        for (std::size_t id = 0; id < mesh.facets.size(); ++id) {
-            const auto& facet = mesh.facets[id];
-            if (!mesh.cell_facets[id].exterior())
-                continue;
-            assigned[id] = fallback;
-            const auto a = (facet.bounds[0] + facet.bounds[1]) / 2;
-            const auto b = (facet.bounds[2] + facet.bounds[3]) / 2;
-            for (auto it = regions.rbegin(); it != regions.rend(); ++it) {
-                if (it->region.axis == facet.axis && std::abs(it->region.coordinate - facet.coordinate) < EPS
-                    && mhs::model::rect_contains(it->region.bounds, a, b)) {
-                    assigned[id] = it->tag;
-                    break;
-                }
-            }
-        }
+        build_cell_facet_incidence(mesh);
         return assigned;
     }
 

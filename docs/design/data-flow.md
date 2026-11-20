@@ -21,7 +21,7 @@
 | PTA 几何解析 | Layer / Block / Rect 和几何变量、算术表达式 | 应用层独立求值为 SI 米下的区域；同层后出现的 Block 覆盖前者，核心仅接收数值几何 |
 | 网格输入 | 独立的 Cartesian `MeshSpec` 与物理区域 | `DiscreteMesh`：单元边界、初始有向 Facet 几何 |
 | 网格契约 | 控制体与面片几何、连接 | 验证坐标轴有限且严格递增；生成控制体及有向面片，边界细分后统一构建 CSR 关联 |
-| 共形体区域编译 | Cartesian `MeshSpec` 与物理区域 | 检查内部盒面与网格平面对齐；生成单元时直接写入 `cell_material` 和 `source_terms` |
+| 共形体区域编译 | Cartesian `MeshSpec` 与物理区域 | 检查内部盒面与网格平面对齐；生成单元时直接写入 `cell_assignment`（材料与可选源下标） |
 | 边界细分与绑定 | 外露 Facet 与热、流体边界区域 | 在几何编译阶段共同切分外部 Facet，统一构建 Cell–Facet 关联；热学、流体边界分别按 FacetId 绑定，区域后者覆盖前者 |
 | 表达式编译 | 材料、源、边界运行时表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
 | 流体预处理 | 流体材料、规范化 Facet 与流体边界赋值 | 共享 FacetId 和面积，求解临时压力场后生成逐 Facet 的体积流量、边界质量流率与入口温度及流固换热因子 |
@@ -33,11 +33,11 @@
 
 `SourceTerm` 保存 CellId 和源表索引。当前共形体编译路径要求所有落在网格内部的几何盒面与对应轴顶点平面对齐（容差 `geometry_eps`）；不满足时拒绝编译。每个有效单元按照有序体区域的覆盖关系确定唯一材料与热源，源项在单元中心计算，以单元体积为权重。体区域的非共形切分留待专用实现。热与流体边界在共同的几何切分上分别采用后出现条件覆盖前者的绑定，重叠矩形按并集计量；同一单元上的不同入口分别累计质量流量与焓。压力条件施加于投影面积，质量流量按选中面积分配；未指定的入口温度取模型参考温度。
 
-`FluidBoundaryTerm` 保存 FacetId 和内联的 `FluidTransportCondition = variant<FluidInflow, FluidOutflow>`。两种记录均保存非负的质量流率（kg/s），仅 `FluidInflow` 保存流入温度；按压力解得到的实际流向选择类型，而非输入的入口/出口标签，因此压力边界反向流动时仍采用该边界的流入温度。零流量归入 `FluidOutflow`，能量贡献为零。这些记录只有数值和内联判别信息，无动态分配；每片的冻结流量独立，不需要额外条件表。
+`FluidBoundaryTerm` 保存 FacetId、带符号质量流率（kg/s）与流入温度。质量流率向外为正，负值向 RHS 注入焓流，正值向对角项加入流出焓流；温度仅用于流入。符号由压力解决定，保留压力边界反向流动语义，零流量的能量贡献为零。
 
 ## 求解与输出
 
-公开 C++ 入口 `mhs::solver::solve(fom_or_project, study, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 同时提供线性、非线性求解参数以及时间容差和最大步长配置。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
+应用与 API 层负责编译单组件或多组件工程，求解器不依赖编译器。公开 C++ 入口 `mhs::solver::solve(project, study, initial_state, options)` 位于 `solver/solver.hpp`。内部驱动 `solve_system`（`src/solver/solve.hpp`）通过 `SystemAssembler(state, time)` 刷新调用者持有的 `Operators`，返回引用在下一次装配前有效。热求解的局部 `ThermalAssembler` 绑定只读模型，私有持有算子和缓存，一次建立 `K/C` 的模式和材料求值缓冲区，逐次清零并填充数值。`C` 保留统一稀疏矩阵表示。非线性求解器消费只读 `LinearSystemView`，矩阵及 RHS 由工作区持有。瞬态一次建立 `K/C` 的联合模式，后续通过 `add_scaled_into` 原地更新 `A=K+αC`，支持非对角 `C`；初始联合模式必须覆盖整个求解期间的结构。稳态在 `t=0` 求解；瞬态由私有 AdaptiveTimeStepper 控制自适应 BDF1/2 步长与阶数，`SolveOptions` 同时提供线性、非线性求解参数以及时间容差和最大步长配置。输出时刻独立于求解步，observer 接收稠密插值生成的中间状态及真实积分终点。
 
 探针初始化时定位控制体，记录时由局部邻域重建温度；共享面上的点选择下角坐标按字典序最大的控制体。单元状态按 CellId 访问，FOM 历史保存单元温度，EROM 历史保存模态坐标。应用层根据离散网格写出 VTU，并使用输入的 Cartesian 顶点规格采样 XML 输出。
 
@@ -45,13 +45,13 @@
 
 编译后的 FOM 用 `facet_boundary_group` 将外部 Facet 映射到热边界组索引 `BoundaryGroupId`。内部 Facet 使用 `invalid_id`。
 
-`ComponentInstance` 保存 `shared_ptr<const Fom/Erom>` variant、稳定 ID、平移和实例覆盖。FOM 的源表达式归资产；EROM 的 `powers` 以 SourceId 替换指定源的默认瓦数，其他源保持默认值，覆盖不叠加。`boundaries` 以 BoundaryGroupId 替换未被接触覆盖部分的环境条件，不修改共享资产。
+`ComponentInstance` 保存 `shared_ptr<const Fom/Erom>` variant、平移和稠密可选实例覆盖；组件身份统一为 `components` 数组下标。FOM 的源表达式归资产；EROM 的 `powers` 以 SourceId 替换指定源的默认瓦数，其他源保持默认值，覆盖不叠加。`boundaries` 以 BoundaryGroupId 替换未被接触覆盖部分的环境条件，不修改共享资产。
 
-`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面。二维矩形同时描述接触交集和剩余外露面片；逐 Facet 索引供装配和探针重建共用。工程对每个接触面片只装配一次。接触未训练 EROM 轮廓时，编译器记录去重的日志警告，双方继续施加各自的环境条件。
+`compile_project` 按轴、平面和切向空间索引匹配相反法向的外表面。`Contact` 保存接触交集，`FacePartition` 保存逐面接触下标和局部坐标的外露矩形，供装配和探针重建共用。工程对每个接触面片只装配一次。接触未训练 EROM 轮廓时，编译器记录去重的日志警告，双方继续施加各自的环境条件。
 
 `ThermalAssembler` 组装 FOM 内部与剩余外边界，`ProjectAssembler` 合并组件算子并用两侧温度映射装配接触。FOM 外部接触采用法向半单元 `d/k`，内部流固面另用冻结流场的膜阻；跨组件接触不承担水力连通或流固膜模型推断。单 FOM 工程直接返回局部装配结果。全局 CSR 模式用连续缓冲区两遍构建；纯 EROM 工程缓存不随状态、时间变化的接触算子，混合工程保留逐次求值的 FOM 热阻。
 
-观察量在 `project_output.cpp` 单独计算，不读取装配器上次求值的状态。求解入口将均匀初温填入 FOM 状态，并按 EROM 的均匀温度模态和参考温度生成模态初态。调用者也可给出完整初态。所有 `OutputTrace` 共用 `snapshot_times`，由 `(ComponentId, OutputId)` 查询。C++ 的 `SolveOptions::store_snapshot_states=false` 可只保留时间、输出轨迹和最终状态；默认仍保存全状态历史，C/Python 结果契约不变。
+观察量在 `project_output.cpp` 单独计算，不读取装配器上次求值的状态。求解入口将均匀初温填入 FOM 状态，并按 EROM 的均匀温度模态和参考温度生成模态初态。调用者也可给出完整初态。所有 `OutputTrace` 共用 `snapshot_times`，由 `(组件下标, OutputId)` 查询。C++ 的 `SolveOptions::store_snapshot_states=false` 可只保留时间、输出轨迹和最终状态；默认仍保存全状态历史，C/Python 结果契约不变。
 
 ## 输入与数组约定
 

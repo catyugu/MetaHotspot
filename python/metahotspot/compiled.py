@@ -96,7 +96,6 @@ class MaterialValues:
 class CompiledInfo:
     cell_count: int
     facet_count: int
-    projection_count: int
     source_count: int
     reference_temperature: float
 
@@ -114,15 +113,12 @@ _COMPILED_FIELD_SPECS = (
     ("cell_min", ctypes.c_double, np.float64, "cell_count", 3),
     ("cell_max", ctypes.c_double, np.float64, "cell_count", 3),
     ("material_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
+    ("source_id", ctypes.c_uint32, np.uint32, "cell_count", 1),
     ("facet_minus", ctypes.c_uint32, np.uint32, "facet_count", 1),
     ("facet_plus", ctypes.c_uint32, np.uint32, "facet_count", 1),
     ("facet_axis", ctypes.c_int32, np.int32, "facet_count", 1),
     ("facet_coordinate", ctypes.c_double, np.float64, "facet_count", 1),
     ("facet_bounds", ctypes.c_double, np.float64, "facet_count", 4),
-    ("projection_cell", ctypes.c_uint32, np.uint32, "projection_count", 1),
-    ("projection_source", ctypes.c_uint32, np.uint32, "projection_count", 1),
-    ("projection_volume", ctypes.c_double, np.float64, "projection_count", 1),
-    ("projection_center", ctypes.c_double, np.float64, "projection_count", 3),
 )
 
 
@@ -139,7 +135,6 @@ def _compiled_info(dll, handle) -> CompiledInfo:
     return CompiledInfo(
         cell_count=int(info.cell_count),
         facet_count=int(info.facet_count),
-        projection_count=int(info.projection_count),
         source_count=int(info.source_count),
         reference_temperature=float(info.reference_temperature),
     )
@@ -156,7 +151,6 @@ def _compiled_fields(dll, handle, info: CompiledInfo) -> CompiledFields:
     native = MhsCompiledFields(
         cell_count=info.cell_count,
         facet_count=info.facet_count,
-        projection_count=info.projection_count,
         **{
             name: arrays[name].ctypes.data_as(ctypes.POINTER(ctype))
             for name, ctype, _, _, _ in _COMPILED_FIELD_SPECS
@@ -270,14 +264,14 @@ class Compiled(OwnedHandle):
     def source_operator(self, state=None, time=0.0):
         """Per-source integrated powers in algebraic state order (sparse CSC).
 
-        Columns retain physical source identity even when regions share a cell.
+        Columns follow source IDs; cells without sources contribute zero.
         """
         import scipy.sparse as sp
 
         if state is None:
             state = self.default_state()
         state = np.ascontiguousarray(state, dtype=np.float64)
-        values = np.empty(self.info.projection_count, dtype=np.float64)
+        values = np.empty(self.info.cell_count, dtype=np.float64)
         check(
             self._dll.mhs_compiled_eval_source_terms(
                 self._handle,
@@ -290,10 +284,11 @@ class Compiled(OwnedHandle):
             "eval_source_terms",
         )
         fields = self.fields
+        active = fields.source_id != np.iinfo(np.uint32).max
         result = sp.csc_matrix(
             (
-                values,
-                (fields.projection_cell, fields.projection_source),
+                values[active],
+                (np.flatnonzero(active), fields.source_id[active]),
             ),
             shape=(self.info.cell_count, self.info.source_count),
         )

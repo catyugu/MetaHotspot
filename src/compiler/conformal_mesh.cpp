@@ -51,9 +51,7 @@ namespace mhs::compiler {
                     active[flatten(x, y, z)] = cell_id;
                     model.discrete.cells.push_back(cell);
                     const auto& volume = volumes[*owner];
-                    model.cell_material.push_back(volume.material);
-                    if (volume.source != invalid_id)
-                        model.source_terms.push_back({cell_id, volume.source});
+                    model.cell_assignment.push_back({volume.material, volume.source});
                     for (auto& probe : model.point_probes)
                         if (probe.point[0] >= cell.min[0] && probe.point[0] <= cell.max[0]
                             && probe.point[1] >= cell.min[1] && probe.point[1] <= cell.max[1]

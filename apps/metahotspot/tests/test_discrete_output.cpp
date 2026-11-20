@@ -45,9 +45,7 @@ TEST(DiscreteMesh, OperatorsAndSamplingRespectArbitraryCellOrdering)
     imported.discrete = std::move(mesh);
     mhs::compiler::build_cell_facet_incidence(imported.discrete);
     for (size_t c = 0; c < order.size(); ++c)
-        imported.cell_material[c] = model.cell_material[order[c]];
-    for (auto& term : imported.source_terms)
-        term.cell = inverse[term.cell];
+        imported.cell_assignment[c] = model.cell_assignment[order[c]];
     for (auto* m : {&model, &imported}) {
         m->material_table[0].kx = mhs::expression::parse("1+T/1000", {});
         m->heat_source_table[0] = mhs::expression::parse("x+2*y+3*z", {});

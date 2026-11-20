@@ -10,7 +10,6 @@ add_library(mhs_solver STATIC
 target_link_libraries(mhs_solver
     PUBLIC mhs_model
     PRIVATE
-    mhs_compiler
     mhs_expression
     mhs_linear
     $<BUILD_INTERFACE:Eigen3::Eigen>

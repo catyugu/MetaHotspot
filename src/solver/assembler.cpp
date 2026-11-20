@@ -3,7 +3,6 @@
 #include "thermal_physics.hpp"
 #include <numeric>
 #include <stdexcept>
-#include <type_traits>
 
 namespace mhs::solver {
     namespace {
@@ -77,11 +76,13 @@ namespace mhs::solver {
             const auto row = static_cast<SparseIndex>(c);
             const auto center = model.discrete.cells[c].center();
             const FieldContext ctx {center[0], center[1], center[2], temperature[row], time};
-            const auto& mat = model.material_table[model.cell_material[c]];
+            const auto& mat = model.material_table[model.cell_assignment[c].material];
             conductivity_[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto volume = model.discrete.cells[c].volume();
             const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
             operators_.C.values()[c] = rho * cp * volume;
+            if (const auto source = model.cell_assignment[c].source; source != invalid_id)
+                rhs[c] = volume * model.heat_source_table[source].eval(ctx);
             if (!density_.empty()) {
                 const auto fi = model.fluid.global_to_fluid[c];
                 if (fi != mhs::core::invalid_id) {
@@ -90,8 +91,6 @@ namespace mhs::solver {
                 }
             }
         }
-        for (const auto& term : model.source_terms)
-            rhs[term.cell] += source_power(model, term, temperature[term.cell], time);
         auto fluid_index = [&](CellId c) {
             return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
         };
@@ -128,15 +127,11 @@ namespace mhs::solver {
             const auto cell = model.discrete.cell_facets[term.facet].owner();
             const auto row = static_cast<SparseIndex>(cell);
             const auto cp = specific_heat_[model.fluid.global_to_fluid[cell]];
-            std::visit(
-                [&](const auto& flow) {
-                    using T = std::decay_t<decltype(flow)>;
-                    if constexpr (std::is_same_v<T, FluidInflow>)
-                        rhs[row] += flow.mass_flow_rate * cp * flow.temperature;
-                    else
-                        values[diagonal_positions_[row]] += flow.mass_flow_rate * cp;
-                },
-                term.condition);
+            const auto enthalpy = term.mass_flow_rate * cp;
+            if (term.mass_flow_rate < 0)
+                rhs[row] -= enthalpy * term.inlet_temperature;
+            else
+                values[diagonal_positions_[row]] += enthalpy;
         }
         return operators_;
     }
@@ -157,7 +152,8 @@ namespace mhs::solver {
             const auto id = static_cast<model::FacetId>(i);
             const auto cell = model_.discrete.cell_facets[id].owner();
             const auto r = resistance(id);
-            const auto [conductance, load] = boundary_terms(project, component, id, model_.discrete.facets[id],
+            const auto [conductance, load] = boundary_terms(model_.discrete.facets[id],
+                project ? project->face_partition(component, id) : nullptr,
                 [&](const model::Facet& patch) { return evaluate_boundary(law, patch, temperature[cell], time, r); });
             operators_.K.values()[diagonal_positions_[cell]] += conductance;
             operators_.f[cell] += load;

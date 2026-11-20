@@ -34,7 +34,7 @@ TEST(AssemblerTest, AssembleCapacityMatrixMatchesExpected)
     auto io = make_simple_cube_io();
     auto model = mhs::compiler::compile_fom(io, cube_mesh());
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.cell_assignment.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);
@@ -67,7 +67,7 @@ TEST(AssemblerTest, AssembleReadsCellTemperatureForMaterialProperties)
 
     auto model = mhs::compiler::compile_fom(io, cube_mesh());
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.cell_assignment.size());
 
     mhs::core::Vector<double> T300(static_cast<std::size_t>(N), 300.0);
     mhs::core::Vector<double> T500(static_cast<std::size_t>(N), 500.0);
@@ -84,7 +84,7 @@ TEST(AssemblerTest, AssembleProducesZeroRhsForAdiabaticNoSource)
     auto io = make_simple_cube_io();
     auto model = mhs::compiler::compile_fom(io, cube_mesh());
 
-    int N = static_cast<int>(model.cell_material.size());
+    int N = static_cast<int>(model.cell_assignment.size());
     mhs::core::Vector<double> T(static_cast<std::size_t>(N), 300.0);
 
     auto ops = assemble_thermal(model, T, 0.0);

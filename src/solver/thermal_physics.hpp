@@ -8,25 +8,17 @@ namespace mhs::solver {
     inline const model::BoundaryCondition* boundary_override(const model::BoundaryOverrides& overrides,
         model::BoundaryGroupId boundary_group, const model::BoundaryCondition* fallback = nullptr)
     {
-        const auto it = overrides.find(boundary_group);
-        return it == overrides.end() ? fallback : &it->second;
+        return boundary_group < overrides.size() && overrides[boundary_group] ? &*overrides[boundary_group] : fallback;
     }
 
     // Unit-area Fourier conduction resistance; no fluid/interface model involved.
     inline double side_thermal_resistance(double d, double k) { return d / k; }
 
-    inline double source_power(const model::Fom& fom, const model::SourceTerm& term, double t, double time)
-    {
-        const auto& cell = fom.discrete.cells[term.cell];
-        const auto p = cell.center();
-        return cell.volume() * fom.heat_source_table[term.source].eval({p[0], p[1], p[2], t, time});
-    }
-
     inline double cell_conductivity(
         const model::Fom& fom, model::CellId cell, std::size_t axis, double temperature, double time)
     {
         const auto p = fom.discrete.cells[cell].center();
-        const auto& m = fom.material_table[fom.cell_material[cell]];
+        const auto& m = fom.material_table[fom.cell_assignment[cell].material];
         return (axis == 0 ? m.kx : axis == 1 ? m.ky : m.kz).eval({p[0], p[1], p[2], temperature, time});
     }
 
@@ -84,22 +76,17 @@ namespace mhs::solver {
         return result;
     }
 
-    inline std::pair<double, double> boundary_terms(const model::Project* project, std::size_t component_index,
-        core::EntityIndex face_index, model::Facet facet, const auto& evaluate)
+    inline std::pair<double, double> boundary_terms(
+        model::Facet facet, const model::FacePartition* partition, const auto& evaluate)
     {
-        const auto indices = project && !project->patches().empty() ? project->face_patches(component_index, face_index)
-                                                                    : std::span<const std::size_t> {};
-        if (indices.empty()) {
+        if (!partition) {
             const auto trace = evaluate(facet);
             return {trace.conductance, trace.load};
         }
         double conductance = 0, load = 0;
-        for (const auto index : indices) {
-            const auto& patch = project->patches()[index];
-            if (patch.contact)
-                continue;
-            const auto trace
-                = evaluate(local_patch(facet, patch.bounds, project->components()[component_index].offset));
+        for (const auto& bounds : partition->exposed) {
+            facet.bounds = bounds;
+            const auto trace = evaluate(facet);
             conductance += trace.conductance;
             load += trace.load;
         }

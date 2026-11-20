@@ -13,19 +13,15 @@ namespace mhs::solver {
     namespace {
         using core::Vector;
         struct AndersonMixer {
-            int depth = 5;
-            int warmup_iters = 2;
-            double dampening = 0.8;
-            double max_growth = 1.5;
-            int reset_on_growth = 1;
+            static constexpr std::size_t depth = 5;
             std::deque<Vector<double>> G_hist, f_hist;
             int iter_count = 0;
 
             std::optional<Vector<double>> step(std::span<const double> x_k, std::span<const double> G_k)
             {
-                if (depth == 0 || iter_count < warmup_iters || G_hist.empty())
+                if (iter_count < 2 || G_hist.empty())
                     return std::nullopt;
-                const auto m = std::min(G_hist.size(), static_cast<std::size_t>(depth));
+                const auto m = std::min(G_hist.size(), depth);
                 // Assemble the same small Gram system without full-length
                 // temporary difference vectors for each pair of columns.
                 core::Matrix<double> gram(m, m);
@@ -49,9 +45,8 @@ namespace mhs::solver {
                 Vector<double> alpha(m);
                 Eigen::Map<Eigen::VectorXd> coefficients(alpha.data(), count);
                 coefficients = matrix.colPivHouseholderQr().solve(load);
-                if (dampening < 1.0)
-                    for (auto& a : alpha)
-                        a *= dampening;
+                for (auto& a : alpha)
+                    a *= 0.8;
                 const double weight = 1.0 - std::accumulate(alpha.begin(), alpha.end(), 0.0);
                 Vector<double> proposal(x_k.size());
                 for (std::size_t k = 0; k < proposal.size(); ++k) {
@@ -59,27 +54,21 @@ namespace mhs::solver {
                     for (std::size_t j = 0; j < m; ++j)
                         proposal[k] += alpha[j] * G_hist[j][k];
                 }
-                if (max_growth > 0.0) {
-                    const double naive_norm = core::distance_inf(G_k, x_k);
-                    if (naive_norm > 0.0 && core::distance_inf(proposal, x_k) > max_growth * naive_norm) {
-                        if (reset_on_growth) {
-                            G_hist.clear();
-                            f_hist.clear();
-                        }
-                        return std::nullopt;
-                    }
+                const double naive_norm = core::distance_inf(G_k, x_k);
+                if (naive_norm > 0.0 && core::distance_inf(proposal, x_k) > 1.5 * naive_norm) {
+                    G_hist.clear();
+                    f_hist.clear();
+                    return std::nullopt;
                 }
                 return proposal;
             }
             void push(const Vector<double>& x_k, const Vector<double>& G_k)
             {
-                if (depth == 0)
-                    return;
                 G_hist.push_front(G_k);
                 auto& f = f_hist.emplace_front(x_k.size());
                 for (std::size_t k = 0; k < f.size(); ++k)
                     f[k] = G_k[k] - x_k[k];
-                if (G_hist.size() > static_cast<std::size_t>(depth)) {
+                if (G_hist.size() > depth) {
                     G_hist.pop_back();
                     f_hist.pop_back();
                 }

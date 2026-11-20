@@ -17,7 +17,9 @@ def test_conformal_sources_keep_independent_power_columns():
     q = compiled.source_operator()
     np.testing.assert_allclose(q.toarray(), [[0, 0.0005], [0.00075, 0]])
     np.testing.assert_allclose(q.sum(axis=1).A.ravel(), compiled.assemble().f)
-    np.testing.assert_allclose(compiled.fields.projection_volume.sum(), 1e-9)
+    np.testing.assert_allclose(
+        np.prod(compiled.fields.cell_max - compiled.fields.cell_min, axis=1).sum(), 1e-9
+    )
 
 
 @pytest.mark.parametrize("case", [1, 2])

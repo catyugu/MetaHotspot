@@ -121,15 +121,12 @@ namespace mhs::compiler {
         Project project;
         project.components_ = std::move(definition.components);
         const auto components = project.components();
-        project.face_patches_.resize(components.size());
-        std::set<ComponentId> ids;
+        project.face_partitions_.resize(components.size());
         std::set<const Erom*> validated;
         std::array<std::map<double, Plane>, 3> positive;
         std::array<Vector<Face>, 3> negative;
         for (std::size_t i = 0; i < components.size(); ++i) {
             const auto& component = components[i];
-            if (component.id == core::invalid_id || !ids.insert(component.id).second)
-                throw std::invalid_argument("component IDs must be valid and unique");
             if (!std::ranges::all_of(component.offset, [](double x) { return std::isfinite(x); }))
                 throw std::invalid_argument("component translation must be finite");
             std::visit(
@@ -143,9 +140,8 @@ namespace mhs::compiler {
                         if (validated.insert(asset.get()).second)
                             validate_erom(*asset);
                         size = asset->K.rows();
-                        for (const auto& [id, schedule] : component.powers)
-                            if (!schedule || id >= asset->sources.size())
-                                throw std::invalid_argument("unknown EROM source ID or empty power schedule");
+                        if (component.powers.size() > asset->sources.size())
+                            throw std::invalid_argument("unknown EROM source index");
                     }
                     else {
                         size = asset->discrete.cells.size();
@@ -153,9 +149,8 @@ namespace mhs::compiler {
                             throw std::invalid_argument("FOM source laws belong to the model");
                     }
                     project.dof_offsets_.push_back(core::detail::checked_sparse_size(project.dof_count() + size));
-                    for (const auto& [id, law] : component.boundaries)
-                        if (id >= asset->boundary_groups.size())
-                            throw std::invalid_argument("unknown or non-connectable component boundary group ID");
+                    if (component.boundaries.size() > asset->boundary_groups.size())
+                        throw std::invalid_argument("unknown or non-connectable component boundary group index");
                     if (components.size() <= 1)
                         return;
                     auto append = [&](core::EntityIndex face_index, const Facet& f, core::EntityIndex group_index,
@@ -190,13 +185,11 @@ namespace mhs::compiler {
 
         const auto& resistances = definition.contact_resistance;
         for (const auto& [pair, r] : resistances)
-            if (pair.first >= pair.second || !ids.contains(pair.first) || !ids.contains(pair.second)
-                || !std::isfinite(r) || r < 0)
+            if (pair.first >= pair.second || pair.second >= components.size() || !std::isfinite(r) || r < 0)
                 throw std::invalid_argument(
-                    "contact resistance requires two valid sorted component IDs and a finite nonnegative value");
+                    "contact resistance requires two valid sorted component indices and a finite nonnegative value");
 
-        std::set<std::tuple<ComponentId, bool, core::EntityIndex, ComponentId, bool, core::EntityIndex>> warned;
-        Vector<std::map<core::EntityIndex, Vector<Rect>>> exposed(components.size());
+        std::set<std::tuple<std::size_t, bool, core::EntityIndex, std::size_t, bool, core::EntityIndex>> warned;
         for (std::size_t axis = 0; axis < positive.size(); ++axis) {
             auto& index = positive[axis];
             for (auto& [coordinate, group] : index)
@@ -208,7 +201,7 @@ namespace mhs::compiler {
                     it->second.search(right.rect, [&](const Face& left, const Rect& cut) {
                         if (left.component_index == right.component_index)
                             return;
-                        const auto l = components[left.component_index].id, r = components[right.component_index].id;
+                        const auto l = left.component_index, r = right.component_index;
                         if (left.outline || right.outline) {
                             const auto key
                                 = std::tuple {l, left.outline, left.group_index, r, right.outline, right.group_index};
@@ -219,29 +212,38 @@ namespace mhs::compiler {
                             return;
                         }
                         for (const auto* side : {&left, &right}) {
-                            auto& remainders = exposed[side->component_index];
-                            auto [it, inserted] = remainders.try_emplace(side->face_index);
+                            auto& partitions = project.face_partitions_[side->component_index];
+                            auto [it, inserted] = partitions.try_emplace(side->face_index);
                             if (inserted)
-                                it->second.push_back(side->rect);
-                            cover(it->second, cut);
-                            project.face_patches_[side->component_index][side->face_index].push_back(
-                                project.patches_.size());
+                                it->second.exposed.push_back(side->rect);
+                            cover(it->second.exposed, cut);
+                            it->second.contacts.push_back(project.contacts_.size());
                         }
                         const auto resistance = resistances.find(std::minmax(l, r));
-                        project.patches_.push_back({cut,
-                            SurfacePatch::Contact {{left.component_index, left.face_index},
-                                {right.component_index, right.face_index},
-                                resistance == resistances.end() ? 0.0 : resistance->second}});
+                        project.contacts_.push_back(
+                            {{left.component_index, left.face_index}, {right.component_index, right.face_index}, cut,
+                                resistance == resistances.end() ? 0.0 : resistance->second});
                     });
             }
         }
-        for (std::size_t i = 0; i < exposed.size(); ++i)
-            for (const auto& [facet, remainders] : exposed[i]) {
-                auto& indices = project.face_patches_[i].at(facet);
-                for (const auto& bounds : remainders) {
-                    indices.push_back(project.patches_.size());
-                    project.patches_.push_back({bounds, std::nullopt});
-                }
+        // Finish exposed rectangles in component coordinates once, before solving.
+        for (std::size_t i = 0; i < components.size(); ++i)
+            for (auto& [face, partition] : project.face_partitions_[i]) {
+                const auto& facet = std::visit(
+                    [&](const auto& asset) -> const Facet& {
+                        using Asset = typename std::decay_t<decltype(asset)>::element_type;
+                        if constexpr (std::is_same_v<Asset, const Fom>)
+                            return asset->discrete.facets[face];
+                        else
+                            return asset->interfaces[face].facet;
+                    },
+                    components[i].asset);
+                const auto [u, v] = tangential_axes(facet.axis);
+                for (auto& rect : partition.exposed)
+                    for (std::size_t a = 0; a < rect.size(); ++a) {
+                        const auto shift = components[i].offset[a < 2 ? u : v];
+                        rect[a] = rect[a] == facet.bounds[a] + shift ? facet.bounds[a] : rect[a] - shift;
+                    }
             }
         return project;
     }

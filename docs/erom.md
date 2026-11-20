@@ -1,7 +1,7 @@
 # Mixed projects and EROM extraction
 
 The C++ SDK compiles projects from reusable FOM and EROM assets. Each component
-has its own ID, translation and optional surface laws. An EROM instance can
+is identified by its array index and stores a translation and optional surface laws. An EROM instance can
 also set a time-dependent power in watts for each source ID. FOM source and
 material expressions use the FOM's local coordinates. Surface laws use the
 local quadrature point on each exposed patch.
@@ -14,12 +14,13 @@ using namespace mhs::model;
 
 auto package = read_erom("package.mherom");
 ProjectDefinition input;
-input.components.push_back({10, {0, 0, 0}, package});
-input.components.push_back({20, {0.1, 0, 0}, package});
+input.components.push_back({{0, 0, 0}, package});
+input.components.push_back({{0.1, 0, 0}, package});
+input.components[1].powers.resize(4);
 input.components[1].powers[3] = [](double t) { return t < 0.1 ? 5.0 : 2.0; };
 auto project = mhs::compiler::compile_project(std::move(input));
 auto solution = mhs::solver::solve(project, {mhs::solver::StudyType::Transient, 300, 2, 0.1});
-const auto* trace = solution.find_output(20, 0);
+const auto* trace = solution.find_output(1, 0);
 ```
 
 Build a FOM with `mhs::compiler::compile_fom` and share the result as
@@ -30,10 +31,10 @@ point observations into world coordinates.
 
 The compiler locates opposing coplanar facets and couples their overlap by TPFA.
 `ProjectDefinition::contact_resistance` accepts area-specific contact
-resistances in m² K/W keyed by ascending component IDs. All `SurfacePatch::bounds` use world coordinates. Contact sides carry a component
-array index and a face index (FOM facet or EROM interface); component IDs are
-used only by the public configuration and output lookup. Boundary evaluation
-converts patches to component coordinates internally. A connected patch
+resistances in m² K/W keyed by ascending component array indices. `Contact::bounds`
+uses world coordinates. `FacePartition` stores contact indices and exposed rectangles
+in component coordinates. Contact sides carry a component index and a face index
+(FOM facet or EROM interface). A connected patch
 replaces the environment over its covered area. The remaining area keeps the
 surface's environment. FOMs use `facet_boundary_group` to select a thermal boundary group and its law. Instance overrides use `BoundaryGroupId`. Contacts with
 untrained EROM surfaces log a warning and leave both environment laws in effect. Fluid advection and
@@ -61,7 +62,7 @@ result atomically as `.mherom`.
 
 using namespace mhs::app::erom;
 // definition and mesh come from the caller.
-auto result = extract(definition, mesh, {{0, {5, 200}}, {1, {10, 500}}}, 1e-3);
+auto result = extract(definition, mesh, {{0, {5, 200}}, {1, {500}}}, 1e-3);
 write_erom("package.mherom", result.asset);
 ```
 

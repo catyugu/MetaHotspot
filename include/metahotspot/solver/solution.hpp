@@ -10,7 +10,7 @@ namespace mhs::solver {
     struct OutputTrace {
         std::string name;
         mhs::core::Vector<double> values;
-        mhs::model::ComponentId component = mhs::core::invalid_id;
+        std::size_t component = mhs::core::invalid_id;
         mhs::model::OutputId output = mhs::core::invalid_id;
     };
 
@@ -26,7 +26,7 @@ namespace mhs::solver {
         mhs::core::Vector<double> snapshot_times;
         mhs::core::Vector<double> snapshot_states;
 
-        const OutputTrace* find_output(model::ComponentId component, model::OutputId output) const
+        const OutputTrace* find_output(std::size_t component, model::OutputId output) const
         {
             for (const auto& trace : output_traces)
                 if (trace.component == component && trace.output == output)

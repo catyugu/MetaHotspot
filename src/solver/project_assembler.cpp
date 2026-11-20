@@ -78,8 +78,7 @@ namespace mhs::solver {
             }
         if (reduced_only) {
             assemble_contacts();
-            fixed_K_.assign(operators_.K.values().begin(), operators_.K.values().end());
-            fixed_f_ = operators_.f;
+            fixed_.emplace(FixedContacts {{operators_.K.values().begin(), operators_.K.values().end()}, operators_.f});
         }
     }
 
@@ -92,13 +91,10 @@ namespace mhs::solver {
             const auto& erom = *std::get<std::shared_ptr<const Erom>>(project_.components()[i].asset);
             return erom.interfaces[side.face_index].resistance;
         };
-        for (const auto& patch : project_.patches()) {
-            if (!patch.contact)
-                continue;
-            const auto& c = *patch.contact;
+        for (const auto& c : project_.contacts()) {
             const auto left = contact_side(project_, c.left);
             const auto right = contact_side(project_, c.right);
-            const auto g = patch.area() / contact_resistance(resistance(c.left), resistance(c.right), c.resistance);
+            const auto g = c.area() / contact_resistance(resistance(c.left), resistance(c.right), c.resistance);
             add_block(operators_.K, left, left, g);
             add_block(operators_.K, right, right, g);
             add_block(operators_.K, left, right, -g);
@@ -115,11 +111,8 @@ namespace mhs::solver {
         const auto size = project_.dof_count();
         // Build adjacency over contact blocks before expanding dense modal columns.
         Vector<core::Triplet<double>> edges;
-        edges.reserve(2 * project_.patches().size());
-        for (const auto& patch : project_.patches()) {
-            if (!patch.contact)
-                continue;
-            const auto& c = *patch.contact;
+        edges.reserve(2 * project_.contacts().size());
+        for (const auto& c : project_.contacts()) {
             const auto left = static_cast<SparseIndex>(contact_side(project_, c.left).first);
             const auto right = static_cast<SparseIndex>(contact_side(project_, c.right).first);
             edges.push_back({left, right, 0});
@@ -182,10 +175,10 @@ namespace mhs::solver {
             return thermal_.front()->assemble(
                 state, time, project_.components().front().boundaries.empty() ? nullptr : &project_);
 
-        const bool cached = !fixed_K_.empty();
+        const bool cached = fixed_.has_value();
         if (cached) {
-            std::ranges::copy(fixed_K_, operators_.K.values().begin());
-            std::ranges::copy(fixed_f_, operators_.f.begin());
+            std::ranges::copy(fixed_->stiffness, operators_.K.values().begin());
+            std::ranges::copy(fixed_->load, operators_.f.begin());
         }
         else
             std::ranges::fill(operators_.K.values(), 0.0);
@@ -208,8 +201,8 @@ namespace mhs::solver {
             }
             for (SourceId s = 0; s < e.sources.size(); ++s) {
                 const auto& source = e.sources[s];
-                const auto it = component.powers.find(s);
-                const double power = it == component.powers.end() ? source.default_power : it->second(time);
+                const double power = s < component.powers.size() && component.powers[s] ? component.powers[s](time)
+                                                                                        : source.default_power;
                 if (!std::isfinite(power))
                     throw std::invalid_argument("EROM power must be finite");
                 for (std::size_t j = 0; j < e.K.rows(); ++j)
@@ -224,7 +217,7 @@ namespace mhs::solver {
                 const Side side {offset, e.Vb.row(interface_index), e.reference_temperature};
                 const double temperature = law ? side.temperature(state) : 0;
                 const auto [g, load]
-                    = boundary_terms(&project_, i, interface_index, face.facet, [&](const Facet& patch) {
+                    = boundary_terms(face.facet, project_.face_partition(i, interface_index), [&](const Facet& patch) {
                           if (law)
                               return evaluate_boundary(*law, patch, temperature, time, face.resistance);
                           const double g = convection_conductance(patch.area(), surface.coefficient, face.resistance);
