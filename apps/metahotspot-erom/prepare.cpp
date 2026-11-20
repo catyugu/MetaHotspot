@@ -174,11 +174,10 @@ namespace mhs::app::erom {
                 const auto group = static_cast<BoundaryGroupId>(result.training.size());
                 const double ambient
                     = htc ? constant(htc->ambient_temperature, "Ambient temperature") : result.reference_temperature;
-                auto& training = result.training.emplace_back(
-                    Prepared::HtcGroup {{name, range->second.minimum, range->second.maximum, h, ambient}, {}});
-                training.interfaces.reserve(facets.size());
+                const auto begin = static_cast<Eigen::Index>(result.interfaces.size());
+                result.training.push_back({{name, range->second.minimum, range->second.maximum, h, ambient}, begin,
+                    begin + static_cast<Eigen::Index>(facets.size())});
                 for (const auto id : facets) {
-                    training.interfaces.push_back(static_cast<Eigen::Index>(result.interfaces.size()));
                     result.interfaces.push_back({mesh.exterior_facets[id].geometry, assembler.resistance(id), group});
                     result.boundary_cells.push_back(mesh.exterior_facets[id].owner);
                 }

@@ -97,7 +97,7 @@ namespace mhs::app::erom {
                         Vector ambient_exact(ng), ambient_approximate(ng);
                         for (Eigen::Index i = 0; i < ng; ++i) {
                             ambient_exact[i] = ambient_approximate[i] = 0;
-                            for (const auto id : project.training[i].interfaces) {
+                            for (auto id = project.training[i].begin; id < project.training[i].end; ++id) {
                                 ambient_exact[i] += closure[id] * exact[project.boundary_cells[id]];
                                 ambient_approximate[i] += closure[id] * reduced_trace[id];
                             }
@@ -129,7 +129,7 @@ namespace mhs::app::erom {
                     }
                     const auto& group = project.training[i];
                     const double delta = defaults ? group.boundary_group.ambient - project.reference_temperature : 1;
-                    for (const auto id : group.interfaces) {
+                    for (auto id = group.begin; id < group.end; ++id) {
                         const double power = closure[id] * delta;
                         rhs[project.boundary_cells[id]] += power;
                         load.noalias() += power * boundary.row(id).transpose();

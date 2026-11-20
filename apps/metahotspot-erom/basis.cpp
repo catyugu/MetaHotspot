@@ -142,7 +142,7 @@ namespace mhs::app::erom {
                     if (is_passive) {
                         const auto [group, region] = passive[port - powered];
                         ambient.setZero();
-                        for (const auto id : project.training[group].interfaces)
+                        for (auto id = project.training[group].begin; id < project.training[group].end; ++id)
                             if (regions[project.boundary_cells[id]] == region)
                                 ambient[id] = closure[id];
                         g.setZero();
