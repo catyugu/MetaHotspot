@@ -1,4 +1,5 @@
 #include "compiler/fom_compiler.hpp"
+#include "compiler/project_compiler.hpp"
 #include "solver/solver.hpp"
 #include <algorithm>
 #include <gtest/gtest.h>
@@ -26,11 +27,12 @@ TEST(SchedulerTest, SteadyHeatSourceProducesTemperatureGradient)
 
     io.default_thermal_boundary = mhs::model::NeumannBoundary {};
 
-    auto model = mhs::compiler::compile_fom(io, cube_mesh());
+    const auto asset = std::make_shared<const mhs::model::Fom>(mhs::compiler::compile_fom(io, cube_mesh()));
+    const auto project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
 
-    auto result = mhs::solver::solve(model);
+    auto result = mhs::solver::solve(project);
 
-    EXPECT_EQ(result.state.size(), model.discrete.cells.size());
+    EXPECT_EQ(result.state.size(), asset->discrete.cells.size());
     EXPECT_TRUE(std::equal(result.state.begin(), result.state.end(), result.state.begin()));
 
     // With heat source and Dirichlet 300K at bottom, temperatures should be > 300K
@@ -74,10 +76,11 @@ TEST(SchedulerTest, ProbeRecorderCapturesPerStep)
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
     io.thermal_boundaries.push_back(boundary);
 
-    auto model = mhs::compiler::compile_fom(io, cube_mesh());
+    const auto asset = std::make_shared<const mhs::model::Fom>(mhs::compiler::compile_fom(io, cube_mesh()));
+    const auto project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
 
     mhs::solver::Study study {mhs::solver::StudyType::Transient, 300.0, 5.0, 1.0};
-    auto result = mhs::solver::solve(model, study);
+    auto result = mhs::solver::solve(project, study);
 
     const auto& traces = result.output_traces;
     ASSERT_EQ(traces.size(), 2u);
@@ -131,10 +134,11 @@ TEST(SchedulerTest, ProbeRecorderUsesCurrentTimeForTimeDependentBC)
     boundary.regions.push_back({mhs::model::Axis::Z, 0.0, {0.0, 0.01, 0.0, 0.01}});
     io.thermal_boundaries.push_back(boundary);
 
-    auto model = mhs::compiler::compile_fom(io, cube_mesh());
+    const auto asset = std::make_shared<const mhs::model::Fom>(mhs::compiler::compile_fom(io, cube_mesh()));
+    const auto project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
 
     mhs::solver::Study study {mhs::solver::StudyType::Transient, 300.0, 5.0, 1.0};
-    auto result = mhs::solver::solve(model, study);
+    auto result = mhs::solver::solve(project, study);
 
     const auto& traces = result.output_traces;
     ASSERT_EQ(traces.size(), 1u);

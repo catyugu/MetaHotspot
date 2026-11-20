@@ -5,7 +5,6 @@ namespace mhs::model {
     using CellId = core::EntityIndex;
     using FacetId = core::EntityIndex;
     using MaterialId = core::EntityIndex;
-    using ComponentId = core::EntityIndex;
     using OutputId = core::EntityIndex;
     using BoundaryGroupId = core::EntityIndex;
     using SourceId = core::EntityIndex;

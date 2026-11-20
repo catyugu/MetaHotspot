@@ -138,9 +138,9 @@ namespace {
             const auto rom = std::make_shared<const Erom>(e);
             using expression::CompiledExpression;
             const BoundaryOverrides boundary {
-                {0, Convection {CompiledExpression::make_constant(70), CompiledExpression::make_constant(310)}}};
-            const auto full = compiler::compile_project({{{0, {}, fom, {}, boundary}}, {}});
-            const auto reduced = compiler::compile_project({{{0, {}, rom, {}, boundary}}, {}});
+                Convection {CompiledExpression::make_constant(70), CompiledExpression::make_constant(310)}};
+            const auto full = compiler::compile_project({{{{}, fom, {}, boundary}}, {}});
+            const auto reduced = compiler::compile_project({{{{}, rom, {}, boundary}}, {}});
             const auto full_solution = solver::solve(full), reduced_solution = solver::solve(reduced);
             check(full_solution.converged && reduced_solution.converged, "steady solve did not converge");
             near(full_solution.output_traces.at(0).values.back(), reduced_solution.output_traces.at(0).values.back(),
@@ -160,7 +160,7 @@ namespace {
         check(detailed.converged && reduced.converged, "a reference or mixed solve did not converge");
         check(detailed.snapshot_times == reduced.snapshot_times, "probe timeline mismatch");
         check(reduced.output_traces.size() == 3, "mixed output count mismatch");
-        check(reduced.find_output(10, 0) == &reduced.output_traces[0], "mixed output identity mismatch");
+        check(reduced.find_output(0, 0) == &reduced.output_traces[0], "mixed output identity mismatch");
 
         for (std::size_t i = 0; i < detailed.snapshot_times.size(); ++i) {
             const auto* t = detailed.snapshot_states.data() + i * full.dof_count();
@@ -198,7 +198,7 @@ int main(int argc, char** argv)
             const auto e = read_erom(argv[2]);
             check(e->sources.empty() && e->outputs.empty() && e->B.cols() == 0 && e->L.rows() == 0,
                 "expected empty source and output channels");
-            const auto project = mhs::compiler::compile_project({{{0, {}, e, {}, {}}}, {}});
+            const auto project = mhs::compiler::compile_project({{{{}, e, {}, {}}}, {}});
             check(solver::solve(project).converged, "source-free EROM did not converge");
             return 0;
         }
@@ -213,10 +213,10 @@ int main(int argc, char** argv)
         sink.volumes = {{0, core::invalid_id, {{GeometryOperation::Add, {}, {1, 1, 1}}}}};
         sink.thermal_boundaries = {{{{Axis::X, 1, {0, 1, 0, 1}}}, DirichletBoundary {"288"}}};
         auto body = std::make_shared<const Fom>(compiler::compile_fom(sink, {{0, 1}, {0, 1}, {0, 1}}));
-        ComponentInstance external {20, {3, 0, 0}, body, {}, {}};
-        const auto mixed = mhs::compiler::compile_project({{{10, {}, e, {}, {}}, external}, {}});
-        const auto full = mhs::compiler::compile_project({{{10, {}, fom, {}, {}}, external}, {}});
-        check(mixed.dof_count() == 4 && full.dof_count() == 7 && mixed.patches().size() == 2,
+        ComponentInstance external {{3, 0, 0}, body, {}, {}};
+        const auto mixed = mhs::compiler::compile_project({{{{}, e, {}, {}}, external}, {}});
+        const auto full = mhs::compiler::compile_project({{{{}, fom, {}, {}}, external}, {}});
+        check(mixed.dof_count() == 4 && full.dof_count() == 7 && mixed.contacts().size() == 2,
             "embedding failed to reduce DOFs and match nonconforming facets");
         compare(mixed, full, {});
         compare(mixed, full, {mhs::solver::StudyType::Transient, 304, 4, 0.5});

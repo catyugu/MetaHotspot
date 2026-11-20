@@ -157,7 +157,8 @@ namespace mhs::solver {
             const auto id = static_cast<model::FacetId>(i);
             const auto cell = model_.discrete.cell_facets[id].owner();
             const auto r = resistance(id);
-            const auto [conductance, load] = boundary_terms(project, component, id, model_.discrete.facets[id],
+            const auto [conductance, load] = boundary_terms(model_.discrete.facets[id],
+                project ? project->face_partition(component, id) : nullptr,
                 [&](const model::Facet& patch) { return evaluate_boundary(law, patch, temperature[cell], time, r); });
             operators_.K.values()[diagonal_positions_[cell]] += conductance;
             operators_.f[cell] += load;

@@ -137,13 +137,9 @@ namespace mhs::compiler {
         for (std::size_t id = 0; id < definition.fluid_boundaries.size(); ++id)
             for (const auto& region : definition.fluid_boundaries[id].regions)
                 fluid_regions.push_back({region, static_cast<SurfaceTag>(id)});
-        refine_exterior_facets(model.discrete, surface_regions, fluid_regions);
-        build_cell_facet_incidence(model.discrete);
-
-        model.facet_boundary_group = assign_exterior_regions(model.discrete, surface_regions, fallback_boundary);
-
-        // Hydraulic boundary assignments share the same canonical FacetIds.
-        auto fluid_tags = assign_exterior_regions(model.discrete, fluid_regions);
+        auto [thermal_tags, fluid_tags]
+            = compile_exterior_facets(model.discrete, surface_regions, fluid_regions, fallback_boundary);
+        model.facet_boundary_group = std::move(thermal_tags);
         mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_tags, initial_viscosity);
 
         return model;

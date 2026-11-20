@@ -2,6 +2,7 @@
 #include "metahotspot_c_api.h"
 
 #include "compiler/fom_compiler.hpp"
+#include "compiler/project_compiler.hpp"
 #include "logging/logger.hpp"
 #include "model/fom_definition.hpp"
 #include "solver/assembler.hpp"
@@ -73,7 +74,12 @@ struct mhs_model_t {
 };
 
 struct mhs_compiled_t {
-    mhs::model::Fom model;
+    mhs::model::Project project;
+
+    const mhs::model::Fom& model() const
+    {
+        return *std::get<std::shared_ptr<const mhs::model::Fom>>(project.components().front().asset);
+    }
 };
 
 struct mhs_operators_t {
@@ -518,7 +524,8 @@ MHS_API mhs_status_t mhs_model_compile(const mhs_model_t* m, mhs_compiled_t** ou
     CHECK_NULL(m);
     MHS_TRY({
         auto c = std::make_unique<mhs_compiled_t>();
-        c->model = mhs::compiler::compile_fom(m->def, m->mesh);
+        const auto asset = std::make_shared<const mhs::model::Fom>(mhs::compiler::compile_fom(m->def, m->mesh));
+        c->project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
         *out = c.release();
     });
 }
@@ -533,11 +540,11 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
 {
     CHECK_NULL(c);
     CHECK_NULL(out);
-    out->cell_count = c->model.discrete.cells.size();
-    out->facet_count = c->model.discrete.facets.size();
-    out->projection_count = c->model.source_terms.size();
-    out->source_count = c->model.heat_source_table.size();
-    out->reference_temperature = c->model.reference_temperature;
+    out->cell_count = c->model().discrete.cells.size();
+    out->facet_count = c->model().discrete.facets.size();
+    out->projection_count = c->model().source_terms.size();
+    out->source_count = c->model().heat_source_table.size();
+    out->reference_temperature = c->model().reference_temperature;
 
     mhs_detail_clear_last_error();
     return MHS_OK;
@@ -583,7 +590,7 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
 {
     CHECK_NULL(c);
     CHECK_NULL(fields);
-    const auto& model = c->model;
+    const auto& model = c->model();
     const auto& mesh = model.discrete;
     if (fields->cell_count != mesh.cells.size() || fields->facet_count != mesh.facets.size()
         || fields->projection_count != model.source_terms.size()) {
@@ -644,7 +651,7 @@ MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, con
         CHECK_NULL(powers);
     }
     MHS_TRY({
-        const auto& model = c->model;
+        const auto& model = c->model();
         if (state_count != model.discrete.cells.size() || projection_count != model.source_terms.size())
             throw std::invalid_argument("source projection buffer size mismatch");
         for (size_t i = 0; i < projection_count; ++i) {
@@ -660,7 +667,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
     CHECK_NULL(c);
     CHECK_NULL(temperature);
     CHECK_NULL(values);
-    const auto& model = c->model;
+    const auto& model = c->model();
 
     const auto& mesh = model.discrete;
     if (temperature_count != model.discrete.cells.size() || values->count != temperature_count) {
@@ -699,7 +706,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
     CHECK_NULL(c);
     CHECK_NULL(temperature);
     MHS_TRY({
-        const auto cell_count = c->model.discrete.cells.size();
+        const auto cell_count = c->model().discrete.cells.size();
         if (temperature_count != cell_count) {
             SET_ERR("temperature_count must equal cell_count");
             return MHS_ERROR;
@@ -707,7 +714,7 @@ MHS_API mhs_status_t mhs_compiled_assemble(
 
         auto result = std::make_unique<mhs_operators_t>();
         result->operators
-            = mhs::solver::assemble_thermal(c->model, std::span<const double>(temperature, temperature_count), time);
+            = mhs::solver::assemble_thermal(c->model(), std::span<const double>(temperature, temperature_count), time);
         *out = result.release();
     });
 }
@@ -798,12 +805,12 @@ MHS_API mhs_status_t mhs_compiled_solve(const mhs_compiled_t* c, const mhs_study
             run.output_interval = study->output_interval;
         }
 
-        if ((!state && state_count != 0) || (state && state_count != c->model.discrete.cells.size()))
+        if ((!state && state_count != 0) || (state && state_count != c->model().discrete.cells.size()))
             throw std::invalid_argument("initial state must be NULL/0 or have cell_count entries");
         const std::span<const double> init_span(state, state_count);
 
         auto result = std::make_unique<mhs_solution_t>();
-        result->sol = mhs::solver::solve(c->model, run, init_span, so);
+        result->sol = mhs::solver::solve(c->project, run, init_span, so);
         *out = result.release();
     });
 }

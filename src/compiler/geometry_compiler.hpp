@@ -23,12 +23,8 @@ namespace mhs::compiler {
     void compile_conformal_mesh(mhs::model::Fom& model, const mhs::model::MeshSpec& input,
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes);
 
-    // Partition exterior facets once against the union of thermal and fluid regions,
-    // before building incidence and assigning physics-specific boundary conditions.
-    void refine_exterior_facets(mhs::model::DiscreteMesh& mesh, std::span<const TaggedSurfaceRegion> thermal,
-        std::span<const TaggedSurfaceRegion> fluid);
-
-    // Later regions take precedence. Interior facets always have the invalid tag.
-    mhs::core::Vector<SurfaceTag> assign_exterior_regions(const mhs::model::DiscreteMesh& mesh,
-        const mhs::core::Vector<TaggedSurfaceRegion>& regions, SurfaceTag fallback = mhs::core::invalid_id);
+    // Partition and tag thermal/fluid boundaries together. Later regions take precedence.
+    std::array<mhs::core::Vector<SurfaceTag>, 2> compile_exterior_facets(mhs::model::DiscreteMesh& mesh,
+        std::span<const TaggedSurfaceRegion> thermal, std::span<const TaggedSurfaceRegion> fluid,
+        SurfaceTag thermal_fallback);
 } // namespace mhs::compiler

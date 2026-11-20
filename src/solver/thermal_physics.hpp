@@ -8,8 +8,7 @@ namespace mhs::solver {
     inline const model::BoundaryCondition* boundary_override(const model::BoundaryOverrides& overrides,
         model::BoundaryGroupId boundary_group, const model::BoundaryCondition* fallback = nullptr)
     {
-        const auto it = overrides.find(boundary_group);
-        return it == overrides.end() ? fallback : &it->second;
+        return boundary_group < overrides.size() && overrides[boundary_group] ? &*overrides[boundary_group] : fallback;
     }
 
     // Unit-area Fourier conduction resistance; no fluid/interface model involved.
@@ -84,22 +83,17 @@ namespace mhs::solver {
         return result;
     }
 
-    inline std::pair<double, double> boundary_terms(const model::Project* project, std::size_t component_index,
-        core::EntityIndex face_index, model::Facet facet, const auto& evaluate)
+    inline std::pair<double, double> boundary_terms(
+        model::Facet facet, const model::FacePartition* partition, const auto& evaluate)
     {
-        const auto indices = project && !project->patches().empty() ? project->face_patches(component_index, face_index)
-                                                                    : std::span<const std::size_t> {};
-        if (indices.empty()) {
+        if (!partition) {
             const auto trace = evaluate(facet);
             return {trace.conductance, trace.load};
         }
         double conductance = 0, load = 0;
-        for (const auto index : indices) {
-            const auto& patch = project->patches()[index];
-            if (patch.contact)
-                continue;
-            const auto trace
-                = evaluate(local_patch(facet, patch.bounds, project->components()[component_index].offset));
+        for (const auto& bounds : partition->exposed) {
+            facet.bounds = bounds;
+            const auto trace = evaluate(facet);
             conductance += trace.conductance;
             load += trace.load;
         }

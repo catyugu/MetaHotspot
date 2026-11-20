@@ -1,5 +1,6 @@
 #include "cli.hpp"
 #include "compiler/fom_compiler.hpp"
+#include "compiler/project_compiler.hpp"
 #include "logging/logger.hpp"
 #include "output/vtu.hpp"
 #include "postprocess.hpp"
@@ -41,13 +42,16 @@ int main(int argc, char* argv[])
         MHS_LOG_INFO("Loaded {} volumes, {} materials, {} boundaries", definition.model.volumes.size(),
             definition.model.materials.size(), definition.model.thermal_boundaries.size());
 
-        auto model = mhs::compiler::compile_fom(definition.model, definition.mesh);
+        const auto asset
+            = std::make_shared<const mhs::model::Fom>(mhs::compiler::compile_fom(definition.model, definition.mesh));
+        const auto project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
+        const auto& model = *asset;
 
         MHS_LOG_INFO("Compiled {} cells and {} facets", model.discrete.cells.size(), model.discrete.facets.size());
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
-        auto result = mhs::solver::solve(model, definition.study);
+        auto result = mhs::solver::solve(project, definition.study);
 
         MHS_LOG_INFO("Simulation complete.");
         const auto& solution = result.state;

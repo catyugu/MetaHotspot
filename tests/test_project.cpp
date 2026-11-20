@@ -59,14 +59,9 @@ namespace {
         return e;
     }
 
-    ComponentInstance instance(ComponentId id, std::shared_ptr<const Fom> model, Vec3 at = {})
+    template <typename Asset> ComponentInstance instance(std::shared_ptr<Asset> asset, Vec3 at = {})
     {
-        return {id, at, std::move(model), {}, {}};
-    }
-
-    ComponentInstance instance(ComponentId id, std::shared_ptr<const Erom> model, Vec3 at = {})
-    {
-        return {id, at, std::move(model), {}, {}};
+        return {at, std::move(asset), {}, {}};
     }
 } // namespace
 
@@ -80,18 +75,18 @@ TEST(Project, ComponentCountsAndSharedAssets)
     for (const auto& [foms, eroms] : {std::pair {2, 0}, {0, 1}, {0, 2}, {1, 1}, {2, 2}}) {
         ProjectDefinition definition;
         for (int i = 0; i < foms; ++i)
-            definition.components.push_back(instance(static_cast<ComponentId>(i), fom, {2.0 * i, 0, 0}));
+            definition.components.push_back(instance(fom, {2.0 * i, 0, 0}));
         for (int i = foms; i < foms + eroms; ++i)
-            definition.components.push_back(instance(static_cast<ComponentId>(i), erom, {2.0 * i, 0, 0}));
+            definition.components.push_back(instance(erom, {2.0 * i, 0, 0}));
         const auto project = mhs::compiler::compile_project(std::move(definition));
         EXPECT_EQ(project.dof_count(), static_cast<std::size_t>(foms + eroms));
-        EXPECT_TRUE(project.patches().empty());
+        EXPECT_TRUE(project.contacts().empty());
         const auto result = solver::solve(project);
         EXPECT_TRUE(result.converged);
         ASSERT_EQ(result.output_traces.size(), 2u * eroms);
         for (int i = 0; i < eroms; ++i) {
             EXPECT_EQ(result.output_traces[2 * i].name, "sensor");
-            EXPECT_EQ(result.output_traces[2 * i].component, static_cast<ComponentId>(i + foms));
+            EXPECT_EQ(result.output_traces[2 * i].component, static_cast<std::size_t>(i + foms));
             EXPECT_EQ(result.output_traces[2 * i].output, 0u);
         }
     }
@@ -100,15 +95,15 @@ TEST(Project, ComponentCountsAndSharedAssets)
 TEST(Project, MatchingAndNonmatchingFomContactConserveHeat)
 {
     for (bool split : {false, true}) {
-        const auto project = mhs::compiler::compile_project(
-            {{instance(1, cube()), instance(2, cube(split), {1, 0, 0})}, {{{1, 2}, 0.25}}});
+        const auto project
+            = mhs::compiler::compile_project({{instance(cube()), instance(cube(split), {1, 0, 0})}, {{{0, 1}, 0.25}}});
         const auto count = split ? 2u : 1u;
-        ASSERT_EQ(project.patches().size(), count);
+        ASSERT_EQ(project.contacts().size(), count);
         solver::ProjectAssembler assembler(project);
         const core::Vector<double> t(project.dof_count(), 300.0);
         const auto& ops = assembler.assemble(t, 0);
         double area = 0;
-        for (const auto& patch : project.patches()) {
+        for (const auto& patch : project.contacts()) {
             area += patch.area();
             EXPECT_NEAR(patch.area(), 1.0 / count, 1e-14);
         }
@@ -130,12 +125,11 @@ TEST(Project, PartialMixedContactUsesExposedBoundaryAndReferenceOffsets)
 {
     const auto erom = modal();
     const auto project = mhs::compiler::compile_project(
-        {{instance(1, cube(false, true), {7, 13, 19}), instance(2, erom, {8, 13.5, 19})}, {{{1, 2}, 0.25}}});
-    ASSERT_EQ(project.patches().size(), 3u);
-    EXPECT_TRUE(project.patches()[0].contact);
-    EXPECT_DOUBLE_EQ(project.patches()[0].area(), 0.5);
-    EXPECT_EQ(project.output_position(2, 0), (Vec3 {8.5, 13.75, 19.5}));
-    EXPECT_FALSE(project.output_position(2, 1));
+        {{instance(cube(false, true), {7, 13, 19}), instance(erom, {8, 13.5, 19})}, {{{0, 1}, 0.25}}});
+    ASSERT_EQ(project.contacts().size(), 1u);
+    EXPECT_DOUBLE_EQ(project.contacts()[0].area(), 0.5);
+    EXPECT_EQ(project.output_position(1, 0), (Vec3 {8.5, 13.75, 19.5}));
+    EXPECT_FALSE(project.output_position(1, 1));
     EXPECT_EQ(*erom->outputs[0].point, (Vec3 {0.5, 0.25, 0.5}));
 
     solver::ProjectAssembler assembler(project);
@@ -170,10 +164,10 @@ TEST(Project, EromContactUsesModalOuterProductsAndInstanceSchedules)
     left->Vb(0, 0) = 1;
     left->Vb(1, 0) = left->Vb(2, 0) = 2;
     right->Vb(0, 0) = -3;
-    auto l = instance(1, left), r = instance(2, right, {1, 0, 0});
-    l.powers[0] = [](double t) { return 7 * t; };
+    auto l = instance(left), r = instance(right, {1, 0, 0});
+    l.powers = {[](double t) { return 7 * t; }};
     const auto project = mhs::compiler::compile_project({{l, r}, {}});
-    ASSERT_EQ(project.patches().size(), 2u);
+    ASSERT_EQ(project.contacts().size(), 2u);
     EXPECT_EQ(project.dof_count(), 2u);
     const core::Vector<double> state {0, 0};
     solver::ProjectAssembler assembler(project);
@@ -202,29 +196,27 @@ TEST(Project, UntrainedContactWarnsAndKeepsTheEnvironment)
         ~Capture() { sinks.pop_back(); }
     } capture;
     const auto project
-        = mhs::compiler::compile_project({{instance(21, cube()), instance(42, modal(280, false), {1, 0, 0})}, {}});
-    EXPECT_TRUE(project.patches().empty());
+        = mhs::compiler::compile_project({{instance(cube()), instance(modal(280, false), {1, 0, 0})}, {}});
+    EXPECT_TRUE(project.contacts().empty());
 #if MHS_LOG_COMPILED_LEVEL <= 3
     const auto message = capture.log.str();
     const auto warning = message.find("thermal contact is ignored");
     ASSERT_NE(warning, std::string::npos);
     EXPECT_EQ(message.find("thermal contact is ignored", warning + 1), std::string::npos);
-    EXPECT_NE(message.find("21 (boundary 1)"), std::string::npos);
-    EXPECT_NE(message.find("42 (left)"), std::string::npos);
+    EXPECT_NE(message.find("0 (boundary 1)"), std::string::npos);
+    EXPECT_NE(message.find("1 (left)"), std::string::npos);
 #endif
     const auto result = solver::solve(project);
     EXPECT_NEAR(result.state[0], 350, 1e-7);
 }
 
-TEST(Project, RejectsDuplicateIdentityAndOverlappingContacts)
+TEST(Project, RejectsOverlappingContactsAndInvalidInterfaceGroups)
 {
     const auto fom = cube();
     EXPECT_THROW(
-        mhs::compiler::compile_project({{instance(1, fom), instance(1, fom, {1, 0, 0})}, {}}), std::invalid_argument);
-    EXPECT_THROW(mhs::compiler::compile_project(
-                     {{instance(1, fom), instance(2, fom, {1, 0, 0}), instance(3, fom, {1, 0.2, 0})}, {}}),
+        mhs::compiler::compile_project({{instance(fom), instance(fom, {1, 0, 0}), instance(fom, {1, 0.2, 0})}, {}}),
         std::invalid_argument);
     auto e = modal();
     e->interfaces[1].boundary_group = 0;
-    EXPECT_THROW(mhs::compiler::compile_project({{instance(1, e)}, {}}), std::invalid_argument);
+    EXPECT_THROW(mhs::compiler::compile_project({{instance(e)}, {}}), std::invalid_argument);
 }

@@ -50,8 +50,6 @@ namespace mhs::solver {
     /// Validates initial_state size when provided.
     /// Internally assembles the thermal system, runs nonlinear iteration
     /// and time integration, and records probes.
-    mhs::solver::Solution solve(const mhs::model::Fom& model, const mhs::solver::Study& study = {},
-        std::span<const double> initial_state = {}, const SolveOptions& options = {});
     Solution solve(const model::Project& project, const Study& study = {}, std::span<const double> initial_state = {},
         const SolveOptions& options = {});
 

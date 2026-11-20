@@ -1,5 +1,4 @@
 #include "solver/solve.hpp"
-#include "compiler/project_compiler.hpp"
 #include "core/csr_ops.hpp"
 #include "core/vector.hpp"
 #include "logging/logger.hpp"
@@ -66,7 +65,7 @@ namespace mhs::solver {
                 return {initial_state.begin(), initial_state.end()};
             }
 
-            core::Vector<double> state(count, study.initial_temperature);
+            core::Vector<double> state(count);
             const auto components = project.components();
             for (std::size_t i = 0; i < components.size(); ++i)
                 if (const auto* asset = std::get_if<std::shared_ptr<const model::Erom>>(&components[i].asset)) {
@@ -75,6 +74,8 @@ namespace mhs::solver {
                     std::ranges::transform(e.uniform_temperature_mode, state.begin() + project.dof_offset(i),
                         [delta](double weight) { return delta * weight; });
                 }
+                else
+                    std::fill_n(state.begin() + project.dof_offset(i), project.dof_size(i), study.initial_temperature);
             return state;
         }
 
@@ -190,14 +191,6 @@ namespace mhs::solver {
         if (study.type == mhs::solver::StudyType::Steady)
             return solve_steady(assemble, std::move(state), solver, nl_config, observe, opts.store_snapshot_states);
         return solve_transient(study, assemble, std::move(state), solver, opts, nl_config, observe);
-    }
-
-    mhs::solver::Solution solve(const mhs::model::Fom& model, const mhs::solver::Study& study,
-        std::span<const double> initial_state, const SolveOptions& options)
-    {
-        // The single-component project borrows the model for this synchronous call.
-        const std::shared_ptr<const model::Fom> asset(std::shared_ptr<const model::Fom> {}, &model);
-        return solve(compiler::compile_project({{{0, {}, asset, {}, {}}}, {}}), study, initial_state, options);
     }
 
     Solution solve(const model::Project& project, const Study& study, std::span<const double> initial_state,
