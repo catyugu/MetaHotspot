@@ -16,7 +16,7 @@ namespace mhs::app::erom {
         Matrix B;
         struct HtcGroup {
             model::EromBoundaryGroup boundary_group;
-            core::Vector<Eigen::Index> interfaces;
+            Eigen::Index begin, end;
         };
         double reference_temperature;
         core::Vector<HtcGroup> training;
