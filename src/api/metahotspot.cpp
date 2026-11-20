@@ -542,6 +542,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(out);
     out->cell_count = c->model().discrete.cells.size();
     out->facet_count = c->model().discrete.facets.size();
+    out->projection_count = c->model().source_terms.size();
     out->source_count = c->model().heat_source_table.size();
     out->reference_temperature = c->model().reference_temperature;
 
@@ -591,11 +592,12 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
     CHECK_NULL(fields);
     const auto& model = c->model();
     const auto& mesh = model.discrete;
-    if (fields->cell_count != mesh.cells.size() || fields->facet_count != mesh.facets.size()) {
+    if (fields->cell_count != mesh.cells.size() || fields->facet_count != mesh.facets.size()
+        || fields->projection_count != model.source_terms.size()) {
         SET_ERR("compiled fields buffer sizes do not match compiled model");
         return MHS_ERROR;
     }
-    if (fields->cell_count && (!fields->cell_min || !fields->cell_max || !fields->material_id || !fields->source_id)) {
+    if (fields->cell_count && (!fields->cell_min || !fields->cell_max || !fields->material_id)) {
         SET_ERR("NULL cell field buffer");
         return MHS_ERROR;
     }
@@ -605,13 +607,18 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
         SET_ERR("NULL facet field buffer");
         return MHS_ERROR;
     }
+    if (fields->projection_count
+        && (!fields->projection_cell || !fields->projection_source || !fields->projection_volume
+            || !fields->projection_center)) {
+        SET_ERR("NULL projection field buffer");
+        return MHS_ERROR;
+    }
     for (size_t cidx = 0; cidx < mesh.cells.size(); ++cidx) {
         for (size_t a = 0; a < 3; ++a) {
             fields->cell_min[3 * cidx + a] = mesh.cells[cidx].min[a];
             fields->cell_max[3 * cidx + a] = mesh.cells[cidx].max[a];
         }
-        fields->material_id[cidx] = model.cell_assignment[cidx].material;
-        fields->source_id[cidx] = model.cell_assignment[cidx].source;
+        fields->material_id[cidx] = model.cell_material[cidx];
     }
     for (size_t id = 0; id < mesh.facets.size(); ++id) {
         const auto& facet = mesh.facets[id];
@@ -622,29 +629,34 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
         for (size_t a = 0; a < 4; ++a)
             fields->facet_bounds[4 * id + a] = facet.bounds[a];
     }
+    for (size_t id = 0; id < model.source_terms.size(); ++id) {
+        const auto& term = model.source_terms[id];
+        fields->projection_cell[id] = term.cell;
+        fields->projection_source[id] = term.source;
+        const auto& cell = model.discrete.cells[term.cell];
+        fields->projection_volume[id] = cell.volume();
+        const auto center = cell.center();
+        std::ranges::copy(center, fields->projection_center + 3 * id);
+    }
     mhs_detail_clear_last_error();
     return MHS_OK;
 }
 
-MHS_API mhs_status_t mhs_compiled_eval_source_terms(
-    const mhs_compiled_t* c, const double* state, size_t state_count, double time, double* powers, size_t power_count)
+MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, const double* state, size_t state_count,
+    double time, double* powers, size_t projection_count)
 {
     CHECK_NULL(c);
     CHECK_NULL(state);
-    if (power_count) {
+    if (projection_count) {
         CHECK_NULL(powers);
     }
     MHS_TRY({
         const auto& model = c->model();
-        if (state_count != model.discrete.cells.size() || power_count != model.discrete.cells.size())
-            throw std::invalid_argument("source power buffer size mismatch");
-        for (size_t i = 0; i < power_count; ++i) {
-            const auto source = model.cell_assignment[i].source;
-            const auto& cell = model.discrete.cells[i];
-            const auto p = cell.center();
-            powers[i] = source == mhs::core::invalid_id
-                ? 0.0
-                : cell.volume() * model.heat_source_table[source].eval({p[0], p[1], p[2], state[i], time});
+        if (state_count != model.discrete.cells.size() || projection_count != model.source_terms.size())
+            throw std::invalid_argument("source projection buffer size mismatch");
+        for (size_t i = 0; i < projection_count; ++i) {
+            const auto& term = model.source_terms[i];
+            powers[i] = mhs::solver::source_power(model, term, state[term.cell], time);
         }
     });
 }
@@ -670,7 +682,7 @@ MHS_API mhs_status_t mhs_compiled_eval_materials(const mhs_compiled_t* c, const 
     MHS_TRY({
         for (std::size_t cell = 0; cell < mesh.cells.size(); ++cell) {
             const auto p = mesh.cells[cell].center();
-            const auto& props = model.material_table[model.cell_assignment[cell].material];
+            const auto& props = model.material_table[model.cell_material[cell]];
             const auto dof = cell;
             const mhs::expression::FieldContext context {p[0], p[1], p[2], temperature[dof], time};
             values->conductivity_x[cell] = props.kx.eval(context);

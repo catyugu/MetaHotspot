@@ -148,7 +148,7 @@ typedef struct {
 
 /** Explicit compiled geometry sizes. State order is CellId order. */
 typedef struct {
-    size_t cell_count, facet_count, source_count;
+    size_t cell_count, facet_count, projection_count, source_count;
     double reference_temperature;
 } mhs_compiled_info_t;
 
@@ -159,21 +159,24 @@ typedef struct {
  * runs facet_minus -> facet_plus along facet_axis. Exterior facets
  * have exactly one MHS_INVALID_INDEX cell; the missing side determines the normal. */
 typedef struct {
-    size_t cell_count, facet_count;
+    size_t cell_count, facet_count, projection_count;
     double* cell_min;
     double* cell_max;
     mhs_index_t* material_id;
-    mhs_index_t* source_id; /* per cell; MHS_INVALID_INDEX when absent */
     mhs_index_t* facet_minus;
     mhs_index_t* facet_plus;
     mhs_axis_t* facet_axis;
     double* facet_coordinate;
     double* facet_bounds;
+    mhs_index_t* projection_cell;
+    mhs_index_t* projection_source;
+    double* projection_volume;
+    double* projection_center;
 } mhs_compiled_fields_t;
 
-/** Evaluate integrated source power per cell at supplied state/time; zero for cells without a source. */
-MHS_API mhs_status_t mhs_compiled_eval_source_terms(
-    const mhs_compiled_t* c, const double* state, size_t state_count, double time, double* powers, size_t power_count);
+/** Evaluate power in each geometric volume-projection term at supplied state/time. */
+MHS_API mhs_status_t mhs_compiled_eval_source_terms(const mhs_compiled_t* c, const double* state, size_t state_count,
+    double time, double* powers, size_t projection_count);
 
 /** Caller-owned buffers for material values evaluated at a supplied state/time. */
 typedef struct {

@@ -116,8 +116,8 @@ namespace mhs::compiler {
 
         // Compile boundary patches.
         compile_conformal_mesh(model, mesh, definition.volumes);
-        for (const auto& cell : model.cell_assignment)
-            if (cell.material >= model.material_table.size())
+        for (const auto material : model.cell_material)
+            if (material >= model.material_table.size())
                 throw std::out_of_range("cell has no valid material assignment");
 
         // Canonical geometric partition shared by all boundary physics.

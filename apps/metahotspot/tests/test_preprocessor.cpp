@@ -36,7 +36,13 @@ static const Condition* find_condition(const Fom& model, std::size_t cell_idx, F
     return nullptr;
 }
 
-static SourceId source_id(const Fom& model, std::size_t cell) { return model.cell_assignment.at(cell).source; }
+static SourceId source_id(const Fom& model, std::size_t cell)
+{
+    for (const auto& term : model.source_terms)
+        if (term.cell == cell)
+            return term.source;
+    throw std::logic_error("missing source projection");
+}
 
 // Helper: build a minimal mhs::app::pta::Definition for testing
 static mhs::app::pta::Definition make_simple_io()
@@ -446,7 +452,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     const auto c_overlap = input_cell(model, io.mesh, idx_overlap);
 
     const mhs::expression::FieldContext ctx {0.025, 0.025, 0.005, 300.0, 0.0};
-    const auto overlap_material = model.cell_assignment[c_overlap].material;
+    const auto overlap_material = model.cell_material[c_overlap];
     const auto overlap_heat_source = source_id(model, c_overlap);
     EXPECT_DOUBLE_EQ(model.material_table[overlap_material].kx.eval(ctx), 130.0)
         << "Overlapping cell must get material from the later block";
@@ -456,7 +462,7 @@ TEST(PreprocessorTest, LaterBlockOverridesEarlierBlockInOverlap)
     // Cell (ix=1, iy=0, iz=0): cx=75mm, cy=25mm — only in block1 (copper)
     const auto idx_only_block1 = 1 * ny * nz + 0 * nz + 0;
     const auto c_only_block1 = input_cell(model, io.mesh, idx_only_block1);
-    const auto background_material = model.cell_assignment[c_only_block1].material;
+    const auto background_material = model.cell_material[c_only_block1];
     const auto background_heat_source = source_id(model, c_only_block1);
     EXPECT_DOUBLE_EQ(model.material_table[background_material].kx.eval(ctx), 400.0)
         << "Cell outside the overlap must retain the earlier block material";

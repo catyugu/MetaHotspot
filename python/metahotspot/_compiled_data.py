@@ -18,14 +18,17 @@ class Operators(NamedTuple):
 
 @dataclass(frozen=True)
 class CompiledFields:
-    """Compiled geometry, material and source indices in cell order."""
+    """Compiled geometry, material indices and source quadrature in CellId order."""
 
     cell_min: np.ndarray
     cell_max: np.ndarray
     material_id: np.ndarray
-    source_id: np.ndarray
     facet_minus: np.ndarray
     facet_plus: np.ndarray
     facet_axis: np.ndarray
     facet_coordinate: np.ndarray
     facet_bounds: np.ndarray
+    projection_cell: np.ndarray
+    projection_source: np.ndarray
+    projection_volume: np.ndarray
+    projection_center: np.ndarray

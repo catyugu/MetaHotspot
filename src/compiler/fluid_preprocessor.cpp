@@ -23,7 +23,7 @@ namespace mhs::compiler::fluid {
         fluid.global_to_fluid.assign(mesh.cells.size(), mhs::core::invalid_id);
         mhs::core::Vector<double> viscosity;
         for (std::size_t c = 0; c < mesh.cells.size(); ++c) {
-            const auto mat = model.cell_assignment[c].material;
+            const auto mat = model.cell_material[c];
             if (mat >= initial_viscosity.size() || model.material_table[mat].kind != MaterialKind::Fluid)
                 continue;
             fluid.global_to_fluid[c] = static_cast<FluidCellId>(fluid.fluid_to_global.size());
@@ -78,7 +78,7 @@ namespace mhs::compiler::fluid {
             mobility[i] = diameter * diameter / (2 * f_re_rectangular(w, h) * viscosity[i]);
             const auto c = fluid.fluid_to_global[i];
             const auto p = mesh.cells[c].center();
-            rho[i] = model.material_table[model.cell_assignment[c].material].rho.eval(
+            rho[i] = model.material_table[model.cell_material[c]].rho.eval(
                 {p[0], p[1], p[2], model.reference_temperature, 0});
         }
         // Use canonical exterior facets. The thermal and hydraulic laws share

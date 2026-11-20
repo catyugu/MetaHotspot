@@ -76,13 +76,11 @@ namespace mhs::solver {
             const auto row = static_cast<SparseIndex>(c);
             const auto center = model.discrete.cells[c].center();
             const FieldContext ctx {center[0], center[1], center[2], temperature[row], time};
-            const auto& mat = model.material_table[model.cell_assignment[c].material];
+            const auto& mat = model.material_table[model.cell_material[c]];
             conductivity_[c] = {mat.kx.eval(ctx), mat.ky.eval(ctx), mat.kz.eval(ctx)};
             const auto volume = model.discrete.cells[c].volume();
             const double rho = mat.rho.eval(ctx), cp = mat.c.eval(ctx);
             operators_.C.values()[c] = rho * cp * volume;
-            if (const auto source = model.cell_assignment[c].source; source != invalid_id)
-                rhs[c] = volume * model.heat_source_table[source].eval(ctx);
             if (!density_.empty()) {
                 const auto fi = model.fluid.global_to_fluid[c];
                 if (fi != mhs::core::invalid_id) {
@@ -91,6 +89,8 @@ namespace mhs::solver {
                 }
             }
         }
+        for (const auto& term : model.source_terms)
+            rhs[term.cell] += source_power(model, term, temperature[term.cell], time);
         auto fluid_index = [&](CellId c) {
             return c < model.fluid.global_to_fluid.size() ? model.fluid.global_to_fluid[c] : mhs::core::invalid_id;
         };

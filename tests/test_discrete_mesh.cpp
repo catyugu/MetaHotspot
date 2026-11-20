@@ -39,7 +39,7 @@ TEST(DiscreteMesh, CartesianTopologyHasUniqueFacesAndClosedCellIncidence)
     const auto& mesh = model.discrete;
     ASSERT_EQ(mesh.cells.size(), 8u);
     ASSERT_EQ(mesh.facets.size(), 36u);
-    ASSERT_EQ(model.cell_assignment.size(), 8u);
+    ASSERT_EQ(model.cell_material.size(), 8u);
     std::size_t internal = 0;
     for (const auto& face : mesh.facets) {
         EXPECT_GT(face.area(), 0);
@@ -179,10 +179,9 @@ TEST(DiscreteMesh, SourcesIntegrateAcrossConformalCells)
     const auto ops = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300, 300}, 0);
     EXPECT_NEAR(std::accumulate(ops.f.begin(), ops.f.end(), 0.0), 3.5, 1e-13);
     ASSERT_EQ(model.discrete.cells.size(), 2u);
-    EXPECT_EQ(model.cell_assignment[0].source, 0u);
-    EXPECT_EQ(model.cell_assignment[1].source, 1u);
-    EXPECT_NEAR(model.discrete.cells[0].volume(), 0.25, 1e-14);
-    EXPECT_NEAR(model.discrete.cells[1].volume(), 0.75, 1e-14);
+    ASSERT_EQ(model.source_terms.size(), 2u);
+    EXPECT_NEAR(model.discrete.cells[model.source_terms[0].cell].volume(), 0.25, 1e-14);
+    EXPECT_NEAR(model.discrete.cells[model.source_terms[1].cell].volume(), 0.75, 1e-14);
 }
 
 TEST(DiscreteMesh, PartialDirichletUsesProjectedAreaForAssemblyAndSampling)

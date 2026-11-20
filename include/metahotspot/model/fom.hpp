@@ -41,9 +41,10 @@ namespace mhs::model {
         BoundaryCondition condition;
     };
 
-    struct CellAssignment {
-        MaterialId material = core::invalid_id;
-        SourceId source = core::invalid_id; // no volumetric source
+    // Midpoint quadrature on the owning cell. Several terms may target the same cell.
+    struct SourceTerm {
+        CellId cell = mhs::core::invalid_id;
+        SourceId source = mhs::core::invalid_id;
     };
 
     struct PointProbe {
@@ -55,9 +56,10 @@ namespace mhs::model {
     struct Fom {
         DiscreteMesh discrete;
 
-        mhs::core::Vector<CellAssignment> cell_assignment;
+        mhs::core::Vector<MaterialId> cell_material;
         mhs::core::Vector<MaterialProps> material_table;
         mhs::core::Vector<mhs::expression::CompiledExpression> heat_source_table;
+        mhs::core::Vector<SourceTerm> source_terms;
         mhs::core::Vector<BoundaryGroupId> facet_boundary_group; // invalid_id on interior facets
         mhs::core::Vector<FomBoundaryGroup> boundary_groups; // indexed by BoundaryGroupId
         FluidModel fluid;

@@ -65,7 +65,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     mhs::core::Vector<double> balance(model.discrete.cells.size(), 0);
     auto density = [&](mhs::model::CellId cell) {
         const auto p = model.discrete.cells[cell].center();
-        return model.material_table[model.cell_assignment[cell].material].rho.eval(
+        return model.material_table[model.cell_material[cell]].rho.eval(
             {p[0], p[1], p[2], model.reference_temperature, 0});
     };
     bool nonzero = false;
@@ -92,8 +92,7 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     // Suppress diffusion/sources to inspect advection through the main assembler.
     auto transport = model;
     std::fill(transport.facet_boundary_group.begin(), transport.facet_boundary_group.end(), mhs::core::invalid_id);
-    for (auto& cell : transport.cell_assignment)
-        cell.source = mhs::core::invalid_id;
+    transport.source_terms.clear();
     for (auto& material : transport.material_table)
         material.kx = material.ky = material.kz = mhs::expression::CompiledExpression::make_constant(0);
     const auto normal = mhs::solver::assemble_thermal(transport, state, 0);

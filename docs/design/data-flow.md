@@ -21,7 +21,7 @@
 | PTA 几何解析 | Layer / Block / Rect 和几何变量、算术表达式 | 应用层独立求值为 SI 米下的区域；同层后出现的 Block 覆盖前者，核心仅接收数值几何 |
 | 网格输入 | 独立的 Cartesian `MeshSpec` 与物理区域 | `DiscreteMesh`：单元边界、初始有向 Facet 几何 |
 | 网格契约 | 控制体与面片几何、连接 | 验证坐标轴有限且严格递增；生成控制体及有向面片，边界细分后统一构建 CSR 关联 |
-| 共形体区域编译 | Cartesian `MeshSpec` 与物理区域 | 检查内部盒面与网格平面对齐；生成单元时直接写入 `cell_assignment`（材料与可选源下标） |
+| 共形体区域编译 | Cartesian `MeshSpec` 与物理区域 | 检查内部盒面与网格平面对齐；生成单元时直接写入 `cell_material` 和 `source_terms` |
 | 边界细分与绑定 | 外露 Facet 与热、流体边界区域 | 在几何编译阶段共同切分外部 Facet，统一构建 Cell–Facet 关联；热学、流体边界分别按 FacetId 绑定，区域后者覆盖前者 |
 | 表达式编译 | 材料、源、边界运行时表达式 | `CompiledExpression`；线程模型见 [expr-api.md](expr-api.md) |
 | 流体预处理 | 流体材料、规范化 Facet 与流体边界赋值 | 共享 FacetId 和面积，求解临时压力场后生成逐 Facet 的体积流量、边界质量流率与入口温度及流固换热因子 |

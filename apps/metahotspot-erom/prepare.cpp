@@ -108,9 +108,7 @@ namespace mhs::app::erom {
         if (mesh.cells.empty() || !model.fluid.fluid_to_global.empty())
             throw std::invalid_argument("EROM extraction requires a nonempty solid FOM");
 
-        std::set<MaterialId> used_materials;
-        for (const auto& cell : model.cell_assignment)
-            used_materials.insert(cell.material);
+        const std::set<MaterialId> used_materials(model.cell_material.begin(), model.cell_material.end());
         for (const auto id : used_materials) {
             const auto& material = model.material_table[id];
             for (const auto* property : {&material.kx, &material.ky, &material.kz, &material.rho, &material.c})
@@ -199,9 +197,8 @@ namespace mhs::app::erom {
         }
 
         core::Vector<double> volumes(model.heat_source_table.size());
-        for (std::size_t cell = 0; cell < model.cell_assignment.size(); ++cell)
-            if (const auto source = model.cell_assignment[cell].source; source != core::invalid_id)
-                volumes[source] += mesh.cells[cell].volume();
+        for (const auto& term : model.source_terms)
+            volumes[term.source] += mesh.cells[term.cell].volume();
         core::Vector<SourceId> columns(volumes.size(), core::invalid_id);
         for (SourceId id = 0; id < volumes.size(); ++id) {
             if (volumes[id] == 0)
@@ -218,15 +215,12 @@ namespace mhs::app::erom {
         }
 
         result.B = Matrix::Zero(n, static_cast<Eigen::Index>(result.sources.size()));
-        for (std::size_t cell = 0; cell < model.cell_assignment.size(); ++cell) {
-            const auto source = model.cell_assignment[cell].source;
-            if (source == core::invalid_id || columns[source] == core::invalid_id)
-                continue;
-            const auto col = columns[source];
-            const double weight = mesh.cells[cell].volume() / volumes[source];
-            result.B(cell, col) = weight;
-            weights.emplace_back(model.point_probes.size() + col, cell, weight);
-        }
+        for (const auto& term : model.source_terms)
+            if (const auto col = columns[term.source]; col != core::invalid_id) {
+                const double weight = mesh.cells[term.cell].volume() / volumes[term.source];
+                result.B(term.cell, col) += weight;
+                weights.emplace_back(model.point_probes.size() + col, term.cell, weight);
+            }
         result.L.resize(static_cast<Eigen::Index>(result.outputs.size()), n);
         result.L.setFromTriplets(weights.begin(), weights.end());
         return result;
