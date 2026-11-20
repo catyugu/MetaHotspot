@@ -541,7 +541,7 @@ MHS_API mhs_status_t mhs_compiled_get_info(const mhs_compiled_t* c, mhs_compiled
     CHECK_NULL(c);
     CHECK_NULL(out);
     out->cell_count = c->model().mesh.cell_count();
-    out->facet_count = c->model().mesh.facets.size();
+    out->facet_count = c->model().mesh.exterior_facets.size();
     out->projection_count = c->model().source_terms.size();
     out->source_count = c->model().heat_source_table.size();
     out->reference_temperature = c->model().reference_temperature;
@@ -592,7 +592,7 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
     CHECK_NULL(fields);
     const auto& model = c->model();
     const auto& mesh = model.mesh;
-    if (fields->cell_count != mesh.cell_count() || fields->facet_count != mesh.facets.size()
+    if (fields->cell_count != mesh.cell_count() || fields->facet_count != mesh.exterior_facets.size()
         || fields->projection_count != model.source_terms.size()) {
         SET_ERR("compiled fields buffer sizes do not match compiled model");
         return MHS_ERROR;
@@ -621,10 +621,11 @@ MHS_API mhs_status_t mhs_compiled_copy_fields(const mhs_compiled_t* c, mhs_compi
         }
         fields->material_id[cidx] = model.cell_material[cidx];
     }
-    for (size_t id = 0; id < mesh.facets.size(); ++id) {
-        const auto& facet = mesh.facets[id];
-        fields->facet_minus[id] = model.mesh.cell_facets[id].minus;
-        fields->facet_plus[id] = model.mesh.cell_facets[id].plus;
+    for (size_t id = 0; id < mesh.exterior_facets.size(); ++id) {
+        const auto& face = mesh.exterior_facets[id];
+        const auto& facet = face.geometry;
+        fields->facet_minus[id] = facet.normal > 0 ? face.owner : MHS_INVALID_INDEX;
+        fields->facet_plus[id] = facet.normal < 0 ? face.owner : MHS_INVALID_INDEX;
         fields->facet_axis[id] = static_cast<mhs_axis_t>(facet.axis);
         fields->facet_coordinate[id] = facet.coordinate;
         for (size_t a = 0; a < 4; ++a)

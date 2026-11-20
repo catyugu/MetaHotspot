@@ -3,9 +3,31 @@
 #include "model/constants.hpp"
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 
 namespace mhs::compiler {
+    namespace {
+        std::optional<std::size_t> classify_point(
+            const mhs::core::Vector<mhs::model::VolumeSpec>& volumes, const mhs::model::Vec3& p)
+        {
+            for (std::size_t i = volumes.size(); i-- > 0;) {
+                bool inside = false;
+                for (const auto& box : volumes[i].geometry) {
+                    bool contains = true;
+                    for (int a = 0; a < 3; ++a)
+                        contains = contains && p[a] >= box.min[a] - mhs::model::geometry_eps
+                            && p[a] <= box.max[a] + mhs::model::geometry_eps;
+                    if (contains)
+                        inside = box.operation == mhs::model::GeometryOperation::Add;
+                }
+                if (inside)
+                    return i;
+            }
+            return std::nullopt;
+        }
+    }
+
     // Conformal Cartesian cells: volume box faces inside the mesh must lie on input grid planes.
     void compile_conformal_mesh(mhs::model::Fom& model, const mhs::model::MeshSpec& input,
         const mhs::core::Vector<mhs::model::VolumeSpec>& volumes)
@@ -37,7 +59,13 @@ namespace mhs::compiler {
                             throw std::invalid_argument("volume geometry must align with Cartesian mesh vertices");
                     }
                 }
-        mesh.grid_to_cell.assign(n[0] * n[1] * n[2], invalid_id);
+        std::size_t grid_size = 1;
+        for (const auto extent : n) {
+            if (extent > mesh.grid_to_cell.max_size() / grid_size)
+                throw std::length_error("Cartesian mesh is too large");
+            grid_size *= extent;
+        }
+        mesh.grid_to_cell.assign(grid_size, invalid_id);
         for (std::size_t x = 0; x < n[0]; ++x)
             for (std::size_t y = 0; y < n[1]; ++y)
                 for (std::size_t z = 0; z < n[2]; ++z) {
@@ -47,7 +75,9 @@ namespace mhs::compiler {
                     const auto owner = classify_point(volumes, center);
                     if (!owner)
                         continue;
-                    const auto cell_id = static_cast<CellId>(model.mesh.cell_count());
+                    if (mesh.cell_count() == invalid_id)
+                        throw std::length_error("too many active Cartesian cells");
+                    const auto cell_id = static_cast<CellId>(mesh.cell_count());
                     const auto index = mesh.grid_index(x, y, z);
                     mesh.grid_to_cell[index] = cell_id;
                     mesh.cell_to_grid.push_back(index);
@@ -61,21 +91,19 @@ namespace mhs::compiler {
                             && probe.point[2] >= cell.min[2] && probe.point[2] <= cell.max[2])
                             probe.cell = cell_id;
                 }
-        for (CellId c = 0; c < mesh.cell_count(); ++c)
+        for (CellId c = 0; c < mesh.cell_count(); ++c) {
+            const auto cell = mesh.cell(c);
             for (std::size_t a = 0; a < 3; ++a)
                 for (int sign : {-1, 1}) {
-                    const auto neighbor = mesh.neighbor(c, a, sign);
-                    if ((neighbor != mhs::core::invalid_id) && neighbor < c)
+                    if (mesh.neighbor(c, a, sign) != invalid_id)
                         continue;
-                    const auto& cell = model.mesh.cell(c);
-                    Facet f;
-                    f.normal = neighbor == invalid_id ? static_cast<std::int8_t>(sign) : 0;
-                    model.mesh.cell_facets.push_back(sign > 0 ? CellFacet {c, neighbor} : CellFacet {neighbor, c});
-                    f.axis = static_cast<Axis>(a);
-                    f.coordinate = sign > 0 ? cell.max[a] : cell.min[a];
-                    const auto [t, u] = tangential_axes(f.axis);
-                    f.bounds = {cell.min[t], cell.max[t], cell.min[u], cell.max[u]};
-                    model.mesh.facets.push_back(f);
+                    const auto axis = static_cast<Axis>(a);
+                    const auto [u, v] = tangential_axes(axis);
+                    mesh.exterior_facets.push_back(
+                        {{axis, static_cast<std::int8_t>(sign), sign > 0 ? cell.max[a] : cell.min[a],
+                             {cell.min[u], cell.max[u], cell.min[v], cell.max[v]}},
+                            c, invalid_id});
                 }
+        }
     }
 } // namespace mhs::compiler

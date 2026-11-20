@@ -27,25 +27,26 @@ namespace mhs::app::erom {
             const auto& probe = model.point_probes[id];
             if (probe.cell == core::invalid_id)
                 throw std::invalid_argument("cannot retain point probe outside the FOM: " + probe.name);
-            const auto facets = model.mesh.incident_facets(probe.cell);
             const auto& mesh = model.mesh;
+            const auto facets = mesh.boundary_ids(probe.cell);
             const auto center = mesh.cell(probe.cell).center();
-            const bool on_boundary = std::ranges::any_of(facets,
-                [&](FacetId f) { return mesh.cell_facets[f].exterior() && mesh.facets[f].contains(probe.point); });
-            std::set<CellId> support {probe.cell};
+            const bool on_boundary = std::ranges::any_of(
+                facets, [&](FacetId f) { return mesh.exterior_facets[f].geometry.contains(probe.point); });
             for (const auto f : facets) {
-                const auto& cells = mesh.cell_facets[f];
-                const auto& facet = mesh.facets[f];
-                if (!cells.exterior()) {
-                    support.insert(cells.minus == probe.cell ? cells.plus : cells.minus);
-                    continue;
-                }
+                const auto& face = mesh.exterior_facets[f];
+                const auto& facet = face.geometry;
                 const auto axis = static_cast<std::size_t>(facet.axis);
-                if (ranges.contains(model.facet_boundary_group[f])
+                if (ranges.contains(face.boundary_group)
                     && (on_boundary ? facet.contains(probe.point) : probe.point[axis] != center[axis]))
                     throw std::invalid_argument("probe " + probe.name
                         + " depends directly on HTC boundary temperature and cannot be represented by L");
             }
+            std::set<CellId> support {probe.cell};
+            if (!on_boundary)
+                for (std::size_t axis = 0; axis < 3; ++axis)
+                    for (int sign : {-1, 1})
+                        if (const auto neighbor = mesh.neighbor(probe.cell, axis, sign); neighbor != core::invalid_id)
+                            support.insert(neighbor);
             const solver::BoundarySampler adiabatic
                 = [&](FacetId, const Vec3*) { return solver::BoundaryEvaluation {.temperature = state[probe.cell]}; };
             for (const auto cell : support) {
@@ -60,13 +61,14 @@ namespace mhs::app::erom {
         {
             const auto axis = static_cast<std::size_t>(face.axis);
             // Compiled facet planes and active cells use the same mesh coordinates.
-            return face.normal != 0 && face.coordinate == (face.normal < 0 ? box.min[axis] : box.max[axis]);
+            return face.coordinate == (face.normal < 0 ? box.min[axis] : box.max[axis]);
         }
 
         bool covered_by_box_faces(const ConformalMesh& mesh, const SurfaceRegion& region, const CellGeometry& box)
         {
             double covered = 0;
-            for (const auto& f : mesh.facets) {
+            for (const auto& face : mesh.exterior_facets) {
+                const auto& f = face.geometry;
                 if (f.axis != region.axis || std::abs(f.coordinate - region.coordinate) >= geometry_eps)
                     continue;
                 if (const auto hit = rect_intersection(f.bounds, region.bounds)) {
@@ -118,9 +120,8 @@ namespace mhs::app::erom {
         }
 
         core::Vector<core::Vector<FacetId>> facets_by_surface(model.boundary_groups.size());
-        for (std::size_t id = 0; id < model.facet_boundary_group.size(); ++id)
-            if (const auto surface = model.facet_boundary_group[id]; surface != core::invalid_id)
-                facets_by_surface[surface].push_back(static_cast<FacetId>(id));
+        for (FacetId id = 0; id < mesh.exterior_facets.size(); ++id)
+            facets_by_surface[mesh.exterior_facets[id].boundary_group].push_back(id);
         auto bounds = mesh.cell(0);
         for (std::size_t c = 1; c < mesh.cell_count(); ++c) {
             const auto cell = mesh.cell(c);
@@ -137,7 +138,7 @@ namespace mhs::app::erom {
                     definition.thermal_boundaries[id].regions,
                     [&](const auto& region) { return !covered_by_box_faces(mesh, region, bounds); });
             if (invalid_regions || std::ranges::any_of(facets_by_surface[id], [&](FacetId f) {
-                    return !on_box_face(mesh.facets[f], bounds);
+                    return !on_box_face(mesh.exterior_facets[f].geometry, bounds);
                 }))
                 throw std::invalid_argument(
                     "HTC group " + std::to_string(id) + " must lie entirely on the faces of the FOM bounding box");
@@ -178,14 +179,14 @@ namespace mhs::app::erom {
                 training.interfaces.reserve(facets.size());
                 for (const auto id : facets) {
                     training.interfaces.push_back(static_cast<Eigen::Index>(result.interfaces.size()));
-                    result.interfaces.push_back({mesh.facets[id], assembler.resistance(id), group});
-                    result.boundary_cells.push_back(mesh.cell_facets[id].owner());
+                    result.interfaces.push_back({mesh.exterior_facets[id].geometry, assembler.resistance(id), group});
+                    result.boundary_cells.push_back(mesh.exterior_facets[id].owner);
                 }
             }
             else {
                 core::Vector<Facet> geometry;
                 for (const auto id : facets)
-                    geometry.push_back(mesh.facets[id]);
+                    geometry.push_back(mesh.exterior_facets[id].geometry);
                 result.outline.push_back({name, outline(std::move(geometry))});
             }
         }

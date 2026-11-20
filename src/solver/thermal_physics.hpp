@@ -31,17 +31,16 @@ namespace mhs::solver {
 
     inline double boundary_resistance(const model::Fom& fom, model::FacetId id, double k)
     {
-        const auto cell = fom.mesh.cell_facets[id].owner();
-        const auto axis = static_cast<std::size_t>(fom.mesh.facets[id].axis);
-        return side_thermal_resistance(fom.mesh.cell(cell).size()[axis] / 2, k);
+        const auto& facet = fom.mesh.exterior_facets[id];
+        const auto axis = static_cast<std::size_t>(facet.geometry.axis);
+        return side_thermal_resistance(fom.mesh.cell_width(facet.owner, axis) / 2, k);
     }
 
     inline double boundary_resistance(const model::Fom& fom, model::FacetId id, double temperature, double time)
     {
-        const auto& facet = fom.mesh.facets[id];
-        return boundary_resistance(fom, id,
-            cell_conductivity(
-                fom, fom.mesh.cell_facets[id].owner(), static_cast<std::size_t>(facet.axis), temperature, time));
+        const auto& facet = fom.mesh.exterior_facets[id];
+        const auto axis = static_cast<std::size_t>(facet.geometry.axis);
+        return boundary_resistance(fom, id, cell_conductivity(fom, facet.owner, axis, temperature, time));
     }
 
     inline double convection_conductance(double area, double h, double resistance)
@@ -54,10 +53,9 @@ namespace mhs::solver {
     // Fluid bulk-to-wall film resistance, separate from the conductive side law.
     inline double fluid_film_resistance(double nu_over_d, double k) { return 1.0 / (nu_over_d * k); }
 
-    // Unit-area resistances from the minus/plus cell centers to an interior
-    // facet. For solid-fluid interfaces the fluid-side resistance is the film.
-    std::pair<double, double> interior_facet_resistances(
-        const mhs::model::Fom& model, mhs::model::FacetId id, double k_minus, double k_plus);
+    // Unit-area resistances to the shared face, with a film on the fluid side of a solid-fluid interface.
+    std::pair<double, double> interior_resistances(
+        const model::Fom& model, model::CellId i, model::CellId j, std::size_t axis, double ki, double kj);
 
     // Algebraic elimination of an external boundary's surface temperature.
     struct BoundaryEvaluation {

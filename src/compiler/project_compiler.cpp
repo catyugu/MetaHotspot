@@ -175,9 +175,11 @@ namespace mhs::compiler {
                                 append(core::invalid_id, f, group, asset->outline[group].name, true);
                     }
                     else {
-                        for (FacetId id = 0; id < asset->facet_boundary_group.size(); ++id)
-                            if (const auto surface = asset->facet_boundary_group[id]; surface != core::invalid_id)
-                                append(id, asset->mesh.facets[id], surface, asset->boundary_groups[surface].name);
+                        for (FacetId id = 0; id < asset->mesh.exterior_facets.size(); ++id) {
+                            const auto& face = asset->mesh.exterior_facets[id];
+                            append(id, face.geometry, face.boundary_group,
+                                asset->boundary_groups[face.boundary_group].name);
+                        }
                     }
                 },
                 component.asset);
@@ -233,7 +235,7 @@ namespace mhs::compiler {
                     [&](const auto& asset) -> const Facet& {
                         using Asset = typename std::decay_t<decltype(asset)>::element_type;
                         if constexpr (std::is_same_v<Asset, const Fom>)
-                            return asset->mesh.facets[face];
+                            return asset->mesh.exterior_facets[face].geometry;
                         else
                             return asset->interfaces[face].facet;
                     },

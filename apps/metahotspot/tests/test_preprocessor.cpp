@@ -13,8 +13,8 @@ enum class FaceDir { XM, XP, YM, YP, ZM, ZP };
 // Select a canonical exterior facet by its owner cell and outward direction.
 static FacetId find_boundary_facet(const Fom& model, std::size_t cell_idx, FaceDir dir)
 {
-    for (auto id : model.mesh.incident_facets(static_cast<CellId>(cell_idx))) {
-        const auto& facet = model.mesh.facets[id];
+    for (auto id : model.mesh.boundary_ids(static_cast<CellId>(cell_idx))) {
+        const auto& facet = model.mesh.exterior_facets[id].geometry;
         if (static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
             && facet.normal == (static_cast<int>(dir) % 2 ? 1 : -1))
             return id;
@@ -25,12 +25,12 @@ static FacetId find_boundary_facet(const Fom& model, std::size_t cell_idx, FaceD
 template <typename Condition>
 static const Condition* find_condition(const Fom& model, std::size_t cell_idx, FaceDir dir)
 {
-    for (auto id : model.mesh.incident_facets(static_cast<CellId>(cell_idx))) {
-        const auto& facet = model.mesh.facets[id];
+    for (auto id : model.mesh.boundary_ids(static_cast<CellId>(cell_idx))) {
+        const auto& facet = model.mesh.exterior_facets[id].geometry;
         if (static_cast<int>(facet.axis) == static_cast<int>(dir) / 2
             && facet.normal == (static_cast<int>(dir) % 2 ? 1 : -1))
-            if (auto* condition
-                = std::get_if<Condition>(&model.boundary_groups[model.facet_boundary_group[id]].condition))
+            if (auto* condition = std::get_if<Condition>(
+                    &model.boundary_groups[model.mesh.exterior_facets[id].boundary_group].condition))
                 return condition;
     }
     return nullptr;
@@ -132,9 +132,12 @@ TEST(PreprocessorTest, RectOperationsFollowAppendOrder)
 
     const auto model = test_pta::compile_fom(definition);
 
-    EXPECT_NE(model.mesh.grid_to_cell[0], mhs::core::invalid_id) << "The initial Add must keep the first cell";
-    EXPECT_EQ(model.mesh.grid_to_cell[1], mhs::core::invalid_id) << "The later Subtract must remove the middle cell";
-    EXPECT_NE(model.mesh.grid_to_cell[2], mhs::core::invalid_id) << "The final Add must restore the last cell";
+    EXPECT_EQ(model.mesh.grid_to_cell[0], 0u);
+    EXPECT_EQ(model.mesh.grid_to_cell[1], invalid_id);
+    EXPECT_EQ(model.mesh.grid_to_cell[2], 1u);
+    EXPECT_EQ(model.mesh.neighbor(0, 0, 1), invalid_id);
+    EXPECT_EQ(model.mesh.neighbor(1, 0, -1), invalid_id);
+    EXPECT_EQ(model.mesh.exterior_facets.size(), 12u);
 }
 
 TEST(PreprocessorTest, LayeredCutoutsPreservePhysicalDomain)

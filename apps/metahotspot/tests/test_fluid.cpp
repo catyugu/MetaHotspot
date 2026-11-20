@@ -9,7 +9,6 @@
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <limits>
-#include <type_traits>
 
 namespace {
 
@@ -53,7 +52,7 @@ TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 
     EXPECT_TRUE(model.fluid.fluid_to_global.empty());
     EXPECT_TRUE(model.fluid.global_to_fluid.empty());
-    EXPECT_TRUE(model.fluid.facet_volume_flux.empty());
+    EXPECT_TRUE(model.fluid.positive_volume_flux.empty());
     EXPECT_TRUE(model.fluid.interface_heat_transfer_factor.empty());
     EXPECT_TRUE(model.fluid.boundary_terms.empty());
 }
@@ -61,7 +60,7 @@ TEST(FluidModuleTest, SolidOnlyModelKeepsFluidDomainEmpty)
 TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
 {
     const auto model = load_microfluid_case();
-    ASSERT_EQ(model.fluid.facet_volume_flux.size(), model.mesh.facets.size());
+    ASSERT_EQ(model.fluid.positive_volume_flux.size(), model.fluid.fluid_to_global.size());
     mhs::core::Vector<double> balance(model.mesh.cell_count(), 0);
     auto density = [&](mhs::model::CellId cell) {
         const auto p = model.mesh.cell(cell).center();
@@ -69,29 +68,25 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
             {p[0], p[1], p[2], model.reference_temperature, 0});
     };
     bool nonzero = false;
-    for (std::size_t id = 0; id < model.mesh.facets.size(); ++id) {
-        const auto& f = model.mesh.cell_facets[id];
-        if (f.exterior())
-            continue;
-        const double mass = model.fluid.facet_volume_flux[id] * (density(f.minus) + density(f.plus)) / 2;
-        nonzero = nonzero || std::abs(mass) > 1e-20;
-        balance[f.minus] += mass;
-        balance[f.plus] -= mass;
+    for (std::size_t i = 0; i < model.fluid.fluid_to_global.size(); ++i) {
+        const auto cell = model.fluid.fluid_to_global[i];
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            const auto flux = model.fluid.positive_volume_flux[i][axis];
+            const auto neighbor = model.mesh.neighbor(cell, axis, 1);
+            if (neighbor == mhs::core::invalid_id || model.fluid.global_to_fluid[neighbor] == mhs::core::invalid_id) {
+                EXPECT_DOUBLE_EQ(flux, 0);
+                continue;
+            }
+            const double mass = flux * (density(cell) + density(neighbor)) / 2;
+            nonzero = nonzero || std::abs(mass) > 1e-20;
+            balance[cell] += mass;
+            balance[neighbor] -= mass;
+        }
     }
     double boundary_sum = 0;
     for (const auto& term : model.fluid.boundary_terms) {
-        const double mass = std::visit(
-            [](const auto& flow) {
-                using T = std::decay_t<decltype(flow)>;
-                EXPECT_GE(flow.mass_flow_rate, 0);
-                if constexpr (std::is_same_v<T, mhs::model::FluidInflow>)
-                    return -flow.mass_flow_rate;
-                else
-                    return flow.mass_flow_rate;
-            },
-            term.condition);
-        balance[model.mesh.cell_facets[term.facet].owner()] += mass;
-        boundary_sum += mass;
+        balance[term.cell] += term.mass_flow_rate;
+        boundary_sum += term.mass_flow_rate;
     }
     for (auto cell : model.fluid.fluid_to_global)
         EXPECT_NEAR(balance[cell], 0, 1e-12);
@@ -100,17 +95,19 @@ TEST(FluidModuleTest, FrozenFluxConservesMassAcrossCellsAndBoundaries)
     const mhs::core::Vector<double> state(model.mesh.cell_count(), 300);
     // Suppress diffusion/sources to inspect advection through the main assembler.
     auto transport = model;
-    std::fill(transport.facet_boundary_group.begin(), transport.facet_boundary_group.end(), mhs::core::invalid_id);
+    for (auto& boundary : transport.boundary_groups)
+        boundary.condition = mhs::model::Neumann {mhs::expression::CompiledExpression::make_constant(0)};
     transport.source_terms.clear();
     for (auto& material : transport.material_table)
         material.kx = material.ky = material.kz = mhs::expression::CompiledExpression::make_constant(0);
     const auto normal = mhs::solver::assemble_thermal(transport, state, 0);
     auto scaled = transport;
     constexpr double factor = 1e-20;
-    for (auto& flux : scaled.fluid.facet_volume_flux)
-        flux *= factor;
+    for (auto& flux : scaled.fluid.positive_volume_flux)
+        for (auto& q : flux)
+            q *= factor;
     for (auto& term : scaled.fluid.boundary_terms)
-        std::visit([](auto& flow) { flow.mass_flow_rate *= factor; }, term.condition);
+        term.mass_flow_rate *= factor;
     const auto tiny = mhs::solver::assemble_thermal(scaled, state, 0);
     auto compare_scaled = [&](std::span<const double> small, std::span<const double> full) {
         ASSERT_EQ(small.size(), full.size());
@@ -156,8 +153,8 @@ TEST(FluidModuleTest, PartialInletsAccumulateAndIgnoreThermalSubdivision)
     std::size_t side_facets = 0;
     double side_area = 0.0;
     bool has_cross_cut = false;
-    for (auto id : refined.mesh.incident_facets(0)) {
-        const auto& facet = refined.mesh.facets[id];
+    for (auto id : refined.mesh.boundary_ids(0)) {
+        const auto& facet = refined.mesh.exterior_facets[id].geometry;
         if (facet.axis != Axis::X || facet.normal != -1)
             continue;
         ++side_facets;
@@ -180,12 +177,12 @@ TEST(FluidModuleTest, PressureInletPumpResistanceIsLumpedAcrossFacetSplits)
     auto total_inflow = [](const mhs::model::Fom& model) {
         double inflow = 0, outflow = 0;
         for (const auto& term : model.fluid.boundary_terms) {
-            if (const auto* flow = std::get_if<FluidInflow>(&term.condition)) {
-                EXPECT_DOUBLE_EQ(flow->temperature, 280);
-                inflow += flow->mass_flow_rate;
+            if (term.mass_flow_rate < 0) {
+                EXPECT_DOUBLE_EQ(term.inlet_temperature, 280);
+                inflow -= term.mass_flow_rate;
             }
             else
-                outflow += std::get<FluidOutflow>(term.condition).mass_flow_rate;
+                outflow += term.mass_flow_rate;
         }
         EXPECT_NEAR(inflow, outflow, 1e-7);
         return inflow;
@@ -236,12 +233,11 @@ TEST(FluidModuleTest, PressureReversalUsesActualInflowTemperature)
         = {{{{Axis::X, 0, {0, 1, 0, 1}}}, PressureInlet {0, 280}}, {{{Axis::X, 1, {0, 1, 0, 1}}}, PressureOutlet {1}}};
     auto reverse = test_pta::compile_fom(d);
     ASSERT_EQ(reverse.fluid.boundary_terms.size(), 2);
-    for (const auto& term : reverse.fluid.boundary_terms) {
-        if (const auto* inflow = std::get_if<mhs::model::FluidInflow>(&term.condition))
-            EXPECT_DOUBLE_EQ(inflow->temperature, 300);
-    }
-    EXPECT_EQ(std::ranges::count_if(reverse.fluid.boundary_terms,
-                  [](const auto& term) { return std::holds_alternative<mhs::model::FluidInflow>(term.condition); }),
+    for (const auto& term : reverse.fluid.boundary_terms)
+        if (term.mass_flow_rate < 0)
+            EXPECT_DOUBLE_EQ(term.inlet_temperature, 300);
+    EXPECT_EQ(
+        std::ranges::count_if(reverse.fluid.boundary_terms, [](const auto& term) { return term.mass_flow_rate < 0; }),
         1);
     auto verify_reverse = [&](const mhs::model::Fom& model, double temperature) {
         const auto inc = mhs::solver::assemble_thermal(model, mhs::core::Vector<double> {300}, 0);

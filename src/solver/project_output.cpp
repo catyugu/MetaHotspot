@@ -14,10 +14,11 @@ namespace mhs::solver {
                 return {};
             return [&project, &component, &m, i, state, local, time](
                        FacetId id, const Vec3* point) -> BoundaryEvaluation {
-                const auto& facet = m.mesh.facets[id];
-                const double temperature = local[m.mesh.cell_facets[id].owner()];
+                const auto& face = m.mesh.exterior_facets[id];
+                const auto& facet = face.geometry;
+                const double temperature = local[face.owner];
                 const double r = boundary_resistance(m, id, temperature, time);
-                const auto surface = m.facet_boundary_group[id];
+                const auto surface = face.boundary_group;
                 const auto& law
                     = *boundary_override(component.boundaries, surface, &m.boundary_groups[surface].condition);
                 auto ambient = [&](const Facet& patch) { return evaluate_boundary(law, patch, temperature, time, r); };

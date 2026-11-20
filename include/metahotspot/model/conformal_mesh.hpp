@@ -1,7 +1,7 @@
 #pragma once
 #include "core/vector.hpp"
 #include "model/surface.hpp"
-#include <span>
+#include <ranges>
 
 namespace mhs::model {
     struct CellGeometry {
@@ -20,16 +20,12 @@ namespace mhs::model {
         }
     };
 
-    // Positive axis points from minus to plus. An exterior facet has one missing cell.
-    struct CellFacet {
-        CellId minus = core::invalid_id, plus = core::invalid_id;
-
-        bool exterior() const { return minus == core::invalid_id || plus == core::invalid_id; }
-        CellId owner() const { return minus != core::invalid_id ? minus : plus; }
+    struct ExteriorFacet {
+        Facet geometry;
+        CellId owner;
+        BoundaryGroupId boundary_group;
     };
 
-    // Canonical integration geometry and cell-facet incidence. A physical boundary
-    // can be partitioned for multiple physics without duplicating facet geometry.
     struct ConformalMesh {
         std::array<core::Vector<double>, 3> vertices;
         core::Vector<CellId> grid_to_cell; // invalid_id at inactive grid positions
@@ -53,24 +49,31 @@ namespace mhs::model {
             return {{vertices[0][p[0]], vertices[1][p[1]], vertices[2][p[2]]},
                 {vertices[0][p[0] + 1], vertices[1][p[1] + 1], vertices[2][p[2] + 1]}};
         }
+        double cell_width(std::size_t id, std::size_t axis) const
+        {
+            const auto p = cell_to_grid[id] / stride(axis) % extent(axis);
+            return vertices[axis][p + 1] - vertices[axis][p];
+        }
         CellId neighbor(std::size_t id, std::size_t axis, int sign) const
         {
-            const auto stride = axis == 0 ? extent(1) * extent(2) : axis == 1 ? extent(2) : 1;
-            const auto index = cell_to_grid[id];
-            const auto position = index / stride % extent(axis);
+            const auto step = stride(axis), index = cell_to_grid[id];
+            const auto position = index / step % extent(axis);
             if (sign < 0)
-                return position == 0 ? core::invalid_id : grid_to_cell[index - stride];
-            return position + 1 == extent(axis) ? core::invalid_id : grid_to_cell[index + stride];
+                return position == 0 ? core::invalid_id : grid_to_cell[index - step];
+            return position + 1 == extent(axis) ? core::invalid_id : grid_to_cell[index + step];
         }
 
-        mhs::core::Vector<Facet> facets;
-        mhs::core::Vector<CellFacet> cell_facets; // same FacetId as facets
-        mhs::core::Vector<std::size_t> cell_facet_offsets;
-        mhs::core::Vector<FacetId> cell_facet_ids;
-        std::span<const FacetId> incident_facets(CellId c) const
+        core::Vector<ExteriorFacet> exterior_facets; // grouped by owner
+        core::Vector<FacetId> boundary_offsets;
+        auto boundary_ids(CellId cell) const
         {
-            return std::span(cell_facet_ids)
-                .subspan(cell_facet_offsets[c], cell_facet_offsets[c + 1] - cell_facet_offsets[c]);
+            return std::views::iota(boundary_offsets[cell], boundary_offsets[cell + 1]);
+        }
+
+    private:
+        std::size_t stride(std::size_t axis) const
+        {
+            return axis == 0 ? extent(1) * extent(2) : axis == 1 ? extent(2) : 1;
         }
     };
 } // namespace mhs::model

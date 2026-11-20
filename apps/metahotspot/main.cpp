@@ -47,7 +47,8 @@ int main(int argc, char* argv[])
         const auto project = mhs::compiler::compile_project({{{{}, asset, {}, {}}}, {}});
         const auto& model = *asset;
 
-        MHS_LOG_INFO("Compiled {} cells and {} facets", model.mesh.cell_count(), model.mesh.facets.size());
+        MHS_LOG_INFO(
+            "Compiled {} cells and {} exterior facets", model.mesh.cell_count(), model.mesh.exterior_facets.size());
 
         // Run simulation via the standard solve entry point
         MHS_LOG_INFO("Running simulation...");
