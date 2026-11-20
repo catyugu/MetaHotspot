@@ -42,10 +42,6 @@ namespace mhs::solver {
         const model::Project& project_;
         core::Vector<std::optional<ThermalAssembler>> thermal_;
         Operators operators_;
-        struct FixedContacts {
-            core::Vector<double> stiffness, load;
-        };
-        std::optional<FixedContacts> fixed_;
     };
 
     // Owning export for the C API and standalone operator inspection.
