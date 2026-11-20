@@ -68,35 +68,21 @@ namespace mhs::solver {
     BoundaryEvaluation evaluate_boundary(const model::BoundaryCondition& condition, const model::Facet& patch,
         double temperature, double time, double resistance);
 
-    // Return false from the visitor to stop at a matching patch.
-    inline bool visit_face_patches(
-        model::Facet facet, std::span<const model::FacePatch> patches, const auto& visit, bool include_contacts = true)
-    {
-        if (patches.empty())
-            return visit(facet, model::FacePatch::no_contact);
-        auto it
-            = include_contacts ? patches.begin() : std::ranges::partition_point(patches, &model::FacePatch::is_contact);
-        for (; it != patches.end(); ++it) {
-            facet.bounds = it->bounds;
-            if (!visit(facet, it->contact))
-                return false;
-        }
-        return true;
-    }
-
     inline std::pair<double, double> boundary_terms(
         model::Facet facet, std::span<const model::FacePatch> patches, const auto& evaluate)
     {
+        if (patches.empty()) {
+            const auto trace = evaluate(facet);
+            return {trace.conductance, trace.load};
+        }
         double conductance = 0, load = 0;
-        visit_face_patches(
-            facet, patches,
-            [&](const model::Facet& patch, std::size_t) {
-                const auto trace = evaluate(patch);
-                conductance += trace.conductance;
-                load += trace.load;
-                return true;
-            },
-            /*include_contacts=*/false);
+        for (auto it = std::ranges::partition_point(patches, &model::FacePatch::is_contact); it != patches.end();
+            ++it) {
+            facet.bounds = it->bounds;
+            const auto trace = evaluate(facet);
+            conductance += trace.conductance;
+            load += trace.load;
+        }
         return {conductance, load};
     }
 
