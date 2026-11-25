@@ -30,7 +30,7 @@
 
 ## 数据模型与计算流程
 
-`model::FomDefinition` 保存声明式输入，`compiler::compile_fom` 产生 `model::Fom`。后者持有 `ConformalMesh`、`FluidModel`、材料、边界和编译后表达式。PTA 语法、XML 兼容、节点采样和 VTU 输出全部位于 `apps/metahotspot`，使用 `mhs::app::*` 命名空间，不进入 SDK。`solver::Study` / `StudyType` 描述单次求解配置，领域表索引与 CellId/FacetId 归 model；实体索引表示与稀疏索引归 core。
+`model::FomDefinition` 保存声明式输入，`compiler::compile_fom` 产生 `model::Fom`。后者持有 `ConformalMesh`、`FluidModel`、材料、边界和编译后表达式。PTA 语法和 XML 兼容集中于 `apps/common/pta`，节点采样和 VTU 输出位于 `apps/metahotspot`。这些应用实现使用 `mhs::app::*` 命名空间，不进入 SDK。`solver::Study` / `StudyType` 描述单次求解配置，领域表索引与 CellId/FacetId 归 model；实体索引表示与稀疏索引归 core。
 
 求解入口为 `solver/solver.hpp`，配置为 `solver::SolveOptions`，结果为 `solver::Solution`。内部组装、物理场重建、历史状态与时间积分都归 solver。表达式模块不依赖 model，从而保持 `model → expression → core` 的单向关系。
 
@@ -38,4 +38,4 @@
 
 `apps/metahotspot` 由 `MHS_BUILD_APPS` 控制。内部静态目标 `metahotspot_frontend` 通过 `mhs::metahotspot` 消费主库。`apps/metahotspot/tests` 里的 PTA、采样及 XML 流体案例测试在 PTA 应用和测试同时启用时构建。`tests` 下的 `mhs_tests` 直接构造 SI 通用模型。
 
-`apps/metahotspot-erom` 由 `MHS_BUILD_EROM` 控制，导出独立的 `mhs::erom_extraction` 静态目标。入口接收 `FomDefinition`、`MeshSpec`、各组 HTC 范围和容差，库内完成模型编译、响应训练、输出校验和原生写出。提取库依赖 compiler 和 solver；`metahotspot-erom` 可执行目标和普通 PTA 应用共享 `apps/common/pta` 模型读取模块。tinyxml2 的实现对象编入 `mhs_io`，供原生 XML 读写与应用内部 XML 解析使用；其命名空间、头文件和 CMake 目标不进入 SDK 公共接口。`ReusableAmg` 和 Eigen 运算留在提取目标内部，每个实频移至多构建一次响应用预条件子。原生 EROM `.xml` 通过 `mhs::io::read_erom` 读取并校验，model、compiler 和 solver 均不依赖 io。
+`apps/metahotspot-erom` 由 `MHS_BUILD_EROM` 控制，导出独立的 `mhs::erom_extraction` 静态目标。入口接收 `FomDefinition`、`MeshSpec`、各组 HTC 范围和容差，库内完成模型编译、响应训练、输出校验和原生写出。提取库依赖 compiler 和 solver；`metahotspot-erom` 可执行目标和普通 PTA 应用共享 `apps/common/pta` 中的 `mhs_pta_io` 模块。tinyxml2 的实现对象编入 `mhs_io`，供原生 XML 读写与应用内部 XML 解析使用；其命名空间、头文件和 CMake 目标不进入 SDK 公共接口。`ReusableAmg` 和 Eigen 运算留在提取目标内部，每个实频移至多构建一次响应用预条件子。原生 EROM `.xml` 通过 `mhs::io::read_erom` 读取并校验，model、compiler 和 solver 均不依赖 io。

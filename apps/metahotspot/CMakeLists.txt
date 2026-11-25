@@ -1,12 +1,10 @@
 add_library(metahotspot_frontend STATIC
-    pta/xml_reader.cpp
-    pta/xml_writer.cpp
     output/vtu_writer.cpp
     postprocess.cpp
 )
 target_link_libraries(metahotspot_frontend
-    PUBLIC mhs_pta_model_io
-    PRIVATE mhs_tinyxml2_headers mhs_options
+    PUBLIC mhs_pta_io
+    PRIVATE mhs_options
 )
 target_include_directories(metahotspot_frontend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 

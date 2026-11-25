@@ -1,6 +1,5 @@
 #include "input.hpp"
-#include "pta/model_input.hpp"
-#include "pta/xml_helpers.hpp"
+#include "pta/xml.hpp"
 
 #include <charconv>
 #include <cmath>
