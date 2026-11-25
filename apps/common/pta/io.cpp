@@ -660,7 +660,6 @@ namespace mhs::app::pta {
         return {study, std::move(input.model), std::move(input.mesh)};
     }
 
-
     namespace {
 
         void refill_double_list(

@@ -145,7 +145,7 @@ namespace mhs::app::pta {
         public:
             explicit GeometryEvaluator(const mhs::core::Vector<VariableSpec>& variables);
             double evaluate(std::string_view expr) const;
-    
+
         private:
             std::unordered_map<std::string, double> values_;
         };
