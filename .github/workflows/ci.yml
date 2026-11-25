@@ -87,6 +87,12 @@ jobs:
       - run: >-
           python .github/scripts/check_build.py --config ${{ matrix.config }}
           --cmake-arg=-DMHS_SANITIZE=${{ matrix.sanitize }}
+      - name: Verify EROM-only build
+        if: matrix.config == 'Release'
+        run: |
+          cmake -S . -B build -DMHS_BUILD_APPS=OFF -DMHS_BUILD_EROM=ON
+          cmake --build build --target metahotspot-erom --parallel 4
+          build/apps/metahotspot-erom/metahotspot-erom --help
       - uses: actions/upload-artifact@v7
         if: matrix.config == 'Release'
         with:

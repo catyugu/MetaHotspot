@@ -2,7 +2,7 @@
 
 The C++ SDK compiles projects from reusable FOM and EROM assets. Each component
 is identified by its array index and stores a translation and optional surface laws. An EROM instance can
-also set a time-dependent power in watts for each source ID. FOM source and
+also set a time-dependent power in watts for each source ID; omitted schedules supply zero power. FOM source and
 material expressions use the FOM's local coordinates. Surface laws use the
 local quadrature point on each exposed patch.
 
@@ -12,7 +12,7 @@ local quadrature point on each exposed patch.
 
 using namespace mhs::model;
 
-auto package = read_erom("package.mherom");
+auto package = read_erom("package.xml");
 ProjectDefinition input;
 input.components.push_back({{0, 0, 0}, package});
 input.components.push_back({{0.1, 0, 0}, package});
@@ -50,58 +50,101 @@ contains `OutputTrace` values keyed by component and output ID. Set the C++ opti
 `store_snapshot_states=false` to retain these traces and the final state without
 storing every full state snapshot. The default preserves full histories.
 
+## Standalone PTA extraction
+
+```sh
+metahotspot-erom --input project.xml --output package.xml
+```
+
+Build/install the executable with `MHS_BUILD_EROM=ON`; it is independent of
+`MHS_BUILD_APPS`. The input is the ordinary PTA `Structure` XML document,
+augmented with one extraction configuration. No `StudyType`, transient study
+duration, precomputed simulation or separate geometry representation is
+required. The shared PTA reader evaluates geometry and converts lengths to SI.
+`GeneratedMesh` (three axis coordinate arrays) takes precedence over the
+legacy `Results/a:anyType/Mesh` when present and not nil. Mesh sources are not
+combined.
+
+```xml
+<EromExtraction version="1">
+    <Tolerance>1e-3</Tolerance>
+    <BoundaryGroups>
+        <BoundaryGroup index="0">
+            <HtcMin>1</HtcMin>
+            <HtcMax>10000</HtcMax>
+        </BoundaryGroup>
+    </BoundaryGroups>
+</EromExtraction>
+```
+
+`Tolerance` is optional (default 1e-3), finite and strictly between zero and
+one. At least one boundary group is required. `index` is the zero-based
+position of the original `Boundaries/Boundary` element, not the compiled
+group ID. References must be unique and identify explicit convection groups.
+HTC limits are finite positive SI W/(m² K), with max >= min. Every original
+region must have positive area, be covered by actual exterior facets and lie
+on one of the six planes of the active model AABB. A group may span multiple
+planes. Unselected groups (including recessed faces) remain fixed, not
+connectable.
+
+Explicit sources are declared in `HeatSources/HeatSource` using `Id` and
+`Name` and referenced by each `Block/HeatSourceId`. Source declarations
+determine channel order; multiple blocks sharing an ID share one channel.
+PowerDensity and legacy VolumetricHeatSource expressions for referenced
+sources are not evaluated or stored. A block without a source ID may have an
+absent or literal-zero legacy expression; other expressions are rejected to
+avoid silently discarding a source. Ordinary PTA simulations retain the
+legacy VolumetricHeatSource behavior. The CLI returns 0 on success, nonzero
+on failure; diagnostics go to stderr and successful extraction prints order,
+measured output error and elapsed time. Output replacement is atomic.
+
 ## Native C++ extraction
 
-Link the C++ caller against `mhs::erom_extraction` and supply its
-`FomDefinition` and `MeshSpec`. The target is part of the default SDK build.
-To build it without PTA, set `MHS_BUILD_EROM=ON` and `MHS_BUILD_APPS=OFF`.
-The extractor compiles the FOM, trains and validates it, and can write the
-result atomically as `.mherom`.
+Link against `mhs::erom_extraction` to supply a `FomDefinition`, `MeshSpec`,
+HTC ranges and tolerance directly. A selected group's ID is its index in
+`thermal_boundaries` (the implicit default group cannot be selected).
+All `FomDefinition::sources` referenced by active cells are explicit channels.
 
 ```cpp
 #include "erom/extraction.hpp"
 
 using namespace mhs::app::erom;
-// definition and mesh come from the caller.
-auto result = extract(definition, mesh, {{0, {5, 200}}, {1, {500}}}, 1e-3);
-write_erom("package.mherom", result.asset);
+auto result = extract(definition, mesh, {{0, {5, 200}}, {1, {500, 500}}}, 1e-3);
+write_erom("package.xml", result.asset);
 ```
 
-A group's ID is its index in `FomDefinition::thermal_boundaries`. The default
-group has ID `thermal_boundaries.size()`. Every region of a selected group
-must lie entirely on the boundary of the axis-aligned bounding box of the
-active FOM cells. A group may contain parts of several box faces, with every
-part covered by exterior mesh facets. Selecting any interior or recessed
-exterior facet, including exposed steps, rejects the group. The same rule
-applies when the default group is selected for training.
-EROM source, output and connectable group IDs are zero-based indices in their
-asset tables. Extraction assigns these indices after selecting powered sources
-and trained groups from the FOM.
+Extraction supports nonempty solid-only models and diagonal anisotropic
+conductivity. Material properties are sampled at their cell centers and
+boundary fields at facet centers with `T = InitialTemperature` (the FOM
+reference temperature), `t = 0`. Spatial variation is retained in the original
+coordinates. Invalid or nonfinite values and nonpositive material properties
+are rejected. A referenced fluid block is unsupported.
 
-Supply positive HTC limits in W/(m² K) for each training group. All compiled
-groups with nonzero HTC must be selected. A selected adiabatic group becomes
-connectable with zero default HTC. The original constant HTC and ambient are
-used on exposed areas. Unselected surfaces retain outline geometry for contact
-diagnostics.
+Unselected convection, prescribed-temperature, prescribed-flux and default
+boundary conditions are assembled using the frozen FOM discretization.
+Their conductance is included in the projected K and their temperature-rise
+load in the projected fixed load f. Each thermally disconnected region needs
+at least one positive fixed or trained conductance. Neumann flux alone does
+not anchor a region. At least one explicit trained group is still required.
 
-The extractor accepts one nonempty solid FOM with constant positive material
-properties and constant volumetric source densities. Each powered source group
-is an independent power channel with a volume-weighted mean temperature output.
-All point probes in the definition are retained using the FOM's Green–Gauss and
-boundary-trace reconstruction. The extractor rejects probes whose
-reconstruction depends directly on a replaceable boundary law. The asset
-initially uses the FOM reference temperature and stores the uniform mode for
-starting from other temperatures.
+Each explicit source with active cells uses a unit total-power spatial input:
+the weight of each cell is its volume divided by the sum of active volumes
+with that source ID. The source's volume-weighted mean temperature is also
+retained. Zero-power declarations are not removed. All omitted instance
+power schedules default to zero.
 
-Dirichlet conditions, nonzero Neumann fluxes, nonlinear or nonconstant physics,
-and regions with no HTC anchor are rejected during extraction. Dirichlet and
-Neumann laws can be applied to a trained EROM surface in the receiving project.
-Use `read_erom` to load the output into a project.
+All requested point probes use the frozen FOM Green–Gauss and boundary trace
+reconstruction. Their affine output offsets retain fixed boundary effects.
+Probes outside the active model or depending directly on a replaceable
+boundary trace are rejected with their names. After extraction, interface,
+outline and probe coordinates are translated by the active model's AABB
+minimum; no rotation, scaling or original origin is stored.
 
 Extraction uses the Extended-FANTASTIC response-space algorithm. Physical
-heat-source columns drive training. A thermally disconnected region with no
-heat source uses its physical ambient-temperature inputs on selected HTC
-surfaces, evaluated at each sampled HTC value. Global capacity-scaled spectral
+heat-source columns and a nonzero frozen fixed load drive training. A passive
+region uses its physical ambient-temperature inputs on selected HTC surfaces
+or its fixed conductance input if it has no trained surface. The actual
+frozen default load also supplies response snapshots when nonzero. Global capacity-scaled spectral
 estimates use a preconditioned low-end Rayleigh–Ritz iteration and restarted,
 reorthogonalized high-end Krylov iteration. Both require a checked eigenpair
 residual. Elliptic matching points are positive real shifts, evaluated with
@@ -127,39 +170,50 @@ compression and sampled output acceptance. Output validation uses independent
 AMG-CG FOM solves with a true relative residual at most the smaller of
 `1e-8` and one-thousandth of the extraction tolerance. It checks several
 settings in the training range and the default environment when anchored.
-At each sampled setting it exploits symmetry to solve per output when there
-are fewer outputs than independent inputs. The measured error is the
+At each sampled setting it validates individual power, ambient and fixed-load
+responses, exploiting symmetry to solve per output when there are fewer
+outputs than independent inputs. The default case uses zero explicit power,
+facet-level default HTC/ambient values and affine output offsets. The measured error is the
 temperature difference divided by the larger of one kelvin and the magnitude
 of the FOM temperature rise. Accuracy after embedding depends on the attached
 geometry and loads.
 
-## Native .mherom v4
+## Native EROM XML v1
 
-The binary stream is little-endian and unpadded. Counts and IDs are unsigned
-32-bit integers. Scalars and row-major matrix entries are IEEE 754 binary64.
-Strings are UTF-8 bytes preceded by a 32-bit byte count.
+The root is `<Erom version="1">`, encoded as UTF-8. All geometry and thermal
+quantities use SI units. Numeric arrays are whitespace-separated decimal
+values, row-major for matrices, written at double max_digits10 precision
+independently of locale. Matrix attributes are `rows` and `cols`; vector
+attributes are `size`. Zero-column and zero-row matrices are valid.
 
-| Order | Record | Layout |
-| --- | --- | --- |
-| 1 | Header | Eight bytes `MHEROM\r\n`, version `4`, then counts `n, ns, no, nb, ng, nl` |
-| 2 | Temperature | Reference temperature |
-| 3 | Operators | `K[n,n], C[n,n], B[n,ns], L[no,n], Vb[nb,n]` |
-| 4 | Initialization | Uniform mode of length `n` |
-| 5 | Interfaces | `nb` records of facet geometry, area-specific half-cell resistance and HTC group index |
-| 6 | HTC groups | `ng` records of name and four scalars (HTC min, max, default and ambient temperature) |
-| 7 | Outline | `nl` records of group name, facet count and facet geometries |
-| 8 | Sources | `ns` records of name and default power in watts |
-| 9 | Outputs | `no` records of name and a 32-bit point flag (0 or 1). A flag of 1 is followed by three component-local coordinates; averaged outputs have no point |
+| Required element | Contents |
+| --- | --- |
+| ReferenceTemperature | Reference temperature in K |
+| Operators | K[n,n], C[n,n], B[n,ns], L[no,n], Vb[nb,n], FixedLoad[n], OutputOffset[no] |
+| UniformTemperatureMode | Vector of length n |
+| BoundaryGroups | BoundaryGroup records: id, name, htcMin, htcMax |
+| Interfaces | Interface records: boundary, resistance, defaultHtc, ambientTemperature, facet attributes |
+| Outline | Group records (name), each containing Facet records |
+| Sources | Source records: id, name |
+| Outputs | Output records: id, name, optional x/y/z coordinates (all three or none) |
 
-Facet geometry contains axis (0/1/2), outward normal (0 for −, 1 for +),
-plane coordinate and four tangent bounds. Interface records correspond
-one-to-one to rows of `Vb`. Outline geometry is used for contact diagnostics.
-Averaged outputs retain their name and row of `L`, with no source back-reference.
+Each facet has attributes `axis` (x/y/z), `normal` (-1/+1), `coordinate`,
+`uMin`, `uMax`, `vMin`, `vMax`. Tangential axes are YZ, XZ and XY respectively.
+Interface order is Vb row order. `boundary` refers to the zero-based trained
+group ID. Source and output IDs are contiguous and follow matrix column/row
+order. Outline facets only diagnose contact; they cannot be assigned new
+environment laws. The facet-level default HTC and ambient temperature are
+discrete frozen values retained on exposed patches. Instance overrides are
+group-level; their HTC need not lie within the training interval.
 
-The operators use `C dq/dt + Kq = BP + f_external`, with internal surface-side
-temperature `T_ref + Vb q` and output temperature `T_ref + L q`. The native reader
-rejects older versions and checks truncation, numeric values, dimensions and group indices.
-Regenerate older assets with the current extractor before loading them.
+The reduced state satisfies `C dq/dt + (K + K_external)q = BP + f + f_external`.
+Interface cell-side temperature is `T_ref + Vb q`; output temperature is
+`T_ref + L q + OutputOffset`. Fixed contributions remain in K and f regardless
+of how the package is placed. The reader checks version, fields, counts,
+finite data, dimensions, positive-definite C, positive-semidefinite K, facet
+geometry and references. Legacy binary assets are unsupported and must be
+re-extracted. The sampled validation tolerance is not a rigorous guarantee of
+all transient trajectories or arbitrary embedded boundary conditions.
 
 FloTHERM exports use a separate format. See
 [`bci_rom_testcase1`](../playground/bci_rom_testcase1/) and the archived

@@ -4,6 +4,7 @@ import argparse
 import os
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -65,6 +66,60 @@ def check_sdk(prefix, build, config, generator):
     run("cmake", "--build", consumer / "build", "--config", config)
 
 
+def check_erom_cli(executable, build):
+    project = build / "erom-input.xml"
+    output = build / "erom-output.xml"
+    block = (
+        "<Block><Name>die</Name><MaterialName>solid</MaterialName>"
+        "<HeatSourceId>heater</HeatSourceId><VolumetricHeatSource>0</VolumetricHeatSource>"
+        "<AllRects><Rect><Add_sub>true</Add_sub><WidthExpression>1</WidthExpression>"
+        "<HeightExpression>1</HeightExpression><XExpression>{x}</XExpression>"
+        "<YExpression>0</YExpression></Rect></AllRects></Block>"
+    )
+    xml = (
+        '<Structure xmlns:i="http://www.w3.org/2001/XMLSchema-instance">'
+        "<LengthUnit>M</LengthUnit><InitialTemperature>300</InitialTemperature>"
+        "<Materials><Entry><Key>solid</Key><Value><ThermalConductivity>2</ThermalConductivity>"
+        "<Density>1</Density><SpecificHeatCapacity>4</SpecificHeatCapacity>"
+        "<FluidMaterial>false</FluidMaterial></Value></Entry></Materials>"
+        "<HeatSources><HeatSource><Id>heater</Id><Name>shared</Name>"
+        "<PowerDensity>0</PowerDensity></HeatSource></HeatSources>"
+        "<Layers><Layer><ThicknessExpression>1</ThicknessExpression><Blocks>"
+        + block.format(x=5)
+        + block.format(x=6)
+        + "</Blocks></Layer></Layers>"
+        "<Boundaries><Boundary><Name>right</Name><FaceKeys><string>X|E|7|0|1|0|1</string></FaceKeys>"
+        '<ThermalBoundary i:type="ThirdTypeThermalBoundary">'
+        "<ConvectionCoefficient>5</ConvectionCoefficient>"
+        "<EnvironmentTemperature>310</EnvironmentTemperature></ThermalBoundary></Boundary></Boundaries>"
+        "<GeneratedMesh><XArray><double>5</double><double>6</double><double>7</double></XArray>"
+        "<YArray><double>0</double><double>1</double></YArray>"
+        "<ZArray><double>0</double><double>1</double></ZArray></GeneratedMesh>"
+        '<EromExtraction version="1"><BoundaryGroups><BoundaryGroup index="0">'
+        "<HtcMin>1</HtcMin><HtcMax>10</HtcMax></BoundaryGroup></BoundaryGroups></EromExtraction>"
+        "<ObservePoints3D><ObservePoint3D><Name>probe</Name><X>5.5</X><Y>0.5</Y>"
+        "<Z>0.5</Z></ObservePoint3D></ObservePoints3D></Structure>"
+    )
+    project.write_text(xml, encoding="utf-8")
+    run(executable, "--input", project, "--output", output)
+    root = ET.parse(output).getroot()
+    if root.tag != "Erom" or root.attrib.get("version") != "1":
+        raise RuntimeError("invalid EROM XML root")
+    sources = root.findall("./Sources/Source")
+    if len(sources) != 1 or sources[0].attrib.get("name") != "shared":
+        raise RuntimeError("explicit shared zero-power source was not preserved")
+    interface = root.find("./Interfaces/Interface")
+    if interface is None or float(interface.attrib["coordinate"]) != 2.0:
+        raise RuntimeError("EROM geometry was not translated")
+    before = output.read_bytes()
+    project.write_text(xml.replace("<HtcMin>1</HtcMin>", "<HtcMin>0</HtcMin>"), encoding="utf-8")
+    failure = subprocess.run([str(executable), "--input", str(project), "--output", str(output)], check=False)
+    if failure.returncode == 0 or output.read_bytes() != before:
+        raise RuntimeError("invalid extraction succeeded or overwrote the existing asset")
+    project.unlink()
+    output.unlink()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", default="build")
@@ -87,7 +142,12 @@ def main():
         os.environ["MHS_EXECUTABLE"] = str(executable)
         os.environ["PYTHONIOENCODING"] = "utf-8"
         run(sys.executable, root / "run_cases.py")
+        erom = build / "apps/metahotspot-erom/metahotspot-erom"
+        if sys.platform == "win32":
+            erom = erom.with_suffix(".exe")
+        check_erom_cli(erom, build)
         run("cmake", "--install", build, "--config", args.config, "--prefix", prefix)
+        run(prefix / "bin" / erom.name, "--help")
         check_sdk(prefix, build, args.config, args.generator)
         run(
             "cpack",

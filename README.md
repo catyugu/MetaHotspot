@@ -153,7 +153,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 ## 第三方依赖
 
 - **CPM**：仅负责配置阶段的依赖获取与复用，不进入 SDK 运行时接口。
-- **tinyxml2**：（仅 APP）PTA XML 兼容层的解析和 DOM 操作。
+- **tinyxml2**：EROM 原生 XML 与 PTA XML 的解析和 DOM 操作。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：用于内部小规模线性代数、EROM 算子校验和可选 MKL/Pardiso 实现，不随 SDK 导出。基础容器是 `core::Vector`、`core::Matrix` 和 `core::CSRMatrix`；AMGCL 直接读取 CSR。
@@ -182,5 +182,5 @@ metahotspot --output-vtu /tmp/out.vtu \
 ### FOM–EROM 混合工程
 
 C++ SDK 支持通过表面接触连接详细模型与可复用的 EROM。原生 `mhs::erom_extraction` 接受
-`FomDefinition` 和 `MeshSpec`，按各组 HTC 范围和统一容差提取、校验并写出 `.mherom`。
+`FomDefinition` 和 `MeshSpec`，按各组 HTC 范围和统一容差提取、校验并写出原生 XML。独立应用 `metahotspot-erom --input project.xml --output package.xml` 接收带 `EromExtraction` 配置的 PTA XML。
 使用方式和文件布局见[混合工程与 EROM 提取文档](docs/erom.md)。

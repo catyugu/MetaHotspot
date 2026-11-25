@@ -24,7 +24,7 @@ namespace mhs::app::erom {
         Statistics statistics;
     };
 
-    // Group IDs are indices into thermal_boundaries, followed by the default group.
+    // Group IDs are indices into explicit convection thermal_boundaries; the default is fixed.
     // Trained facets must lie on the faces of the active FOM bounding box.
     // HTC ranges are positive and in W/(m^2 K). Tolerance is dimensionless and in (0, 1).
     Extraction extract(const model::FomDefinition& definition, const model::MeshSpec& mesh, const HtcRanges& htc,
