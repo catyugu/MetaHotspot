@@ -42,7 +42,8 @@ def check_sdk(prefix, build, config, generator):
         "project(SDKConsumer LANGUAGES CXX)\n"
         "find_package(MetaHotspot CONFIG REQUIRED)\n"
         "add_executable(consumer main.cpp)\n"
-        "target_link_libraries(consumer PRIVATE mhs::metahotspot mhs::erom_extraction)\n",
+        "target_link_libraries(consumer PRIVATE mhs::metahotspot)\n"
+        "target_link_libraries(consumer PRIVATE mhs::erom_extraction)\n",
         encoding="utf-8",
     )
     (consumer / "main.cpp").write_text(
