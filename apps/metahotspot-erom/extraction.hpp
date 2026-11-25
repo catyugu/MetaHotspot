@@ -20,6 +20,7 @@ namespace mhs::app::erom {
             Eigen::Index begin, end;
         };
         double reference_temperature;
+        model::Vec3 origin;
         core::Vector<HtcGroup> training;
         core::Vector<model::EromInterface> interfaces;
         core::Vector<model::CellId> boundary_cells; // one per interface row

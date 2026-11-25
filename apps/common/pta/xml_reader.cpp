@@ -1,6 +1,7 @@
 #include <tinyxml2.h>
 
 #include "core/vector.hpp"
+#include <algorithm>
 #include <array>
 #include <stdexcept>
 #include <string>
@@ -117,9 +118,10 @@ namespace mhs::app::pta {
         throw std::runtime_error("unknown LengthUnit: '" + val + "'");
     }
 
-    ModelInput read_model(const tinyxml2::XMLElement& structure)
+    ModelInput read_model(const tinyxml2::XMLElement& structure, bool extraction)
     {
         Definition def;
+        core::Vector<model::BoundaryGroupId> boundary_ids;
         mhs::model::ThermalBoundary default_thermal_boundary = mhs::model::NeumannBoundary {};
         const auto* root = &structure;
 
@@ -328,6 +330,21 @@ namespace mhs::app::pta {
             }
         }
 
+        // The extraction contract uses explicit identities in PTA declaration
+        // order. PowerDensity is deliberately irrelevant to a unit-power port.
+        if (extraction) {
+            if (const auto* sources = root->FirstChildElement("HeatSources"))
+                for (const auto* element = sources->FirstChildElement("HeatSource"); element;
+                    element = element->NextSiblingElement("HeatSource")) {
+                    HeatSourceSpec source {get_text(child_by_local_name(element, "Id")),
+                        get_text(child_by_local_name(element, "Name"))};
+                    if (source.id.empty() || std::ranges::any_of(def.heat_sources,
+                            [&](const auto& other) { return other.id == source.id; }))
+                        throw std::invalid_argument("missing or duplicate HeatSource Id");
+                    def.heat_sources.push_back(std::move(source));
+                }
+        }
+
         // Layers -> Blocks -> Rects
         if (const XMLElement* layers_elem = root->FirstChildElement("Layers")) {
             for (const XMLElement* layer_elem = layers_elem->FirstChildElement("Layer"); layer_elem;
@@ -355,6 +372,8 @@ namespace mhs::app::pta {
                         if (const XMLElement* mat = block_elem->FirstChildElement("MaterialName")) {
                             block.material = get_text(mat);
                         }
+                        if (extraction)
+                            block.heat_source_id = get_text(child_by_local_name(block_elem, "HeatSourceId"));
                         const XMLElement* ti = block_elem->FirstChildElement("VolumetricHeatSource");
                         if (ti) {
                             block.volumetric_heat_source = get_text(ti);
@@ -441,6 +460,7 @@ namespace mhs::app::pta {
                             "fluid boundary fields do not match ThermalBoundary i:type: " + type_str);
                     if (fluid_boundary.regions.empty())
                         throw std::runtime_error("fluid boundary has no FaceKeys regions");
+                    boundary_ids.push_back(core::invalid_id);
                     def.model.fluid_boundaries.push_back(std::move(fluid_boundary));
                     continue;
                 }
@@ -477,55 +497,41 @@ namespace mhs::app::pta {
                     }
                 }
 
+                boundary_ids.push_back(static_cast<model::BoundaryGroupId>(def.model.thermal_boundaries.size()));
                 def.model.thermal_boundaries.push_back(std::move(boundary));
             }
         }
 
-        // Mesh vertex coordinates from Results -> a:anyType -> Mesh -> b:XArray/YArray/ZArray
-        if (const XMLElement* results_elem = root->FirstChildElement("Results")) {
-            if (const XMLElement* any_type = results_elem->FirstChildElement("a:anyType")) {
-                if (const XMLElement* mesh_elem = any_type->FirstChildElement("Mesh")) {
-                    if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
-                        for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
-                            val = val->NextSiblingElement("a:double")) {
-                            def.mesh.x_vertices.push_back(parse_double(get_text(val)));
-                        }
-                    }
-                    if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
-                        for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
-                            val = val->NextSiblingElement("a:double")) {
-                            def.mesh.y_vertices.push_back(parse_double(get_text(val)));
-                        }
-                    }
-                    if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
-                        for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
-                            val = val->NextSiblingElement("a:double")) {
-                            def.mesh.z_vertices.push_back(parse_double(get_text(val)));
-                        }
-                    }
-                }
-            }
-        }
-        if (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()) {
-            if (const XMLElement* generated_mesh = root->FirstChildElement("GeneratedMesh")) {
-                const auto read_vertices = [&](const char* axis, mhs::core::Vector<double>& vertices) {
-                    const XMLElement* array = child_by_local_name(generated_mesh, axis);
-                    if (!array)
-                        return;
-                    for (const XMLElement* value = array->FirstChildElement(); value;
-                        value = value->NextSiblingElement()) {
+        // A mesh is read as a single, complete source. Extraction prefers the
+        // current GeneratedMesh; legacy studies retain their Results preference.
+        auto read_mesh = [&](const XMLElement* element) {
+            model::MeshSpec mesh;
+            const auto read_vertices = [&](const char* axis, core::Vector<double>& vertices) {
+                if (const auto* array = child_by_local_name(element, axis))
+                    for (const auto* value = array->FirstChildElement(); value; value = value->NextSiblingElement()) {
                         std::string_view name(value->Name());
-                        const size_t separator = name.rfind(':');
+                        const auto separator = name.rfind(':');
                         if (separator != std::string_view::npos)
                             name.remove_prefix(separator + 1);
                         if (name == "double")
                             vertices.push_back(parse_double(get_text(value)));
                     }
-                };
-                read_vertices("XArray", def.mesh.x_vertices);
-                read_vertices("YArray", def.mesh.y_vertices);
-                read_vertices("ZArray", def.mesh.z_vertices);
-            }
+            };
+            read_vertices("XArray", mesh.x_vertices);
+            read_vertices("YArray", mesh.y_vertices);
+            read_vertices("ZArray", mesh.z_vertices);
+            return mesh;
+        };
+        const auto* generated = root->FirstChildElement("GeneratedMesh");
+        if (generated && generated->Attribute("i:nil", "true"))
+            generated = nullptr;
+        if (extraction && generated)
+            def.mesh = read_mesh(generated);
+        else {
+            const auto* result = child_by_local_name(root->FirstChildElement("Results"), "anyType");
+            def.mesh = read_mesh(child_by_local_name(result, "Mesh"));
+            if (generated && (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()))
+                def.mesh = read_mesh(generated);
         }
 
         // ObservePoints3D
@@ -550,8 +556,8 @@ namespace mhs::app::pta {
         }
 
         def.model.default_thermal_boundary = std::move(default_thermal_boundary);
-        normalize(def);
-        return {std::move(def.model), std::move(def.mesh)};
+        normalize(def, extraction);
+        return {std::move(def.model), std::move(def.mesh), std::move(boundary_ids)};
     }
 
 } // namespace mhs::app::pta

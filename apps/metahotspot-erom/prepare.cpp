@@ -178,6 +178,7 @@ namespace mhs::app::erom {
             operators.K.row_ptr().data(), operators.K.col_idx().data(), operators.K.values().data());
         result.capacity = Eigen::Map<const Vector>(operators.C.values().data(), n);
         result.reference_temperature = model.reference_temperature;
+        result.origin = bounds.min;
         result.fixed_diagonal = Vector::Zero(n);
         result.fixed_load = Vector::Zero(n);
         core::Vector<FrozenTrace> frozen(mesh.exterior_facets.size());

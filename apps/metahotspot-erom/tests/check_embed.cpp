@@ -20,10 +20,11 @@ namespace {
         FomDefinition definition;
         definition.reference_temperature = 295;
         definition.materials = {{"solid", {MaterialKind::Solid, "2", "2", "2", "1", "4", {}}}, {"unused", {}}};
-        definition.sources = {{"heater A", "5"}, {{}, "0"}, {"heater B", "8"}};
+        definition.sources = {{"heater A", "5"}, {"heater B", "8"}};
         for (SourceId i = 0; i < 3; ++i) {
             const double x = i;
-            definition.volumes.push_back({0, i, {{GeometryOperation::Add, {x, 0, 0}, {x + 1, 1, 1}}}});
+            definition.volumes.push_back({0, i == 1 ? core::invalid_id : i / 2,
+                {{GeometryOperation::Add, {x, 0, 0}, {x + 1, 1, 1}}}});
         }
         definition.thermal_boundaries = {
             {{{Axis::X, 0, {0, 1, 0, 1}}}, ConvectionBoundary {"3", "299"}, "upstream"},
@@ -109,8 +110,9 @@ namespace {
         if (variant == "trace")
             definition.point_probes.push_back({"HTC trace", 3, 0.5, 0.5});
         if (variant == "passive" || variant == "flux") {
-            for (auto& source : definition.sources)
-                source.density = "0";
+            definition.sources.clear();
+            for (auto& volume : definition.volumes)
+                volume.source = core::invalid_id;
             definition.point_probes.clear();
         }
         if (variant == "flux")

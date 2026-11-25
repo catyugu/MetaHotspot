@@ -53,8 +53,7 @@ namespace mhs::solver {
     } // namespace
 
     static std::optional<double> boundary_value(const mhs::model::Fom& model, std::span<const double> temperature,
-        double time, mhs::model::CellId cell, const mhs::model::Vec3& p, const BoundarySampler& sample_boundary,
-        std::optional<double> conductivity_temperature)
+        double time, mhs::model::CellId cell, const mhs::model::Vec3& p, const BoundarySampler& sample_boundary)
     {
         if (cell == mhs::core::invalid_id)
             return std::nullopt;
@@ -87,7 +86,8 @@ namespace mhs::solver {
     }
 
     double sample_point(const mhs::model::Fom& model, std::span<const double> temperature, double time,
-        mhs::model::CellId cell, const mhs::model::Vec3& p, const BoundarySampler& sample_boundary)
+        mhs::model::CellId cell, const mhs::model::Vec3& p, const BoundarySampler& sample_boundary,
+        std::optional<double> conductivity_temperature)
     {
         if (cell == mhs::core::invalid_id)
             return std::numeric_limits<double>::quiet_NaN();

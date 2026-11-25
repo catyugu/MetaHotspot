@@ -244,6 +244,25 @@ namespace mhs::app::erom {
             {fixed_load.begin(), fixed_load.end()}, std::move(project.output_offset), std::move(project.interfaces),
             std::move(surfaces), std::move(project.outline), std::move(project.sources), std::move(project.outputs),
             project.reference_temperature, {uniform.begin(), uniform.end()}};
+        // Normalize only after physical sampling and projection are complete.
+        const auto& origin = project.origin;
+        auto translate = [&](model::Facet& facet) {
+            const auto [u, v] = model::tangential_axes(facet.axis);
+            facet.coordinate -= origin[static_cast<std::size_t>(facet.axis)];
+            facet.bounds[0] -= origin[u];
+            facet.bounds[1] -= origin[u];
+            facet.bounds[2] -= origin[v];
+            facet.bounds[3] -= origin[v];
+        };
+        for (auto& face : asset.interfaces)
+            translate(face.facet);
+        for (auto& group : asset.outline)
+            for (auto& facet : group.facets)
+                translate(facet);
+        for (auto& output : asset.outputs)
+            if (output.point)
+                for (std::size_t axis = 0; axis < 3; ++axis)
+                    (*output.point)[axis] -= origin[axis];
         model::validate_erom(asset);
         return {std::move(asset), statistics};
     }

@@ -1,6 +1,7 @@
 #include "definition.hpp"
 #include "geometry_expression.hpp"
 #include <algorithm>
+#include <charconv>
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
@@ -98,10 +99,27 @@ namespace mhs::app::pta {
             }
     }
 
-    void normalize(Definition& pta)
+    // In extraction mode a legacy source is harmless only if it is absent or
+    // explicitly numeric zero. Never discard a possibly nonzero field law.
+    static bool literal_zero(std::string_view text)
+    {
+        if (text.empty())
+            return true;
+        if (text.front() == '+')
+            text.remove_prefix(1);
+        double value = 0;
+        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+        return parsed.ec == std::errc {} && parsed.ptr == text.data() + text.size() && value == 0;
+    }
+
+    void normalize(Definition& pta, bool extraction)
     {
         normalize_pta_expressions(pta);
         auto& out = pta.model;
+        if (extraction) {
+            for (const auto& source : pta.heat_sources)
+                out.sources.push_back({source.name.empty() ? source.id : source.name, "0"});
+        }
         const double scale = length_unit_to_si(pta.length_unit);
         const GeometryEvaluator geometry(pta.variables);
         auto eval = [&](const auto& e) { return geometry.evaluate(e) * scale; };
@@ -125,8 +143,20 @@ namespace mhs::app::pta {
                     throw std::invalid_argument("unknown material: " + b.material);
                 mhs::model::VolumeSpec v;
                 v.material = static_cast<mhs::model::MaterialId>(mat - out.materials.begin());
-                v.source = static_cast<mhs::model::SourceId>(out.sources.size());
-                out.sources.push_back({b.name, b.volumetric_heat_source});
+                if (!extraction) {
+                    v.source = static_cast<mhs::model::SourceId>(out.sources.size());
+                    out.sources.push_back({b.name, b.volumetric_heat_source});
+                }
+                else if (!b.heat_source_id.empty()) {
+                    const auto source = std::find_if(pta.heat_sources.begin(), pta.heat_sources.end(),
+                        [&](const auto& entry) { return entry.id == b.heat_source_id; });
+                    if (source == pta.heat_sources.end())
+                        throw std::invalid_argument("unknown HeatSourceId in block " + b.name + ": " + b.heat_source_id);
+                    v.source = static_cast<mhs::model::SourceId>(source - pta.heat_sources.begin());
+                }
+                else if (!literal_zero(b.volumetric_heat_source)) {
+                    throw std::invalid_argument("block " + b.name + " has a legacy heat source without HeatSourceId");
+                }
                 const double x = eval(layer.x_offset) + eval(b.x_offset), y = eval(layer.y_offset) + eval(b.y_offset);
                 const double top = z + ((l == 0 && b.thickness) ? eval(*b.thickness) : thickness[l]);
                 for (const auto& op : b.geometry) {
