@@ -12,7 +12,8 @@ namespace mhs::app::erom {
 
     struct Prepared {
         Sparse K, L;
-        Vector capacity;
+        Vector capacity, fixed_diagonal, fixed_load;
+        core::Vector<double> output_offset;
         Matrix B;
         struct HtcGroup {
             model::EromBoundaryGroup boundary_group;
@@ -27,6 +28,7 @@ namespace mhs::app::erom {
         core::Vector<model::EromOutput> outputs;
 
         void set_conductances(Eigen::Ref<Vector> values, const Vector& h) const;
+        void set_default_conductances(Eigen::Ref<Vector> values) const;
         void add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const;
     };
 

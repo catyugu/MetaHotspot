@@ -1,4 +1,5 @@
 #include "compiler/fom_compiler.hpp"
+#include "compiler/fom_compiler_internal.hpp"
 #include "compiler/fluid_preprocessor.hpp"
 #include "compiler/geometry_compiler.hpp"
 #include "compiler/model_functions.hpp"
@@ -16,7 +17,7 @@ namespace mhs::compiler {
         template <typename... Ts> overloaded(Ts...) -> overloaded<Ts...>;
 
         mhs::model::BoundaryCondition compile_thermal_boundary(
-            const mhs::model::ThermalBoundary& condition, const mhs::expression::SymbolTable& symbols)
+            const mhs::model::ThermalBoundary& condition, const mhs::expression::SymbolTable& symbols, bool extraction)
         {
             using namespace mhs::model;
             using namespace mhs::expression;
@@ -27,7 +28,7 @@ namespace mhs::compiler {
                         auto temperature = compile(value.temperature);
                         // A trace that prescribes itself is not a Dirichlet
                         // condition; require an explicit temperature.
-                        if (temperature.depends_on_temperature())
+                        if (!extraction && temperature.depends_on_temperature())
                             throw std::invalid_argument("Dirichlet boundary temperature must not depend on T");
                         return Dirichlet {std::move(temperature)};
                     },
@@ -60,7 +61,8 @@ namespace mhs::compiler {
 
     } // namespace
 
-    mhs::model::Fom compile_fom(const mhs::model::FomDefinition& definition, const mhs::model::MeshSpec& mesh)
+    static mhs::model::Fom compile_fom_impl(const mhs::model::FomDefinition& definition,
+        const mhs::model::MeshSpec& mesh, bool extraction)
     {
         if (!std::isfinite(definition.reference_temperature))
             throw std::invalid_argument("reference temperature must be finite");
@@ -73,6 +75,14 @@ namespace mhs::compiler {
         register_all_functions(symbols, definition.functions);
         for (const auto& p : definition.point_probes)
             model.point_probes.push_back({p.name, {p.x, p.y, p.z}});
+
+        if (extraction)
+            for (const auto& volume : definition.volumes) {
+                if (volume.material >= definition.materials.size())
+                    throw std::out_of_range("volume material ID out of range");
+                if (definition.materials[volume.material].value.kind == mhs::model::MaterialKind::Fluid)
+                    throw std::invalid_argument("EROM extraction does not support fluid blocks");
+            }
 
         // Compile material properties in FomDefinition::materials order.
         model.material_table.resize(definition.materials.size());
@@ -89,6 +99,8 @@ namespace mhs::compiler {
             props.rho = compile_mat(mat.density);
             props.c = compile_mat(mat.specific_heat);
             if (mat.kind == mhs::model::MaterialKind::Fluid) {
+                if (extraction)
+                    continue; // Unreferenced fluid material; no hydraulic calculation is needed.
                 if (!mat.dynamic_viscosity || mat.dynamic_viscosity->empty())
                     throw std::runtime_error(
                         "fluid material '" + definition.materials[m].name + "' is missing DynamicViscosity");
@@ -102,7 +114,8 @@ namespace mhs::compiler {
         }
 
         for (const auto& source : definition.sources)
-            model.heat_source_table.push_back(mhs::expression::parse(source.density, symbols));
+            model.heat_source_table.push_back(extraction ? mhs::expression::CompiledExpression::make_constant(0)
+                                                        : mhs::expression::parse(source.density, symbols));
         for (const auto& volume : definition.volumes) {
             if (volume.material >= definition.materials.size())
                 throw std::out_of_range("volume material ID out of range");
@@ -126,13 +139,13 @@ namespace mhs::compiler {
             const auto& boundary = definition.thermal_boundaries[i];
             const auto id = static_cast<mhs::model::BoundaryGroupId>(i);
             auto name = boundary.name.empty() ? "boundary " + std::to_string(i) : boundary.name;
-            model.boundary_groups.push_back({std::move(name), compile_thermal_boundary(boundary.condition, symbols)});
+            model.boundary_groups.push_back({std::move(name), compile_thermal_boundary(boundary.condition, symbols, extraction)});
             for (const auto& region : boundary.regions)
                 surface_regions.push_back({region, id});
         }
         const auto fallback_boundary = static_cast<mhs::model::BoundaryGroupId>(model.boundary_groups.size());
         model.boundary_groups.push_back(
-            {"default", compile_thermal_boundary(definition.default_thermal_boundary, symbols)});
+            {"default", compile_thermal_boundary(definition.default_thermal_boundary, symbols, extraction)});
         mhs::core::Vector<TaggedSurfaceRegion> fluid_regions;
         for (std::size_t id = 0; id < definition.fluid_boundaries.size(); ++id)
             for (const auto& region : definition.fluid_boundaries[id].regions)
@@ -141,6 +154,17 @@ namespace mhs::compiler {
         mhs::compiler::fluid::build_domain(model, definition.fluid_boundaries, fluid_tags, initial_viscosity);
 
         return model;
+    }
+
+    mhs::model::Fom compile_fom(const mhs::model::FomDefinition& definition, const mhs::model::MeshSpec& mesh)
+    {
+        return compile_fom_impl(definition, mesh, false);
+    }
+
+    mhs::model::Fom compile_fom_for_extraction(
+        const mhs::model::FomDefinition& definition, const mhs::model::MeshSpec& mesh)
+    {
+        return compile_fom_impl(definition, mesh, true);
     }
 
 } // namespace mhs::compiler
