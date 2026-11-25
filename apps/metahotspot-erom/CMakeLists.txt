@@ -20,6 +20,15 @@ target_include_directories(mhs_erom_extraction
 target_compile_definitions(mhs_erom_extraction PRIVATE AMGCL_NO_BOOST)
 set_source_files_properties(amg_solver.cpp PROPERTIES COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/wd4701>")
 
+add_executable(metahotspot-erom main.cpp input.cpp)
+target_link_libraries(metahotspot-erom PRIVATE mhs::erom_extraction mhs_pta_model_io mhs_options)
+mhs_stage_runtime(metahotspot-erom)
+if(APPLE)
+    set_property(TARGET metahotspot-erom PROPERTY INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
+elseif(UNIX)
+    set_property(TARGET metahotspot-erom PROPERTY INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+endif()
+
 if(MHS_INSTALL)
     install(DIRECTORY include/metahotspot DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 endif()

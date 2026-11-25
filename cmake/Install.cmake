@@ -26,8 +26,12 @@ if(MHS_BUILD_APPS)
     install(TARGETS metahotspot RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 
+if(MHS_BUILD_EROM)
+    install(TARGETS metahotspot-erom RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+
 # Runtime DLLs of the installed binaries; the MSVC C runtime is not among them.
-mhs_install_windows_runtime(TARGETS metahotspot mhs_c_api
+mhs_install_windows_runtime(TARGETS metahotspot metahotspot-erom mhs_c_api
     DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 # Licence and readme ship with the installed package.
