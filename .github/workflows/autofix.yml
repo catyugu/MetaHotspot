@@ -24,9 +24,12 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - run: python -m pip install --group dev
-      - uses: ./.github/actions/autofix-lint
-        with:
-          fix: "true"
+      - name: Apply fixes
+        shell: bash
+        run: |
+          find src include tests apps -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.h' -o -name '*.hpp' \) -print0 | xargs -0 clang-format -i
+          ruff check --fix-only python .github/scripts
+          ruff format python .github/scripts
       - name: Commit and push fixes
         shell: bash
         env:
