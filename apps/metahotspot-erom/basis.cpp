@@ -115,8 +115,35 @@ namespace mhs::app::erom {
         const auto shifts = matching_shifts(minimum, maximum, capacity, tolerance, statistics);
         const auto passive = passive_inputs(project, regions);
         const auto powered = static_cast<std::size_t>(project.B.cols());
+        core::Vector<Vector> fixed;
+        if (!project.fixed_load.isZero(0.0))
+            fixed.push_back(project.fixed_load);
+        // A passive, fixed-only connected region also needs a thermal response
+        // even when its frozen load is zero (e.g. a different initial temperature).
+        const auto region_count = static_cast<std::size_t>(*std::ranges::max_element(regions) + 1);
+        core::Vector<bool> represented(region_count, false);
+        for (Eigen::Index cell = 0; cell < project.B.rows(); ++cell)
+            if (!project.B.row(cell).isZero(0.0))
+                represented[regions[cell]] = true;
+        for (auto cell : project.boundary_cells)
+            represented[regions[cell]] = true;
+        for (std::size_t region = 0; region < region_count; ++region)
+            if (!represented[region]) {
+                Vector input = Vector::Zero(n);
+                for (Eigen::Index cell = 0; cell < n; ++cell)
+                    if (static_cast<std::size_t>(regions[cell]) == region)
+                        input[cell] = project.fixed_diagonal[cell];
+                fixed.push_back(std::move(input));
+            }
+        const auto independent = powered + fixed.size();
+        Vector default_closure(nb), default_boundary(nb), default_rhs = project.fixed_load;
+        project.set_default_conductances(default_closure);
+        for (Eigen::Index id = 0; id < nb; ++id)
+            default_boundary[id]
+                = default_closure[id] * (project.interfaces[id].default_ambient - project.reference_temperature);
+        project.add_boundary(default_rhs, default_boundary);
         core::Vector<ResponseSpace> spaces;
-        for (std::size_t port = 0; port < powered + passive.size(); ++port)
+        for (std::size_t port = 0; port < independent + passive.size(); ++port)
             spaces.emplace_back(n, nb);
         core::Vector<Vector> snapshots;
         std::mt19937_64 random(20260805);
@@ -125,8 +152,12 @@ namespace mhs::app::erom {
             std::unique_ptr<ReusableAmg> solver;
             const Vector shifted_capacity = shift * capacity;
             for (std::size_t port = 0; port < spaces.size(); ++port) {
-                const bool is_passive = port >= powered;
-                Vector g = is_passive ? Vector::Zero(n).eval() : Vector(project.B.col(static_cast<Eigen::Index>(port)));
+                const bool is_passive = port >= independent;
+                Vector g = Vector::Zero(n);
+                if (port < powered)
+                    g = project.B.col(static_cast<Eigen::Index>(port));
+                else if (!is_passive)
+                    g = fixed[port - powered];
                 Vector ambient(is_passive ? nb : 0);
                 double norm = is_passive ? 0 : g.norm();
                 auto& space = spaces[port];
@@ -140,7 +171,7 @@ namespace mhs::app::erom {
                     diagonal = shifted_capacity;
                     project.add_boundary(diagonal, closure);
                     if (is_passive) {
-                        const auto [group, region] = passive[port - powered];
+                        const auto [group, region] = passive[port - independent];
                         ambient.setZero();
                         for (auto id = project.training[group].begin; id < project.training[group].end; ++id)
                             if (regions[project.boundary_cells[id]] == region)
@@ -170,6 +201,18 @@ namespace mhs::app::erom {
                     space.append(std::move(response), project, is_passive ? nullptr : &g);
                     accepted = 0;
                 }
+            }
+            if (!default_rhs.isZero(0.0)) {
+                if (snapshots.size() >= max_responses)
+                    throw std::runtime_error("FANTASTIC extraction reached the response solve limit");
+                if (!solver) {
+                    solver = std::make_unique<ReusableAmg>(add_diagonal(minimum, shifted_capacity), tolerance / 10);
+                    ++statistics.response_amg_setups;
+                }
+                diagonal = shifted_capacity;
+                project.add_boundary(diagonal, default_closure);
+                snapshots.push_back(solver->solve(add_diagonal(K, diagonal), default_rhs, Vector::Zero(n)));
+                ++statistics.response_solves;
             }
             if (solver)
                 statistics.cg_iterations += solver->iterations();

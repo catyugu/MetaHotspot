@@ -12,13 +12,15 @@ namespace mhs::app::erom {
 
     struct Prepared {
         Sparse K, L;
-        Vector capacity;
+        Vector capacity, fixed_diagonal, fixed_load;
+        core::Vector<double> output_offset;
         Matrix B;
         struct HtcGroup {
             model::EromBoundaryGroup boundary_group;
             Eigen::Index begin, end;
         };
         double reference_temperature;
+        model::Vec3 origin;
         core::Vector<HtcGroup> training;
         core::Vector<model::EromInterface> interfaces;
         core::Vector<model::CellId> boundary_cells; // one per interface row
@@ -27,10 +29,11 @@ namespace mhs::app::erom {
         core::Vector<model::EromOutput> outputs;
 
         void set_conductances(Eigen::Ref<Vector> values, const Vector& h) const;
+        void set_default_conductances(Eigen::Ref<Vector> values) const;
         void add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const;
     };
 
-    Prepared prepare(const model::Fom& fom, const model::FomDefinition& definition, const HtcRanges& ranges);
+    Prepared prepare(const model::FomDefinition& definition, const model::MeshSpec& mesh, const HtcRanges& ranges);
 
     // Application-local numerical kernels; no extraction implementation enters the SDK.
     Sparse add_diagonal(const Sparse& matrix, const Vector& diagonal);

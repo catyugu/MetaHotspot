@@ -1,24 +1,84 @@
-#include <tinyxml2.h>
+#include "io.hpp"
+#include "definition.hpp"
+#include "xml.hpp"
 
-#include "core/vector.hpp"
-#include <array>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <filesystem>
 #include <stdexcept>
-#include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
-
-#include "definition.hpp"
-#include "face_region_parser.hpp"
-#include "io.hpp"
-#include "model/fom_definition.hpp"
-#include "xml_helpers.hpp"
 
 namespace mhs::app::pta {
     using namespace tinyxml2;
     using detail::child_by_local_name;
     using detail::get_text;
     using detail::parse_double;
+
+    namespace {
+        mhs::core::Vector<std::string> split(const std::string& value, char delimiter)
+        {
+            mhs::core::Vector<std::string> parts;
+            std::string current;
+            for (char character : value) {
+                if (character == delimiter) {
+                    parts.push_back(current);
+                    current.clear();
+                }
+                else {
+                    current += character;
+                }
+            }
+            if (!current.empty())
+                parts.push_back(current);
+            return parts;
+        }
+
+        mhs::model::Axis parse_axis(const std::string& value)
+        {
+            if (value == "X")
+                return mhs::model::Axis::X;
+            if (value == "Y")
+                return mhs::model::Axis::Y;
+            if (value == "Z")
+                return mhs::model::Axis::Z;
+            throw std::invalid_argument("invalid face region axis: " + value);
+        }
+    } // namespace
+
+    static mhs::core::Vector<mhs::model::SurfaceRegion> parse_face_region(const std::string& encoded)
+    {
+        const auto parts = split(encoded, '|');
+        mhs::model::SurfaceRegion region;
+        mhs::core::Vector<mhs::model::SurfaceRegion> regions;
+        if (parts.size() < 3)
+            throw std::invalid_argument("malformed face region: " + encoded);
+
+        region.axis = parse_axis(parts[0]);
+        region.coordinate = std::stod(parts[2]);
+
+        if (region.axis == mhs::model::Axis::Z && parts.size() == 4) {
+            for (const auto& encoded_rectangle : split(parts[3], ';')) {
+                const auto values = split(encoded_rectangle, ',');
+                if (values.size() != 4)
+                    throw std::invalid_argument("malformed face region rectangle: " + encoded);
+                regions.push_back({region.axis, region.coordinate,
+                    {std::stod(values[0]), std::stod(values[1]), std::stod(values[2]), std::stod(values[3])}});
+            }
+        }
+        else if ((region.axis == mhs::model::Axis::X || region.axis == mhs::model::Axis::Y) && parts.size() == 7) {
+            regions.push_back({region.axis, region.coordinate,
+                {std::stod(parts[3]), std::stod(parts[4]), std::stod(parts[5]), std::stod(parts[6])}});
+        }
+        else {
+            throw std::invalid_argument("malformed face region: " + encoded);
+        }
+
+        return regions;
+    }
 
     static void read_fluid_boundary_fields(const XMLElement* source, mhs::model::FluidBoundarySpec& boundary)
     {
@@ -61,7 +121,7 @@ namespace mhs::app::pta {
                 continue;
             const std::string key = get_text(face_key);
             if (!key.empty())
-                for (const auto& region : detail::parse_face_region(key))
+                for (const auto& region : parse_face_region(key))
                     regions.push_back(region);
         }
         return regions;
@@ -88,25 +148,12 @@ namespace mhs::app::pta {
         size_t start = 0;
         while (true) {
             size_t end = raw.find(',', start);
-            std::string token = (end == std::string::npos) ? raw.substr(start) : raw.substr(start, end - start);
-            size_t f = token.find_first_not_of(" \t\r\n");
-            size_t l = (f == std::string::npos) ? std::string::npos : token.find_last_not_of(" \t\r\n");
-            token = (f == std::string::npos) ? std::string() : token.substr(f, l - f + 1);
-            segs.push_back(token);
+            segs.push_back(detail::trim(raw.substr(start, end == std::string::npos ? end : end - start)));
             if (end == std::string::npos)
                 break;
             start = end + 1;
         }
         return segs;
-    }
-
-    static mhs::solver::StudyType parse_study_type(const std::string& val)
-    {
-        if (val == "Steady")
-            return mhs::solver::StudyType::Steady;
-        if (val == "Transient")
-            return mhs::solver::StudyType::Transient;
-        throw std::runtime_error("unknown StudyType: '" + val + "' (expected Steady or Transient)");
     }
 
     static LengthUnit parse_length_unit(const std::string& val)
@@ -126,27 +173,12 @@ namespace mhs::app::pta {
         throw std::runtime_error("unknown LengthUnit: '" + val + "'");
     }
 
-    Input read_xml(const std::string& xml_path)
+    ModelInput read_model(const tinyxml2::XMLElement& structure, bool extraction)
     {
-        XMLDocument doc;
-        XMLError err = doc.LoadFile(xml_path.c_str());
-        if (err != XML_SUCCESS) {
-            throw std::runtime_error("failed to load XML file: " + xml_path);
-        }
-
         Definition def;
-        mhs::solver::Study study;
+        core::Vector<model::BoundaryGroupId> boundary_ids;
         mhs::model::ThermalBoundary default_thermal_boundary = mhs::model::NeumannBoundary {};
-
-        const XMLElement* root = doc.FirstChildElement("Structure");
-        if (!root) {
-            throw std::runtime_error("no <Structure> element found in " + xml_path);
-        }
-
-        // StudyType (child element only)
-        if (const XMLElement* study_elem = root->FirstChildElement("StudyType")) {
-            study.type = parse_study_type(get_text(study_elem));
-        }
+        const auto* root = &structure;
 
         // LengthUnit (child element only)
         if (const XMLElement* unit_elem = root->FirstChildElement("LengthUnit")) {
@@ -155,25 +187,10 @@ namespace mhs::app::pta {
 
         // Temperature settings
         if (const XMLElement* init = root->FirstChildElement("InitialTemperature")) {
-            study.initial_temperature = parse_double(get_text(init));
-            def.model.reference_temperature = study.initial_temperature;
+            def.model.reference_temperature = parse_double(get_text(init));
         }
         else {
             throw std::runtime_error("missing required element <InitialTemperature>");
-        }
-
-        // Transient settings
-        if (const XMLElement* trans = root->FirstChildElement("TransientStudyDuration")) {
-            study.duration = parse_double(get_text(trans));
-        }
-        else if (study.type == mhs::solver::StudyType::Transient) {
-            throw std::runtime_error("transient study requires <TransientStudyDuration>");
-        }
-        if (const XMLElement* step = root->FirstChildElement("TransientStudyTimeStep")) {
-            study.output_interval = parse_double(get_text(step));
-        }
-        else if (study.type == mhs::solver::StudyType::Transient) {
-            throw std::runtime_error("transient study requires <TransientStudyTimeStep>");
         }
 
         // OtherThermalBoundary (default BC)
@@ -279,7 +296,7 @@ namespace mhs::app::pta {
                         if (value != "true" && value != "false")
                             throw std::runtime_error("FluidMaterial must be true or false");
                         mat.kind = value == "true" ? mhs::model::MaterialKind::Fluid : mhs::model::MaterialKind::Solid;
-                        if (mat.kind == mhs::model::MaterialKind::Fluid && !mat.dynamic_viscosity)
+                        if (!extraction && mat.kind == mhs::model::MaterialKind::Fluid && !mat.dynamic_viscosity)
                             throw std::runtime_error("fluid material '" + name + "' is missing DynamicViscosity");
                         if (mat.kind == mhs::model::MaterialKind::Solid)
                             mat.dynamic_viscosity.reset();
@@ -368,6 +385,22 @@ namespace mhs::app::pta {
             }
         }
 
+        // The extraction contract uses explicit identities in PTA declaration
+        // order. PowerDensity is deliberately irrelevant to a unit-power port.
+        if (extraction) {
+            if (const auto* sources = root->FirstChildElement("HeatSources"))
+                for (const auto* element = sources->FirstChildElement("HeatSource"); element;
+                    element = element->NextSiblingElement("HeatSource")) {
+                    HeatSourceSpec source {
+                        get_text(child_by_local_name(element, "Id")), get_text(child_by_local_name(element, "Name"))};
+                    if (source.id.empty() || std::ranges::any_of(def.heat_sources, [&](const auto& other) {
+                            return other.id == source.id;
+                        }))
+                        throw std::invalid_argument("missing or duplicate HeatSource Id");
+                    def.heat_sources.push_back(std::move(source));
+                }
+        }
+
         // Layers -> Blocks -> Rects
         if (const XMLElement* layers_elem = root->FirstChildElement("Layers")) {
             for (const XMLElement* layer_elem = layers_elem->FirstChildElement("Layer"); layer_elem;
@@ -395,6 +428,8 @@ namespace mhs::app::pta {
                         if (const XMLElement* mat = block_elem->FirstChildElement("MaterialName")) {
                             block.material = get_text(mat);
                         }
+                        if (extraction)
+                            block.heat_source_id = get_text(child_by_local_name(block_elem, "HeatSourceId"));
                         const XMLElement* ti = block_elem->FirstChildElement("VolumetricHeatSource");
                         if (ti) {
                             block.volumetric_heat_source = get_text(ti);
@@ -481,6 +516,7 @@ namespace mhs::app::pta {
                             "fluid boundary fields do not match ThermalBoundary i:type: " + type_str);
                     if (fluid_boundary.regions.empty())
                         throw std::runtime_error("fluid boundary has no FaceKeys regions");
+                    boundary_ids.push_back(core::invalid_id);
                     def.model.fluid_boundaries.push_back(std::move(fluid_boundary));
                     continue;
                 }
@@ -517,55 +553,42 @@ namespace mhs::app::pta {
                     }
                 }
 
+                boundary_ids.push_back(static_cast<model::BoundaryGroupId>(def.model.thermal_boundaries.size()));
                 def.model.thermal_boundaries.push_back(std::move(boundary));
             }
         }
 
-        // Mesh vertex coordinates from Results -> a:anyType -> Mesh -> b:XArray/YArray/ZArray
-        if (const XMLElement* results_elem = root->FirstChildElement("Results")) {
-            if (const XMLElement* any_type = results_elem->FirstChildElement("a:anyType")) {
-                if (const XMLElement* mesh_elem = any_type->FirstChildElement("Mesh")) {
-                    if (const XMLElement* x_array = mesh_elem->FirstChildElement("b:XArray")) {
-                        for (const XMLElement* val = x_array->FirstChildElement("a:double"); val;
-                            val = val->NextSiblingElement("a:double")) {
-                            def.mesh.x_vertices.push_back(parse_double(get_text(val)));
-                        }
-                    }
-                    if (const XMLElement* y_array = mesh_elem->FirstChildElement("b:YArray")) {
-                        for (const XMLElement* val = y_array->FirstChildElement("a:double"); val;
-                            val = val->NextSiblingElement("a:double")) {
-                            def.mesh.y_vertices.push_back(parse_double(get_text(val)));
-                        }
-                    }
-                    if (const XMLElement* z_array = mesh_elem->FirstChildElement("b:ZArray")) {
-                        for (const XMLElement* val = z_array->FirstChildElement("a:double"); val;
-                            val = val->NextSiblingElement("a:double")) {
-                            def.mesh.z_vertices.push_back(parse_double(get_text(val)));
-                        }
-                    }
-                }
-            }
-        }
-        if (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()) {
-            if (const XMLElement* generated_mesh = root->FirstChildElement("GeneratedMesh")) {
-                const auto read_vertices = [&](const char* axis, mhs::core::Vector<double>& vertices) {
-                    const XMLElement* array = child_by_local_name(generated_mesh, axis);
-                    if (!array)
-                        return;
-                    for (const XMLElement* value = array->FirstChildElement(); value;
-                        value = value->NextSiblingElement()) {
+        // A mesh is read as a single, complete source. Extraction prefers the
+        // current GeneratedMesh; legacy studies retain their Results preference.
+        auto read_mesh = [&](const XMLElement* element) {
+            model::MeshSpec mesh;
+            const auto read_vertices = [&](const char* axis, core::Vector<double>& vertices) {
+                if (const auto* array = child_by_local_name(element, axis))
+                    for (const auto* value = array->FirstChildElement(); value; value = value->NextSiblingElement()) {
                         std::string_view name(value->Name());
-                        const size_t separator = name.rfind(':');
+                        const auto separator = name.rfind(':');
                         if (separator != std::string_view::npos)
                             name.remove_prefix(separator + 1);
                         if (name == "double")
                             vertices.push_back(parse_double(get_text(value)));
                     }
-                };
-                read_vertices("XArray", def.mesh.x_vertices);
-                read_vertices("YArray", def.mesh.y_vertices);
-                read_vertices("ZArray", def.mesh.z_vertices);
-            }
+            };
+            read_vertices("XArray", mesh.x_vertices);
+            read_vertices("YArray", mesh.y_vertices);
+            read_vertices("ZArray", mesh.z_vertices);
+            return mesh;
+        };
+        const auto* generated = root->FirstChildElement("GeneratedMesh");
+        if (generated && generated->Attribute("i:nil", "true"))
+            generated = nullptr;
+        if (extraction && generated)
+            def.mesh = read_mesh(generated);
+        else {
+            const auto* result = child_by_local_name(root->FirstChildElement("Results"), "anyType");
+            def.mesh = read_mesh(child_by_local_name(result, "Mesh"));
+            if (generated
+                && (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()))
+                def.mesh = read_mesh(generated);
         }
 
         // ObservePoints3D
@@ -590,8 +613,191 @@ namespace mhs::app::pta {
         }
 
         def.model.default_thermal_boundary = std::move(default_thermal_boundary);
-        normalize(def);
-        return {study, std::move(def.model), std::move(def.mesh)};
+        normalize(def, extraction);
+        return {std::move(def.model), std::move(def.mesh), std::move(boundary_ids)};
     }
 
+    static mhs::solver::StudyType parse_study_type(const std::string& val)
+    {
+        if (val == "Steady")
+            return mhs::solver::StudyType::Steady;
+        if (val == "Transient")
+            return mhs::solver::StudyType::Transient;
+        throw std::runtime_error("unknown StudyType: '" + val + "' (expected Steady or Transient)");
+    }
+
+    Input read_xml(const std::string& xml_path)
+    {
+        XMLDocument doc;
+        if (doc.LoadFile(xml_path.c_str()) != XML_SUCCESS)
+            throw std::runtime_error("failed to load XML file: " + xml_path);
+        const XMLElement* root = doc.FirstChildElement("Structure");
+        if (!root)
+            throw std::runtime_error("no <Structure> element found in " + xml_path);
+
+        mhs::solver::Study study;
+        // StudyType (child element only)
+        if (const XMLElement* study_elem = root->FirstChildElement("StudyType")) {
+            study.type = parse_study_type(get_text(study_elem));
+        }
+
+        // Transient settings
+        if (const XMLElement* trans = root->FirstChildElement("TransientStudyDuration")) {
+            study.duration = parse_double(get_text(trans));
+        }
+        else if (study.type == mhs::solver::StudyType::Transient) {
+            throw std::runtime_error("transient study requires <TransientStudyDuration>");
+        }
+        if (const XMLElement* step = root->FirstChildElement("TransientStudyTimeStep")) {
+            study.output_interval = parse_double(get_text(step));
+        }
+        else if (study.type == mhs::solver::StudyType::Transient) {
+            throw std::runtime_error("transient study requires <TransientStudyTimeStep>");
+        }
+
+        auto input = read_model(*root);
+        study.initial_temperature = input.model.reference_temperature;
+        return {study, std::move(input.model), std::move(input.mesh)};
+    }
+
+    namespace {
+
+        void refill_double_list(
+            tinyxml2::XMLDocument& doc, tinyxml2::XMLElement* parent, std::span<const double> data, bool allow_nan)
+        {
+            if (!parent)
+                return;
+            parent->DeleteChildren();
+            for (double v : data) {
+                auto* d = doc.NewElement("a:double");
+                if (allow_nan && std::isnan(v)) {
+                    d->SetText("NaN");
+                }
+                else {
+                    char buf[64];
+                    std::snprintf(buf, sizeof(buf), "%.6f", v);
+                    d->SetText(buf);
+                }
+                parent->InsertEndChild(d);
+            }
+        }
+
+    } // namespace
+
+    void write_xml(const std::string& input_path, const std::string& output_path,
+        const std::array<std::size_t, 3>& shape, std::span<const double> node_temperature,
+        const mhs::core::Vector<mhs::solver::OutputTrace>& observation_traces,
+        std::span<const double> observation_times)
+    {
+        if (shape[0] == 0 || shape[1] == 0 || shape[2] == 0)
+            throw std::invalid_argument("XML output requires a Cartesian sampling grid; use VTU for imported meshes");
+        if (node_temperature.size() != shape[0] * shape[1] * shape[2])
+            throw std::invalid_argument("XML node values do not match sampling-grid shape");
+
+        XMLDocument doc;
+        if (doc.LoadFile(input_path.c_str()) != XML_SUCCESS)
+            throw std::runtime_error("failed to load XML output template: " + input_path);
+        auto* root = doc.FirstChildElement("Structure");
+        if (!root)
+            throw std::runtime_error("XML output template has no Structure");
+        auto ensure = [&](XMLElement* parent, const char* name) {
+            auto* child = parent->FirstChildElement(name);
+            if (!child) {
+                child = doc.NewElement(name);
+                parent->InsertEndChild(child);
+            }
+            return child;
+        };
+        auto* results_elem = ensure(root, "Results");
+        results_elem->SetAttribute("xmlns:a", "http://schemas.microsoft.com/2003/10/Serialization/Arrays");
+        auto* any_type = ensure(results_elem, "a:anyType");
+        any_type->SetAttribute("i:type", "Result3D");
+        any_type->SetAttribute("xmlns:i", "http://www.w3.org/2001/XMLSchema-instance");
+        if (!any_type->FirstChildElement("Mesh")) {
+            const auto* generated = root->FirstChildElement("GeneratedMesh");
+            if (!generated)
+                throw std::runtime_error("XML output template has no sampling mesh");
+            auto* mesh = ensure(any_type, "Mesh");
+            mesh->SetAttribute("xmlns:b", "http://schemas.datacontract.org/2004/07/ThermalSim.Models.Mesh");
+            for (const auto* axis : {"XArray", "YArray", "ZArray"}) {
+                auto* values = detail::child_by_local_name(generated, axis);
+                if (!values)
+                    throw std::runtime_error("GeneratedMesh is missing an axis");
+                auto* array = ensure(mesh, (std::string("b:") + axis).c_str());
+                for (auto* v = values->FirstChildElement(); v; v = v->NextSiblingElement()) {
+                    auto* value = doc.NewElement("a:double");
+                    value->SetText(v->GetText());
+                    array->InsertEndChild(value);
+                }
+            }
+            ensure(any_type, "PhysicsName")->SetText("温度");
+            ensure(any_type, "UnitName")->SetText("K");
+        }
+        auto* values_elem = ensure(any_type, "Values");
+        auto* data_elem = ensure(values_elem, "Data");
+        for (const auto* name : {"SizeX", "SizeY", "SizeZ"})
+            ensure(values_elem, name);
+
+        refill_double_list(doc, data_elem, node_temperature, true);
+        const auto [node_nx, node_ny, node_nz] = shape;
+
+        XMLElement* sx = values_elem->FirstChildElement("SizeX");
+        if (sx)
+            sx->SetText(static_cast<std::uint64_t>(node_nx));
+        XMLElement* sy = values_elem->FirstChildElement("SizeY");
+        if (sy)
+            sy->SetText(static_cast<std::uint64_t>(node_ny));
+        XMLElement* sz = values_elem->FirstChildElement("SizeZ");
+        if (sz)
+            sz->SetText(static_cast<std::uint64_t>(node_nz));
+
+        for (const auto& trace : observation_traces) {
+            XMLElement* target = nullptr;
+            for (XMLElement* candidate = results_elem->FirstChildElement("a:anyType"); candidate;
+                candidate = candidate->NextSiblingElement("a:anyType")) {
+                const char* type = candidate->Attribute("i:type");
+                if (!type || std::string(type).find("Result0DTransient") == std::string::npos)
+                    continue;
+                const XMLElement* point_name = candidate->FirstChildElement("PointName");
+                if (point_name && get_text(point_name) == trace.name) {
+                    target = candidate;
+                    break;
+                }
+            }
+
+            if (!target) {
+                target = doc.NewElement("a:anyType");
+                target->SetAttribute("i:type", "Result0DTransient");
+
+                // The downstream front-end reader matches this label verbatim,
+                // so it is a fixed value of the output contract, not a
+                // localizable string. Do not translate it.
+                XMLElement* physics = doc.NewElement("PhysicsName");
+                physics->SetText("温度");
+                target->InsertEndChild(physics);
+                XMLElement* point_name = doc.NewElement("PointName");
+                point_name->SetText(trace.name.c_str());
+                target->InsertEndChild(point_name);
+                XMLElement* time_unit = doc.NewElement("TimeUnit");
+                time_unit->SetText("S");
+                target->InsertEndChild(time_unit);
+                target->InsertEndChild(doc.NewElement("Times"));
+                XMLElement* unit_name = doc.NewElement("UnitName");
+                unit_name->SetText("K");
+                target->InsertEndChild(unit_name);
+                target->InsertEndChild(doc.NewElement("Values"));
+                results_elem->InsertEndChild(target);
+            }
+
+            refill_double_list(doc, target->FirstChildElement("Times"), observation_times, false);
+            refill_double_list(doc, target->FirstChildElement("Values"), trace.values, true);
+        }
+
+        const std::filesystem::path dir_path(output_path);
+        if (!dir_path.parent_path().empty()) {
+            std::filesystem::create_directories(dir_path.parent_path());
+        }
+        if (doc.SaveFile(output_path.c_str()) != XML_SUCCESS)
+            throw std::runtime_error("failed to write XML: " + output_path);
+    }
 } // namespace mhs::app::pta

@@ -24,7 +24,7 @@ namespace mhs::model {
     struct ComponentInstance {
         Vec3 offset {};
         std::variant<std::shared_ptr<const Fom>, std::shared_ptr<const Erom>> asset;
-        // Indexed by SourceId; empty schedules retain the EROM defaults.
+        // Indexed by SourceId; empty schedules supply zero power.
         core::Vector<std::function<double(double)>> powers;
         BoundaryOverrides boundaries; // indexed by BoundaryGroupId; unset entries retain asset laws
     };

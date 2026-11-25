@@ -1,5 +1,4 @@
 #include "amg_solver.hpp"
-#include "compiler/fom_compiler.hpp"
 #include "solver/thermal_physics.hpp"
 
 #include <Eigen/Cholesky>
@@ -14,6 +13,14 @@ namespace mhs::app::erom {
         for (Eigen::Index id = 0; id < values.size(); ++id) {
             const auto& face = interfaces[id];
             values[id] = solver::convection_conductance(face.facet.area(), h[face.boundary_group], face.resistance);
+        }
+    }
+
+    void Prepared::set_default_conductances(Eigen::Ref<Vector> values) const
+    {
+        for (Eigen::Index id = 0; id < values.size(); ++id) {
+            const auto& face = interfaces[id];
+            values[id] = solver::convection_conductance(face.facet.area(), face.default_coefficient, face.resistance);
         }
     }
 
@@ -50,6 +57,9 @@ namespace mhs::app::erom {
         bool covers_regions(const Prepared& project, const core::Vector<int>& regions, const Vector& h)
         {
             core::Vector<bool> anchored(static_cast<std::size_t>(*std::ranges::max_element(regions) + 1), false);
+            for (Eigen::Index i = 0; i < project.fixed_diagonal.size(); ++i)
+                if (project.fixed_diagonal[i] > 0)
+                    anchored[regions[i]] = true;
             for (Eigen::Index i = 0; i < h.size(); ++i)
                 if (h[i] > 0)
                     anchored[regions[project.boundary_cells[i]]] = true;
@@ -57,8 +67,8 @@ namespace mhs::app::erom {
         }
 
         double validate_outputs(const Prepared& project, const Matrix& boundary, const Matrix& stiffness,
-            const Matrix& B, const Matrix& L, const Vector& lower, const Vector& upper, double tolerance,
-            const core::Vector<int>& regions)
+            const Matrix& B, const Matrix& L, const Vector& fixed_load, const Vector& lower, const Vector& upper,
+            double tolerance, const core::Vector<int>& regions)
         {
             if (project.outputs.empty())
                 return 0;
@@ -66,7 +76,10 @@ namespace mhs::app::erom {
             Vector closure(static_cast<Eigen::Index>(project.boundary_cells.size())), rhs(n);
             double worst = 0;
             auto check = [&](const Vector& h, bool defaults = false) {
-                project.set_conductances(closure, h);
+                if (defaults)
+                    project.set_default_conductances(closure);
+                else
+                    project.set_conductances(closure, h);
                 if (defaults && !covers_regions(project, regions, closure))
                     return;
                 Vector diagonal = Vector::Zero(n);
@@ -84,7 +97,9 @@ namespace mhs::app::erom {
                         throw std::runtime_error("nonfinite validation temperature");
                     worst = std::max(worst, error.maxCoeff());
                 };
-                if (!defaults && L.rows() < B.cols() + ng) {
+                const bool has_fixed_load = !project.fixed_load.isZero(0.0);
+                const Eigen::Map<const Vector> output_offset(project.output_offset.data(), L.rows());
+                if (!defaults && L.rows() < B.cols() + ng + has_fixed_load) {
                     // The full and Galerkin operators are symmetric. One adjoint
                     // solve per output gives the same responses for every input.
                     for (Eigen::Index j = 0; j < L.rows(); ++j) {
@@ -93,6 +108,12 @@ namespace mhs::app::erom {
                         const Vector approximate = factor.solve(L.row(j).transpose());
                         if (B.cols())
                             compare(project.B.transpose() * exact, B.transpose() * approximate);
+                        if (has_fixed_load) {
+                            Vector a(1), b(1);
+                            a[0] = project.fixed_load.dot(exact) + output_offset[j];
+                            b[0] = fixed_load.dot(approximate) + output_offset[j];
+                            compare(a, b);
+                        }
                         const Vector reduced_trace = boundary * approximate;
                         Vector ambient_exact(ng), ambient_approximate(ng);
                         for (Eigen::Index i = 0; i < ng; ++i) {
@@ -106,30 +127,39 @@ namespace mhs::app::erom {
                     }
                     return;
                 }
-                auto compare_load = [&](const auto& load) {
-                    compare(project.L * solver.solve(matrix, rhs, Vector::Zero(n)), L * factor.solve(load));
+                auto compare_load = [&](const auto& load, bool affine = false) {
+                    Vector exact = project.L * solver.solve(matrix, rhs, Vector::Zero(n));
+                    Vector approximate = L * factor.solve(load);
+                    if (affine) {
+                        exact += output_offset;
+                        approximate += output_offset;
+                    }
+                    compare(exact, approximate);
                 };
                 Vector load(B.rows());
                 if (defaults) {
-                    Vector powers(B.cols());
-                    for (Eigen::Index i = 0; i < powers.size(); ++i)
-                        powers[i] = project.sources[i].default_power;
-                    rhs.noalias() = project.B * powers;
-                    load.noalias() = B * powers;
+                    rhs = project.fixed_load;
+                    load = fixed_load;
                 }
-                else
+                else {
+                    if (has_fixed_load) {
+                        rhs = project.fixed_load;
+                        compare_load(fixed_load, true);
+                    }
                     for (Eigen::Index i = 0; i < B.cols(); ++i) {
                         rhs = project.B.col(i);
                         compare_load(B.col(i));
                     }
+                }
                 for (Eigen::Index i = 0; i < ng; ++i) {
                     if (!defaults) {
                         rhs.setZero();
                         load.setZero();
                     }
                     const auto& group = project.training[i];
-                    const double delta = defaults ? group.boundary_group.ambient - project.reference_temperature : 1;
                     for (auto id = group.begin; id < group.end; ++id) {
+                        const double delta
+                            = defaults ? project.interfaces[id].default_ambient - project.reference_temperature : 1;
                         const double power = closure[id] * delta;
                         rhs[project.boundary_cells[id]] += power;
                         load.noalias() += power * boundary.row(id).transpose();
@@ -138,7 +168,7 @@ namespace mhs::app::erom {
                         compare_load(load);
                 }
                 if (defaults)
-                    compare_load(load);
+                    compare_load(load, true);
             };
             check(lower);
             check(lower.cwiseSqrt().cwiseProduct(upper.cwiseSqrt()));
@@ -150,10 +180,7 @@ namespace mhs::app::erom {
                         h[i] = (i + alternate) % 2 ? upper[i] : lower[i];
                     check(h);
                 }
-            Vector defaults(ng);
-            for (Eigen::Index i = 0; i < ng; ++i)
-                defaults[i] = project.training[i].boundary_group.coefficient;
-            check(defaults, true);
+            check(lower, true);
             if (worst > tolerance) {
                 std::ostringstream message;
                 message << "output validation error " << worst << " exceeds tolerance " << tolerance;
@@ -183,12 +210,13 @@ namespace mhs::app::erom {
             if (!std::isfinite(range.minimum) || !std::isfinite(range.maximum) || range.minimum <= 0
                 || range.maximum < range.minimum)
                 throw std::invalid_argument("invalid HTC range for group " + std::to_string(id));
-        auto project = prepare(compiler::compile_fom(definition, mesh), definition, ranges);
+        auto project = prepare(definition, mesh, ranges);
         if (!project.capacity.allFinite() || (project.capacity.array() <= 0).any())
             throw std::invalid_argument("EROM extraction requires finite positive cell capacities");
         const auto regions = connected_regions(project.K);
         if (!covers_regions(project, regions, Vector::Ones(static_cast<Eigen::Index>(project.boundary_cells.size()))))
-            throw std::invalid_argument("each thermally disconnected FOM region needs an HTC training surface");
+            throw std::invalid_argument(
+                "each thermally disconnected FOM region needs a fixed or parameterized thermal anchor");
 
         Statistics statistics;
         const auto ng = static_cast<Eigen::Index>(project.training.size());
@@ -204,17 +232,39 @@ namespace mhs::app::erom {
         K = ((K + K.transpose()) * 0.5).eval();
         K.diagonal() = K.diagonal().cwiseMax(0.0);
         const Matrix B = basis.transpose() * project.B, L = project.L * basis;
+        const Vector fixed_load = basis.transpose() * project.fixed_load;
         const Vector rhs = basis.transpose() * project.capacity;
         const Vector uniform = solve_positive(C, rhs);
         const Matrix boundary = basis(project.boundary_cells, Eigen::placeholders::all);
-        statistics.output_error = validate_outputs(project, boundary, K, B, L, lower, upper, tolerance, regions);
+        statistics.output_error
+            = validate_outputs(project, boundary, K, B, L, fixed_load, lower, upper, tolerance, regions);
         core::Vector<model::EromBoundaryGroup> surfaces;
         surfaces.reserve(project.training.size());
         for (auto& group : project.training)
             surfaces.push_back(std::move(group.boundary_group));
-        model::Erom asset {native(K), native(C), native(B), native(L), native(boundary), std::move(project.interfaces),
+        model::Erom asset {native(K), native(C), native(B), native(L), native(boundary),
+            {fixed_load.begin(), fixed_load.end()}, std::move(project.output_offset), std::move(project.interfaces),
             std::move(surfaces), std::move(project.outline), std::move(project.sources), std::move(project.outputs),
             project.reference_temperature, {uniform.begin(), uniform.end()}};
+        // Normalize only after physical sampling and projection are complete.
+        const auto& origin = project.origin;
+        auto translate = [&](model::Facet& facet) {
+            const auto [u, v] = model::tangential_axes(facet.axis);
+            facet.coordinate -= origin[static_cast<std::size_t>(facet.axis)];
+            facet.bounds[0] -= origin[u];
+            facet.bounds[1] -= origin[u];
+            facet.bounds[2] -= origin[v];
+            facet.bounds[3] -= origin[v];
+        };
+        for (auto& face : asset.interfaces)
+            translate(face.facet);
+        for (auto& group : asset.outline)
+            for (auto& facet : group.facets)
+                translate(facet);
+        for (auto& output : asset.outputs)
+            if (output.point)
+                for (std::size_t axis = 0; axis < 3; ++axis)
+                    (*output.point)[axis] -= origin[axis];
         model::validate_erom(asset);
         return {std::move(asset), statistics};
     }

@@ -14,13 +14,13 @@
 
 ## 应用层
 
-PTA 的 XML、LengthUnit、Layer、Block、Rect、FaceKey、几何变量及表达式形式参数规则全部位于 `apps/metahotspot`。`pta::normalize` 使用独立的算术求值器解析几何表达式，将层厚度/偏移/矩形展开成绝对三维 SI box，解析材料名，换算边界、网格和探针坐标，并完成 PTA 的 `x→T/t` 重写。随后才调用 `compiler::compile_fom`。
+PTA 的 XML、LengthUnit、Layer、Block、Rect、FaceKey、几何变量及表达式形式参数规则全部位于应用共享的 `apps/common/pta`。`definition.hpp/.cpp` 负责定义与规范化（含几何求值），`io.hpp/.cpp` 负责 XML 读取和结果写回；`xml.hpp` 仅为需要直接操作 XML 的应用实现提供内部入口。`pta::normalize` 使用独立的算术求值器解析几何表达式，将层厚度/偏移/矩形展开成绝对三维 SI box，解析材料名，换算边界、网格和探针坐标，并完成 PTA 的 `x→T/t` 重写。随后才调用 `compiler::compile_fom`。
 
 CLI 兼容 PTA 时保留从 XML 的 `Results/Mesh` 或 `GeneratedMesh` 读取网格坐标轴的行为。读取与单位换算属于应用层，转换后通过独立的 `MeshSpec` 传入编译器。
 
 PTA `VolumetricHeatSource` 使用 W/m³；引用裸函数名时，适配器转换为 `function(t)`。PTA 的周期分段常数函数 Interval 为每段时长，周期为 Interval × Values.Count。
 
-`OutputMesh`、节点插值、PTA XML 结果回写和 VTU 写出均属于应用私有实现。运行期 `Fom` 只保存计算数据。SDK 不依赖 tinyxml2，不安装应用层头文件。
+`OutputMesh`、节点插值、PTA XML 结果回写和 VTU 写出均属于应用私有实现。运行期 `Fom` 只保存计算数据。原生 EROM 读取归 io 组件，入口为 `mhs::io::read_erom`。io 和应用 XML 实现各自 PRIVATE 链接 tinyxml2；model 不处理文件格式，也不依赖 io 或 tinyxml2。SDK 公开头不包含 tinyxml2，静态库的链接依赖由 CMake 配置解析；PTA 应用层头文件不安装。
 
 ## C ABI / Python
 

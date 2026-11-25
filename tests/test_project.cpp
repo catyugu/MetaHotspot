@@ -45,16 +45,18 @@ namespace {
         const Facet right {Axis::X, 1, 1, {0, 1, 0, 1}};
         if (left_open) {
             e->Vb(1, 0) = 1;
-            e->interfaces.push_back({left, 0.25, 0});
-            e->boundary_groups.push_back({"left", 1, 10, 2, 310});
+            e->interfaces.push_back({left, 0.25, 0, 2, 310});
+            e->boundary_groups.push_back({"left", 1, 10});
         }
         else
             e->outline.push_back({"left", {left}});
-        e->interfaces.push_back({right, 0.25, static_cast<BoundaryGroupId>(e->boundary_groups.size())});
-        e->boundary_groups.push_back({"right", 1, 10, 1, 330});
+        e->interfaces.push_back({right, 0.25, static_cast<BoundaryGroupId>(e->boundary_groups.size()), 1, 330});
+        e->boundary_groups.push_back({"right", 1, 10});
         e->reference_temperature = reference;
         e->uniform_temperature_mode = {1};
-        e->sources = {{"first", 0}, {"second", 1}};
+        e->sources = {{"first"}, {"second"}};
+        e->f = {0};
+        e->output_offset = {0, 0};
         e->outputs = {{"sensor", Vec3 {0.5, 0.25, 0.5}}, {"source mean", std::nullopt}};
         return e;
     }
@@ -139,7 +141,7 @@ TEST(Project, PartialMixedContactUsesExposedBoundaryAndReferenceOffsets)
     EXPECT_NEAR(ops.K.coeff(0, 1), -0.5, 1e-13);
     EXPECT_NEAR(ops.K.coeff(1, 1), 0.5 + 2.0 / 3 + 0.8, 1e-13);
     EXPECT_NEAR(ops.f[0], 800 + 300 + 140, 1e-12);
-    EXPECT_NEAR(ops.f[1], 2 - 140 + 20 + 40, 1e-12);
+    EXPECT_NEAR(ops.f[1], -140 + 20 + 40, 1e-12);
     EXPECT_NEAR(ops.C.coeff(1, 1), 2, 1e-13);
 
     const auto result = solver::solve(project);
@@ -177,13 +179,13 @@ TEST(Project, EromContactUsesModalOuterProductsAndInstanceSchedules)
     EXPECT_DOUBLE_EQ(ops.K.coeff(1, 0), 12);
     EXPECT_NEAR(ops.K.coeff(0, 0), 8 + 4.0 / 3, 1e-13);
     EXPECT_NEAR(ops.K.coeff(1, 1), 18 + 0.8, 1e-13);
-    EXPECT_NEAR(ops.f[0], 16 + 30 * (4.0 / 3 + 4), 1e-12);
-    EXPECT_NEAR(ops.f[1], 2 + 20 * 0.8 + 30 * 6, 1e-12);
+    EXPECT_NEAR(ops.f[0], 14 + 30 * (4.0 / 3 + 4), 1e-12);
+    EXPECT_NEAR(ops.f[1], 20 * 0.8 + 30 * 6, 1e-12);
     const auto& next = assembler.assemble(state, 3);
     EXPECT_EQ(next.K.nnz(), 4u);
     EXPECT_DOUBLE_EQ(next.K.coeff(0, 1), 12);
-    EXPECT_NEAR(next.f[0], 23 + 30 * (4.0 / 3 + 4), 1e-12);
-    EXPECT_NEAR(next.f[1], 2 + 20 * 0.8 + 30 * 6, 1e-12);
+    EXPECT_NEAR(next.f[0], 21 + 30 * (4.0 / 3 + 4), 1e-12);
+    EXPECT_NEAR(next.f[1], 20 * 0.8 + 30 * 6, 1e-12);
 }
 
 TEST(Project, UntrainedContactWarnsAndKeepsTheEnvironment)

@@ -34,6 +34,12 @@ namespace mhs::app::pta {
         std::string y_offset;
         std::optional<std::string> thickness;
         mhs::core::Vector<RectOperation> geometry;
+        std::string heat_source_id {};
+    };
+
+    struct HeatSourceSpec {
+        std::string id;
+        std::string name;
     };
 
     struct LayerSpec {
@@ -67,9 +73,10 @@ namespace mhs::app::pta {
         LengthUnit length_unit = LengthUnit::Meter;
         mhs::core::Vector<LayerSpec> layers;
         mhs::core::Vector<PointProbeSpec> point_probes;
+        mhs::core::Vector<HeatSourceSpec> heat_sources;
     };
 
     std::string rewrite_formal_argument(const std::string& expression, std::string_view replacement);
-    void normalize(Definition& input);
+    void normalize(Definition& input, bool extraction = false);
 
 } // namespace mhs::app::pta
