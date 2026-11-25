@@ -1,10 +1,10 @@
 name: Autofix
 
 on:
-  workflow_call:
-    secrets:
-      AUTOFIX_TOKEN:
-        required: true
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
 
 permissions:
   contents: read
@@ -12,6 +12,10 @@ permissions:
 
 jobs:
   fix:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/catyugu/metahotspot-ci:ubuntu24.04-18975036af24574f
@@ -39,8 +43,8 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git add -u -- src include tests apps python .github/scripts
           if git diff --cached --quiet; then
-            echo "::error::No automatic fixes available; resolve the lint errors manually."
-            exit 1
+            echo "No automatic fixes needed or available."
+            exit 0
           fi
           : "${AUTOFIX_TOKEN:?AUTOFIX_TOKEN secret is required}"
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "style: apply automatic formatting"
