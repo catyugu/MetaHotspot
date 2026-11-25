@@ -153,7 +153,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 ## 第三方依赖
 
 - **CPM**：仅负责配置阶段的依赖获取与复用，不进入 SDK 运行时接口。
-- **tinyxml2**：EROM 原生 XML 与 PTA XML 的解析和 DOM 操作。实现对象直接编入 `mhs_io`，使用私有命名空间，不安装其头文件、独立库或 CMake 包，也不作为 SDK 查找依赖。
+- **tinyxml2**：EROM 原生 XML 与 PTA XML 的解析和 DOM 操作。沿用 CPM 的常规依赖获取方式，在 IO 和应用实现中 PRIVATE 链接；公开 API 不使用 tinyxml2 类型。静态 SDK 的链接闭包由 CMake package config 解析。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：用于内部小规模线性代数、EROM 算子校验和可选 MKL/Pardiso 实现，不随 SDK 导出。基础容器是 `core::Vector`、`core::Matrix` 和 `core::CSRMatrix`；AMGCL 直接读取 CSR。

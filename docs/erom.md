@@ -187,8 +187,9 @@ geometry and loads.
 
 The standalone `mhs::io` component reads EROM assets via `io/erom.hpp`.
 The model component contains only the in-memory asset and its validation.
-The extraction application owns native XML writing; XML parser dependencies
-are private implementation details and are not required by SDK consumers.
+The extraction application owns native XML writing. tinyxml2 is linked
+privately by the IO and application targets; the public headers use no XML
+parser types. The installed CMake package resolves the static link dependency.
 
 The root is `<Erom version="1">`, encoded as UTF-8. All geometry and thermal
 quantities use SI units. Numeric arrays are whitespace-separated decimal

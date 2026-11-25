@@ -3,7 +3,7 @@ add_library(metahotspot_frontend STATIC
     postprocess.cpp
 )
 target_link_libraries(metahotspot_frontend
-    PUBLIC mhs_pta_io
+    PUBLIC mhs::metahotspot mhs_pta_io
     PRIVATE mhs_options
 )
 target_include_directories(metahotspot_frontend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

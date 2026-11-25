@@ -3,7 +3,7 @@ add_library(mhs_pta_io STATIC
     io.cpp
 )
 target_link_libraries(mhs_pta_io
-    PUBLIC mhs::metahotspot
-    PRIVATE mhs_tinyxml2_headers mhs_options
+    PUBLIC mhs::model mhs::solver
+    PRIVATE tinyxml2::tinyxml2 mhs_options
 )
 target_include_directories(mhs_pta_io PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
