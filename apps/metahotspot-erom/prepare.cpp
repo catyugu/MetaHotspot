@@ -1,6 +1,6 @@
-#include "extraction.hpp"
 #include "compiler/fom_compiler.hpp"
 #include "compiler/model_functions.hpp"
+#include "extraction.hpp"
 #include "solver/assembler.hpp"
 #include "solver/thermal_physics.hpp"
 #include "solver/thermal_reconstruction.hpp"
@@ -124,9 +124,8 @@ namespace mhs::app::erom {
                 value.temperature += frozen[f].slope * state[mesh.exterior_facets[f].owner];
                 return value;
             };
-            const auto sample = [&] {
-                return solver::sample_point(model, state, 0, probe.cell, probe.point, boundary);
-            };
+            const auto sample
+                = [&] { return solver::sample_point(model, state, 0, probe.cell, probe.point, boundary); };
             const double offset = sample();
             for (const auto cell : support) {
                 state[cell] = 1;
