@@ -16,16 +16,23 @@ def run(*args):
 def check_sdk(prefix, build, config, generator):
     headers = prefix / "include/metahotspot"
     for header in headers.rglob("*.hpp"):
-        if "Eigen" in header.read_text(encoding="utf-8"):
-            raise RuntimeError(f"Eigen leaked into public header: {header}")
+        text = header.read_text(encoding="utf-8")
+        for dependency in ("Eigen", "tinyxml2"):
+            if dependency.lower() in text.lower():
+                raise RuntimeError(f"{dependency} leaked into public header: {header}")
     linear_headers = {p.name for p in (headers / "linear").glob("*.hpp")}
     if linear_headers != {"solver.hpp"}:
         raise RuntimeError(
             f"Unexpected public linear backend headers: {linear_headers}"
         )
     for package in prefix.rglob("*MetaHotspot*.cmake"):
-        if "Eigen" in package.read_text(encoding="utf-8"):
-            raise RuntimeError(f"Eigen leaked into installed package: {package}")
+        text = package.read_text(encoding="utf-8")
+        for dependency in ("Eigen", "tinyxml2"):
+            if dependency.lower() in text.lower():
+                raise RuntimeError(f"{dependency} leaked into installed package: {package}")
+    for path in prefix.rglob("*"):
+        if "tinyxml2" in path.name.lower():
+            raise RuntimeError(f"Private XML dependency installed separately: {path}")
     consumer = build / "sdk-consumer"
     consumer.mkdir(exist_ok=True)
     (consumer / "CMakeLists.txt").write_text(
@@ -33,14 +40,20 @@ def check_sdk(prefix, build, config, generator):
         "project(SDKConsumer LANGUAGES CXX)\n"
         "find_package(MetaHotspot CONFIG REQUIRED)\n"
         "add_executable(consumer main.cpp)\n"
-        "target_link_libraries(consumer PRIVATE mhs::metahotspot)\n",
+        "target_link_libraries(consumer PRIVATE mhs::metahotspot mhs::erom_extraction)\n",
         encoding="utf-8",
     )
     (consumer / "main.cpp").write_text(
         '#include "solver/solver.hpp"\n'
         '#include "core/matrix.hpp"\n'
         '#include "linear/solver.hpp"\n'
-        "int main() {\n"
+        '#include "model/erom.hpp"\n'
+        '#include "erom/extraction.hpp"\n'
+        "int main(int argc, char** argv) {\n"
+        "  if (argc == 3) {\n"
+        "    auto asset = mhs::model::read_erom(argv[1]);\n"
+        "    mhs::app::erom::write_erom(argv[2], *asset);\n"
+        "  }\n"
         "  mhs::core::CSRMatrix<double> a(1, 1, {0, 1}, {0}, {2.0});\n"
         "  mhs::core::Matrix<double> dense(1, 1);\n"
         "  dense(0, 0) = a.coeff(0, 0);\n"
@@ -62,6 +75,7 @@ def check_sdk(prefix, build, config, generator):
         f"-DCMAKE_BUILD_TYPE={config}",
         f"-DCMAKE_PREFIX_PATH={prefix}",
         "-DCMAKE_DISABLE_FIND_PACKAGE_Eigen3=TRUE",
+        "-DCMAKE_DISABLE_FIND_PACKAGE_tinyxml2=TRUE",
     )
     run("cmake", "--build", consumer / "build", "--config", config)
 

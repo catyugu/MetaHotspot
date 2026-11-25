@@ -7,8 +7,8 @@ if(NOT COMMAND CPMAddPackage)
     include("${CMAKE_CURRENT_LIST_DIR}/CPM.cmake")
 endif()
 
-# Versions are declared here and nowhere else: the fetch below and the installed
-# package config both read them.
+# Versions are declared here and nowhere else; the installed package config
+# reads only the versions of its external dependencies.
 set(MHS_EIGEN_VERSION 5.0.0)
 set(MHS_SPDLOG_VERSION 1.17.0)
 set(MHS_TINYXML2_VERSION 11.0.0)
@@ -53,18 +53,31 @@ if(NOT TARGET spdlog::spdlog)
 endif()
 
 # ----------------------------------------------------------------------------
-# tinyxml2 - native EROM XML and shared PTA XML compatibility.
+# tinyxml2 - private XML implementation, compiled into mhs_model.
+# Do not import, install or export the upstream CMake package. Use a distinct
+# namespace so an SDK consumer may link its own tinyxml2 without collisions.
 # ----------------------------------------------------------------------------
-if(NOT TARGET tinyxml2::tinyxml2)
-    CPMFindPackage(
-        NAME tinyxml2
-        VERSION ${MHS_TINYXML2_VERSION}
-        FIND_PACKAGE_ARGUMENTS CONFIG
-        GITHUB_REPOSITORY leethomason/tinyxml2
-        GIT_TAG ${MHS_TINYXML2_VERSION}
-        SYSTEM YES
-    )
-endif()
+CPMAddPackage(
+    NAME mhs_tinyxml2
+    GITHUB_REPOSITORY leethomason/tinyxml2
+    GIT_TAG ${MHS_TINYXML2_VERSION}
+    DOWNLOAD_ONLY YES
+)
+# Upstream explicitly marks its API default-visible on GCC/Clang. Keep a
+# build-local copy with hidden visibility; never modify the CPM source cache.
+set(_mhs_xml_dir "${PROJECT_BINARY_DIR}/third_party/tinyxml2")
+configure_file("${mhs_tinyxml2_SOURCE_DIR}/tinyxml2.cpp" "${_mhs_xml_dir}/tinyxml2.cpp" COPYONLY)
+file(READ "${mhs_tinyxml2_SOURCE_DIR}/tinyxml2.h" _mhs_xml_header)
+string(REPLACE "visibility(\"default\")" "visibility(\"hidden\")" _mhs_xml_header "${_mhs_xml_header}")
+file(CONFIGURE OUTPUT "${_mhs_xml_dir}/tinyxml2.h" CONTENT "${_mhs_xml_header}" @ONLY)
+add_library(mhs_tinyxml2_headers INTERFACE)
+target_include_directories(mhs_tinyxml2_headers SYSTEM INTERFACE "${_mhs_xml_dir}")
+target_compile_definitions(mhs_tinyxml2_headers INTERFACE tinyxml2=mhs_private_tinyxml2)
+add_library(mhs_tinyxml2 OBJECT "${_mhs_xml_dir}/tinyxml2.cpp")
+target_link_libraries(mhs_tinyxml2 PRIVATE mhs_tinyxml2_headers)
+set_target_properties(mhs_tinyxml2 PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+unset(_mhs_xml_header)
+unset(_mhs_xml_dir)
 
 # ----------------------------------------------------------------------------
 # muparser - mathematical expression parser, built static.

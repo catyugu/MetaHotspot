@@ -6,7 +6,7 @@ add_library(metahotspot_frontend STATIC
 )
 target_link_libraries(metahotspot_frontend
     PUBLIC mhs_pta_model_io
-    PRIVATE mhs_options
+    PRIVATE mhs_tinyxml2_headers mhs_options
 )
 target_include_directories(metahotspot_frontend PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 

@@ -20,7 +20,7 @@ CLI 兼容 PTA 时保留从 XML 的 `Results/Mesh` 或 `GeneratedMesh` 读取网
 
 PTA `VolumetricHeatSource` 使用 W/m³；引用裸函数名时，适配器转换为 `function(t)`。PTA 的周期分段常数函数 Interval 为每段时长，周期为 Interval × Values.Count。
 
-`OutputMesh`、节点插值、PTA XML 结果回写和 VTU 写出均属于应用私有实现。运行期 `Fom` 只保存计算数据。SDK 的 model 组件使用 tinyxml2 读取 EROM XML；不安装 PTA 应用层头文件。
+`OutputMesh`、节点插值、PTA XML 结果回写和 VTU 写出均属于应用私有实现。运行期 `Fom` 只保存计算数据。model 组件将 tinyxml2 作为私有实现对象编入静态库，供原生 EROM XML 和应用内部 XML 操作复用；SDK 不安装或查找 tinyxml2，也不安装 PTA 应用层头文件。
 
 ## C ABI / Python
 

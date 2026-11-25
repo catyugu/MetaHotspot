@@ -11,7 +11,7 @@ add_library(mhs::erom_extraction ALIAS mhs_erom_extraction)
 set_target_properties(mhs_erom_extraction PROPERTIES EXPORT_NAME erom_extraction)
 target_link_libraries(mhs_erom_extraction
     PUBLIC mhs_model
-    PRIVATE mhs_compiler mhs_solver OpenMP::OpenMP_CXX tinyxml2::tinyxml2
+    PRIVATE mhs_compiler mhs_solver OpenMP::OpenMP_CXX $<BUILD_INTERFACE:mhs_tinyxml2_headers>
     $<BUILD_INTERFACE:mhs_options> $<BUILD_INTERFACE:Eigen3::Eigen> $<BUILD_INTERFACE:amgcl::amgcl>)
 target_include_directories(mhs_erom_extraction
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/metahotspot>
@@ -21,7 +21,7 @@ target_compile_definitions(mhs_erom_extraction PRIVATE AMGCL_NO_BOOST)
 set_source_files_properties(amg_solver.cpp PROPERTIES COMPILE_OPTIONS "$<$<CXX_COMPILER_ID:MSVC>:/wd4701>")
 
 add_executable(metahotspot-erom main.cpp input.cpp)
-target_link_libraries(metahotspot-erom PRIVATE mhs::erom_extraction mhs_pta_model_io mhs_options)
+target_link_libraries(metahotspot-erom PRIVATE mhs::erom_extraction mhs_pta_model_io mhs_tinyxml2_headers mhs_options)
 mhs_stage_runtime(metahotspot-erom)
 if(APPLE)
     set_property(TARGET metahotspot-erom PROPERTY INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
