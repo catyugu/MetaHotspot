@@ -29,7 +29,9 @@ def check_sdk(prefix, build, config, generator):
         text = package.read_text(encoding="utf-8")
         for dependency in ("Eigen", "tinyxml2"):
             if dependency.lower() in text.lower():
-                raise RuntimeError(f"{dependency} leaked into installed package: {package}")
+                raise RuntimeError(
+                    f"{dependency} leaked into installed package: {package}"
+                )
     for path in prefix.rglob("*"):
         if "tinyxml2" in path.name.lower():
             raise RuntimeError(f"Private XML dependency installed separately: {path}")
