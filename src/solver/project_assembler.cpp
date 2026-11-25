@@ -187,10 +187,10 @@ namespace mhs::solver {
 
             const auto& e = *std::get<std::shared_ptr<const Erom>>(component.asset);
             copy_dense(e.K, operators_.K, offset);
+            std::ranges::copy(e.f, operators_.f.begin() + offset);
             for (SourceId s = 0; s < e.sources.size(); ++s) {
-                const auto& source = e.sources[s];
                 const double power = s < component.powers.size() && component.powers[s] ? component.powers[s](time)
-                                                                                        : source.default_power;
+                                                                                        : 0.0;
                 if (!std::isfinite(power))
                     throw std::invalid_argument("EROM power must be finite");
                 for (std::size_t j = 0; j < e.K.rows(); ++j)
@@ -198,9 +198,8 @@ namespace mhs::solver {
             }
             for (core::EntityIndex interface_index = 0; interface_index < e.interfaces.size(); ++interface_index) {
                 const auto& face = e.interfaces[interface_index];
-                const auto& surface = e.boundary_groups[face.boundary_group];
                 const auto* law = boundary_override(component.boundaries, face.boundary_group);
-                if (law ? is_adiabatic(*law) : surface.coefficient == 0)
+                if (law ? is_adiabatic(*law) : face.default_coefficient == 0)
                     continue;
                 const Side side {offset, e.Vb.row(interface_index), e.reference_temperature};
                 const double temperature = law ? side.temperature(state) : 0;
@@ -208,8 +207,8 @@ namespace mhs::solver {
                     = boundary_terms(face.facet, project_.face_patches(i, interface_index), [&](const Facet& patch) {
                           if (law)
                               return evaluate_boundary(*law, patch, temperature, time, face.resistance);
-                          const double g = convection_conductance(patch.area(), surface.coefficient, face.resistance);
-                          return BoundaryEvaluation {.conductance = g, .load = g * surface.ambient};
+                          const double g = convection_conductance(patch.area(), face.default_coefficient, face.resistance);
+                          return BoundaryEvaluation {.conductance = g, .load = g * face.default_ambient};
                       });
                 if (g != 0)
                     add_block(operators_.K, side, side, g);

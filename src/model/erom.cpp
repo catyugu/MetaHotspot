@@ -1,18 +1,24 @@
 #include "model/erom.hpp"
-#include "erom_codec.hpp"
 
 #include <Eigen/Cholesky>
+#include <tinyxml2.h>
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <fstream>
+#include <iterator>
+#include <limits>
 #include <stdexcept>
+#include <string_view>
 
 namespace mhs::model {
     namespace {
+        using tinyxml2::XMLElement;
+
         void require(bool valid, const char* message)
         {
             if (!valid)
-                throw std::invalid_argument(std::string(".mherom: ") + message);
+                throw std::invalid_argument(std::string("EROM XML: ") + message);
         }
 
         bool finite(std::span<const double> values)
@@ -20,78 +26,109 @@ namespace mhs::model {
             return std::ranges::all_of(values, [](double x) { return std::isfinite(x); });
         }
 
-        class Reader {
-        public:
-            explicit Reader(const std::filesystem::path& path) : input_(path, std::ios::binary)
-            {
-                if (!input_)
-                    throw std::runtime_error("cannot open .mherom file: " + path.string());
-                input_.seekg(0, std::ios::end);
-                const auto length = input_.tellg();
-                require(length >= 0, "cannot determine file length");
-                remaining_ = static_cast<std::uint64_t>(length);
-                input_.seekg(0);
+        const XMLElement& child(const XMLElement& parent, const char* name)
+        {
+            const auto* element = parent.FirstChildElement(name);
+            require(element && !element->NextSiblingElement(name), "missing or duplicate required element");
+            return *element;
+        }
+
+        std::string_view attribute(const XMLElement& element, const char* name)
+        {
+            const char* value = element.Attribute(name);
+            require(value != nullptr, "missing required attribute");
+            return value;
+        }
+
+        std::string_view trim(std::string_view text)
+        {
+            const auto begin = text.find_first_not_of(" \t\r\n");
+            if (begin == std::string_view::npos)
+                return {};
+            return text.substr(begin, text.find_last_not_of(" \t\r\n") - begin + 1);
+        }
+
+        std::string_view contents(const XMLElement& element)
+        {
+            require(element.FirstChildElement() == nullptr, "unexpected nested element in numeric field");
+            const char* text = element.GetText();
+            return text ? std::string_view(text) : std::string_view {};
+        }
+
+        template <typename T> T number(std::string_view text)
+        {
+            text = trim(text);
+            if (!text.empty() && text.front() == '+')
+                text.remove_prefix(1);
+            require(!text.empty(), "missing numeric value");
+            T value {};
+            const auto end = text.data() + text.size();
+            const auto parsed = std::from_chars(text.data(), end, value);
+            require(parsed.ec == std::errc {} && parsed.ptr == end, "invalid numeric value");
+            if constexpr (std::is_floating_point_v<T>)
+                require(std::isfinite(value), "nonfinite numeric value");
+            return value;
+        }
+
+        std::size_t count(const XMLElement& element, const char* name)
+        {
+            return number<std::size_t>(attribute(element, name));
+        }
+
+        double scalar(const XMLElement& element, const char* name)
+        {
+            return number<double>(attribute(element, name));
+        }
+
+        void values(std::string_view text, std::span<double> destination)
+        {
+            for (auto& value : destination) {
+                text = trim(text);
+                const auto stop = text.find_first_of(" \t\r\n");
+                value = number<double>(text.substr(0, stop));
+                text = stop == std::string_view::npos ? std::string_view {} : text.substr(stop);
             }
+            require(trim(text).empty(), "unexpected trailing numeric entries");
+        }
 
-            void check_count(std::uint64_t count, std::uint64_t unit) const
-            {
-                require(count <= remaining_ / unit, "field exceeds remaining file size");
+        core::Matrix<double> matrix(const XMLElement& element)
+        {
+            const auto rows = count(element, "rows"), cols = count(element, "cols");
+            const auto text = contents(element);
+            require(cols == 0 || rows <= text.size() / cols, "matrix dimensions exceed numeric data");
+            core::Matrix<double> result(rows, cols);
+            values(text, {result.data(), rows * cols});
+            return result;
+        }
+
+        core::Vector<double> vector(const XMLElement& element)
+        {
+            const auto size = count(element, "size");
+            const auto text = contents(element);
+            require(size <= text.size(), "vector dimension exceeds numeric data");
+            core::Vector<double> result(size);
+            values(text, result);
+            return result;
+        }
+
+        Facet facet(const XMLElement& element)
+        {
+            const auto axis = attribute(element, "axis");
+            require(axis == "x" || axis == "y" || axis == "z", "invalid facet axis");
+            const int normal = number<int>(attribute(element, "normal"));
+            require(normal == -1 || normal == 1, "invalid facet normal");
+            return {axis == "x" ? Axis::X : axis == "y" ? Axis::Y : Axis::Z,
+                static_cast<std::int8_t>(normal), scalar(element, "coordinate"),
+                {scalar(element, "uMin"), scalar(element, "uMax"), scalar(element, "vMin"), scalar(element, "vMax")}};
+        }
+
+        template <typename F> void records(const XMLElement& parent, const char* name, F read)
+        {
+            for (const auto* element = parent.FirstChildElement(); element; element = element->NextSiblingElement()) {
+                require(std::string_view(element->Name()) == name, "unexpected record element");
+                read(*element);
             }
-
-            std::string bytes(std::size_t count)
-            {
-                check_count(count, 1);
-                std::string value(count, '\0');
-                read(value.data(), count);
-                return value;
-            }
-
-            std::uint32_t u32() { return scalar<std::uint32_t>(); }
-            double f64() { return scalar<double>(); }
-
-            std::string name() { return bytes(u32()); }
-
-            core::Matrix<double> matrix(std::uint32_t rows, std::uint32_t cols)
-            {
-                check_count(static_cast<std::uint64_t>(rows) * cols, 8);
-                core::Matrix<double> value(rows, cols);
-                values(erom_codec::elements(value));
-                return value;
-            }
-
-            core::Vector<double> vector(std::uint32_t count)
-            {
-                check_count(count, 8);
-                core::Vector<double> value(count);
-                values(std::span(value));
-                return value;
-            }
-
-            void finish() const { require(remaining_ == 0, "unexpected trailing data"); }
-
-        private:
-            template <typename T> void values(std::span<T> data)
-            {
-                erom_codec::transfer(data, [this](char* p, std::size_t n) { read(p, n); });
-            }
-
-            void read(char* buffer, std::size_t count)
-            {
-                require(static_cast<bool>(input_.read(buffer, static_cast<std::streamsize>(count))), "truncated file");
-                remaining_ -= count;
-            }
-
-            template <typename T> T scalar()
-            {
-                check_count(1, sizeof(T));
-                T value;
-                values(std::span(&value, 1));
-                return value;
-            }
-
-            std::ifstream input_;
-            std::uint64_t remaining_;
-        };
+        }
     } // namespace
 
     void validate_erom(const Erom& e)
@@ -125,6 +162,8 @@ namespace mhs::model {
         require(std::isfinite(e.reference_temperature) && e.uniform_temperature_mode.size() == n
                 && finite(e.uniform_temperature_mode),
             "invalid temperature initialization");
+        require(e.f.size() == n && finite(e.f), "invalid fixed load");
+        require(e.output_offset.size() == e.outputs.size() && finite(e.output_offset), "invalid output offset");
         auto validate_facet = [](const Facet& facet) {
             require(static_cast<unsigned>(facet.axis) < 3 && (facet.normal == -1 || facet.normal == 1)
                     && std::isfinite(facet.coordinate) && finite(facet.bounds) && positive_rect(facet.bounds)
@@ -137,13 +176,14 @@ namespace mhs::model {
             require(std::isfinite(face.resistance) && face.resistance > 0,
                 "half-cell resistance must be positive and finite");
             require(face.boundary_group < e.boundary_groups.size(), "invalid interface surface");
+            require(std::isfinite(face.default_coefficient) && face.default_coefficient >= 0
+                    && std::isfinite(face.default_ambient), "invalid default convection parameters");
             used[face.boundary_group] = true;
         }
         require(std::ranges::all_of(used, [](bool x) { return x; }), "empty surface");
         for (const auto& h : e.boundary_groups)
             require(!h.name.empty() && std::isfinite(h.minimum) && std::isfinite(h.maximum)
-                    && std::isfinite(h.coefficient) && std::isfinite(h.ambient) && h.minimum >= 0 && h.maximum > 0
-                    && h.maximum >= h.minimum && h.coefficient >= 0,
+                    && h.minimum > 0 && h.maximum >= h.minimum,
                 "invalid HTC surface");
         for (const auto& group : e.outline) {
             require(!group.name.empty() && !group.facets.empty(), "invalid outline group");
@@ -151,63 +191,61 @@ namespace mhs::model {
                 validate_facet(facet);
         }
         for (const auto& s : e.sources)
-            require(!s.name.empty() && std::isfinite(s.default_power), "invalid source");
+            require(!s.name.empty(), "invalid source");
         for (const auto& o : e.outputs)
             require(!o.name.empty() && (!o.point || finite(*o.point)), "invalid temperature output");
     }
 
     std::shared_ptr<const Erom> read_erom(const std::filesystem::path& path)
     {
-        Reader reader(path);
-        require(reader.bytes(erom_codec::magic.size()) == erom_codec::magic, "invalid magic");
-        require(reader.u32() == erom_codec::version, "unsupported version");
-        const auto n = reader.u32(), ns = reader.u32(), no = reader.u32(), nb = reader.u32(), ng = reader.u32(),
-                   nl = reader.u32();
-        require(n > 0, "invalid record counts");
+        std::ifstream input(path, std::ios::binary);
+        if (!input)
+            throw std::runtime_error("cannot open EROM XML file: " + path.string());
+        const std::string xml((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+        tinyxml2::XMLDocument doc;
+        require(doc.Parse(xml.data(), xml.size()) == tinyxml2::XML_SUCCESS, "invalid XML document");
+        const auto* root = doc.RootElement();
+        require(root && std::string_view(root->Name()) == "Erom" && !root->NextSiblingElement(), "invalid root element");
+        require(attribute(*root, "version") == "1", "unsupported version");
         auto e = std::make_shared<Erom>();
-        e->reference_temperature = reader.f64();
-        e->K = reader.matrix(n, n);
-        e->C = reader.matrix(n, n);
-        e->B = reader.matrix(n, ns);
-        e->L = reader.matrix(no, n);
-        e->Vb = reader.matrix(nb, n);
-        e->uniform_temperature_mode = reader.vector(n);
-        auto facet = [&] {
-            const auto axis = reader.u32(), normal = reader.u32();
-            require(axis < 3 && normal <= 1, "invalid facet axis or normal");
-            Facet f {static_cast<Axis>(axis), static_cast<std::int8_t>(normal ? 1 : -1), reader.f64(), {}};
-            for (auto& x : f.bounds)
-                x = reader.f64();
-            return f;
-        };
-        reader.check_count(nb, 60);
-        for (std::size_t i = 0; i < nb; ++i)
-            e->interfaces.push_back({facet(), reader.f64(), reader.u32()});
-        reader.check_count(ng, 36);
-        for (std::size_t i = 0; i < ng; ++i)
-            e->boundary_groups.push_back({reader.name(), reader.f64(), reader.f64(), reader.f64(), reader.f64()});
-        reader.check_count(nl, 8);
-        for (std::size_t i = 0; i < nl; ++i) {
-            EromOutline group {reader.name(), {}};
-            const auto count = reader.u32();
-            reader.check_count(count, 48);
-            for (std::size_t j = 0; j < count; ++j)
-                group.facets.push_back(facet());
+        e->reference_temperature = number<double>(contents(child(*root, "ReferenceTemperature")));
+        const auto& operators = child(*root, "Operators");
+        e->K = matrix(child(operators, "K"));
+        e->C = matrix(child(operators, "C"));
+        e->B = matrix(child(operators, "B"));
+        e->L = matrix(child(operators, "L"));
+        e->Vb = matrix(child(operators, "Vb"));
+        e->f = vector(child(operators, "FixedLoad"));
+        e->output_offset = vector(child(operators, "OutputOffset"));
+        e->uniform_temperature_mode = vector(child(*root, "UniformTemperatureMode"));
+
+        records(child(*root, "BoundaryGroups"), "BoundaryGroup", [&](const auto& element) {
+            require(count(element, "id") == e->boundary_groups.size(), "invalid boundary group id");
+            e->boundary_groups.push_back({std::string(attribute(element, "name")), scalar(element, "htcMin"),
+                scalar(element, "htcMax")});
+        });
+        records(child(*root, "Interfaces"), "Interface", [&](const auto& element) {
+            const auto group = count(element, "boundary");
+            require(group < e->boundary_groups.size() && group < core::invalid_id, "invalid interface surface");
+            e->interfaces.push_back({facet(element), scalar(element, "resistance"), static_cast<BoundaryGroupId>(group),
+                scalar(element, "defaultHtc"), scalar(element, "ambientTemperature")});
+        });
+        records(child(*root, "Outline"), "Group", [&](const auto& element) {
+            EromOutline group {std::string(attribute(element, "name")), {}};
+            records(element, "Facet", [&](const auto& geometry) { group.facets.push_back(facet(geometry)); });
             e->outline.push_back(std::move(group));
-        }
-        reader.check_count(ns, 12);
-        for (std::size_t i = 0; i < ns; ++i)
-            e->sources.push_back({reader.name(), reader.f64()});
-        reader.check_count(no, 8);
-        for (std::size_t i = 0; i < no; ++i) {
-            EromOutput output {reader.name(), std::nullopt};
-            const auto has_point = reader.u32();
-            require(has_point <= 1, "invalid output point flag");
-            if (has_point)
-                output.point = Vec3 {reader.f64(), reader.f64(), reader.f64()};
+        });
+        records(child(*root, "Sources"), "Source", [&](const auto& element) {
+            require(count(element, "id") == e->sources.size(), "invalid source id");
+            e->sources.push_back({std::string(attribute(element, "name"))});
+        });
+        records(child(*root, "Outputs"), "Output", [&](const auto& element) {
+            require(count(element, "id") == e->outputs.size(), "invalid output id");
+            EromOutput output {std::string(attribute(element, "name")), std::nullopt};
+            if (element.Attribute("x") || element.Attribute("y") || element.Attribute("z"))
+                output.point = Vec3 {scalar(element, "x"), scalar(element, "y"), scalar(element, "z")};
             e->outputs.push_back(std::move(output));
-        }
-        reader.finish();
+        });
         validate_erom(*e);
         return e;
     }

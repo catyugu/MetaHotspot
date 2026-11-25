@@ -62,8 +62,12 @@ namespace {
         check(e.sources[0].name == "heater A" && e.sources[1].name == "heater B" && e.outputs[0].name == "off center"
                 && !e.outputs[1].point && !e.outputs[2].point,
             "wrong source or output identity");
-        near(e.sources[0].default_power, 5);
-        near(e.sources[1].default_power, 8);
+        near(e.interfaces[0].default_coefficient, 3);
+        near(e.interfaces[2].default_ambient, 302);
+        for (const auto value : e.f)
+            near(value, 0);
+        for (const auto value : e.output_offset)
+            near(value, 0);
         near(e.boundary_groups[0].maximum, 1e4);
         near(e.boundary_groups[1].maximum, 9);
         near(e.reference_temperature, 295);
@@ -202,7 +206,7 @@ int main(int argc, char** argv)
             check(solver::solve(project).converged, "source-free EROM did not converge");
             return 0;
         }
-        check(argc == 2, "expected a .mherom file");
+        check(argc == 2, "expected an EROM XML file");
         const auto e = read_erom(argv[1]);
         check_asset(*e);
         const auto definition = fixture();
@@ -214,7 +218,8 @@ int main(int argc, char** argv)
         sink.thermal_boundaries = {{{{Axis::X, 1, {0, 1, 0, 1}}}, DirichletBoundary {"288"}}};
         auto body = std::make_shared<const Fom>(compiler::compile_fom(sink, {{0, 1}, {0, 1}, {0, 1}}));
         ComponentInstance external {{3, 0, 0}, body, {}, {}};
-        const auto mixed = mhs::compiler::compile_project({{{{}, e, {}, {}}, external}, {}});
+        ComponentInstance package {{}, e, {[](double) { return 5.; }, [](double) { return 8.; }}, {}};
+        const auto mixed = mhs::compiler::compile_project({{package, external}, {}});
         const auto full = mhs::compiler::compile_project({{{{}, fom, {}, {}}, external}, {}});
         check(mixed.dof_count() == 4 && full.dof_count() == 7 && mixed.contacts().size() == 2,
             "embedding failed to reduce DOFs and match nonconforming facets");

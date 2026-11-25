@@ -175,10 +175,10 @@ namespace mhs::app::erom {
                 const double ambient
                     = htc ? constant(htc->ambient_temperature, "Ambient temperature") : result.reference_temperature;
                 const auto begin = static_cast<Eigen::Index>(result.interfaces.size());
-                result.training.push_back({{name, range->second.minimum, range->second.maximum, h, ambient}, begin,
+                result.training.push_back({{name, range->second.minimum, range->second.maximum}, begin,
                     begin + static_cast<Eigen::Index>(facets.size())});
                 for (const auto id : facets) {
-                    result.interfaces.push_back({mesh.exterior_facets[id].geometry, assembler.resistance(id), group});
+                    result.interfaces.push_back({mesh.exterior_facets[id].geometry, assembler.resistance(id), group, h, ambient});
                     result.boundary_cells.push_back(mesh.exterior_facets[id].owner);
                 }
             }
@@ -213,7 +213,7 @@ namespace mhs::app::erom {
                 name = "source " + std::to_string(id);
             columns[id] = static_cast<SourceId>(result.sources.size());
             result.outputs.push_back({name + " temperature", std::nullopt});
-            result.sources.push_back({std::move(name), density * volumes[id]});
+            result.sources.push_back({std::move(name)});
         }
 
         result.B = Matrix::Zero(n, static_cast<Eigen::Index>(result.sources.size()));

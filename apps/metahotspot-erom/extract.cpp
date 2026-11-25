@@ -66,7 +66,15 @@ namespace mhs::app::erom {
             Vector closure(static_cast<Eigen::Index>(project.boundary_cells.size())), rhs(n);
             double worst = 0;
             auto check = [&](const Vector& h, bool defaults = false) {
-                project.set_conductances(closure, h);
+                if (defaults) {
+                    for (Eigen::Index i = 0; i < closure.size(); ++i) {
+                        const auto& face = project.interfaces[i];
+                        closure[i] = solver::convection_conductance(
+                            face.facet.area(), face.default_coefficient, face.resistance);
+                    }
+                }
+                else
+                    project.set_conductances(closure, h);
                 if (defaults && !covers_regions(project, regions, closure))
                     return;
                 Vector diagonal = Vector::Zero(n);
@@ -111,11 +119,8 @@ namespace mhs::app::erom {
                 };
                 Vector load(B.rows());
                 if (defaults) {
-                    Vector powers(B.cols());
-                    for (Eigen::Index i = 0; i < powers.size(); ++i)
-                        powers[i] = project.sources[i].default_power;
-                    rhs.noalias() = project.B * powers;
-                    load.noalias() = B * powers;
+                    rhs.setZero();
+                    load.setZero();
                 }
                 else
                     for (Eigen::Index i = 0; i < B.cols(); ++i) {
@@ -128,8 +133,8 @@ namespace mhs::app::erom {
                         load.setZero();
                     }
                     const auto& group = project.training[i];
-                    const double delta = defaults ? group.boundary_group.ambient - project.reference_temperature : 1;
                     for (auto id = group.begin; id < group.end; ++id) {
+                        const double delta = defaults ? project.interfaces[id].default_ambient - project.reference_temperature : 1;
                         const double power = closure[id] * delta;
                         rhs[project.boundary_cells[id]] += power;
                         load.noalias() += power * boundary.row(id).transpose();
@@ -150,10 +155,7 @@ namespace mhs::app::erom {
                         h[i] = (i + alternate) % 2 ? upper[i] : lower[i];
                     check(h);
                 }
-            Vector defaults(ng);
-            for (Eigen::Index i = 0; i < ng; ++i)
-                defaults[i] = project.training[i].boundary_group.coefficient;
-            check(defaults, true);
+            check(lower, true);
             if (worst > tolerance) {
                 std::ostringstream message;
                 message << "output validation error " << worst << " exceeds tolerance " << tolerance;
@@ -212,7 +214,9 @@ namespace mhs::app::erom {
         surfaces.reserve(project.training.size());
         for (auto& group : project.training)
             surfaces.push_back(std::move(group.boundary_group));
-        model::Erom asset {native(K), native(C), native(B), native(L), native(boundary), std::move(project.interfaces),
+        model::Erom asset {native(K), native(C), native(B), native(L), native(boundary),
+            core::Vector<double>(static_cast<std::size_t>(K.rows()), 0.0),
+            core::Vector<double>(static_cast<std::size_t>(L.rows()), 0.0), std::move(project.interfaces),
             std::move(surfaces), std::move(project.outline), std::move(project.sources), std::move(project.outputs),
             project.reference_temperature, {uniform.begin(), uniform.end()}};
         model::validate_erom(asset);

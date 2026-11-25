@@ -11,7 +11,7 @@ add_library(mhs::erom_extraction ALIAS mhs_erom_extraction)
 set_target_properties(mhs_erom_extraction PROPERTIES EXPORT_NAME erom_extraction)
 target_link_libraries(mhs_erom_extraction
     PUBLIC mhs_model
-    PRIVATE mhs_compiler mhs_solver OpenMP::OpenMP_CXX
+    PRIVATE mhs_compiler mhs_solver OpenMP::OpenMP_CXX tinyxml2::tinyxml2
     $<BUILD_INTERFACE:mhs_options> $<BUILD_INTERFACE:Eigen3::Eigen> $<BUILD_INTERFACE:amgcl::amgcl>)
 target_include_directories(mhs_erom_extraction
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/metahotspot>

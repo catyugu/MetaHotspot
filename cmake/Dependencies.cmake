@@ -53,9 +53,9 @@ if(NOT TARGET spdlog::spdlog)
 endif()
 
 # ----------------------------------------------------------------------------
-# tinyxml2 - shared PTA XML compatibility layer.
+# tinyxml2 - native EROM XML and shared PTA XML compatibility.
 # ----------------------------------------------------------------------------
-if((MHS_BUILD_APPS OR MHS_BUILD_EROM) AND NOT TARGET tinyxml2::tinyxml2)
+if(NOT TARGET tinyxml2::tinyxml2)
     CPMFindPackage(
         NAME tinyxml2
         VERSION ${MHS_TINYXML2_VERSION}

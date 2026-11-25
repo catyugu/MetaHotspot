@@ -98,7 +98,7 @@ namespace mhs::solver {
                 for (std::size_t o = 0; o < erom.outputs.size(); ++o) {
                     const auto row = erom.L.row(o);
                     traces[trace++].values.push_back(
-                        std::inner_product(row.begin(), row.end(), values.begin(), erom.reference_temperature));
+                        std::inner_product(row.begin(), row.end(), values.begin(), erom.reference_temperature + erom.output_offset[o]));
                 }
             }
         }

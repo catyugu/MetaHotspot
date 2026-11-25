@@ -1,11 +1,12 @@
 #include "erom/extraction.hpp"
-#include "model/erom_codec.hpp"
 
+#include <tinyxml2.h>
+#include <charconv>
 #include <fstream>
 #include <limits>
 #include <random>
 #include <stdexcept>
-#include <string_view>
+#include <string>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -15,36 +16,73 @@
 
 namespace mhs::app::erom {
     namespace {
-        class Writer {
-        public:
-            explicit Writer(const std::filesystem::path& path) : output_(path, std::ios::binary)
-            {
-                output_.exceptions(std::ios::badbit | std::ios::failbit);
-                output_.write(
-                    model::erom_codec::magic.data(), static_cast<std::streamsize>(model::erom_codec::magic.size()));
-            }
-            void count(std::size_t value)
-            {
-                if (value > std::numeric_limits<std::uint32_t>::max())
-                    throw std::length_error("EROM exceeds 32-bit counts");
-                scalar(static_cast<std::uint32_t>(value));
-            }
-            void name(std::string_view value)
-            {
-                count(value.size());
-                output_.write(value.data(), static_cast<std::streamsize>(value.size()));
-            }
-            template <typename T> void scalar(const T value) { values(std::span(&value, 1)); }
-            template <typename T> void values(std::span<const T> data)
-            {
-                model::erom_codec::transfer(
-                    data, [this](const char* p, std::size_t n) { output_.write(p, static_cast<std::streamsize>(n)); });
-            }
-            void close() { output_.close(); }
+        using tinyxml2::XMLElement;
 
-        private:
-            std::ofstream output_;
-        };
+        std::string decimal(double value)
+        {
+            char buffer[64];
+            const auto result = std::to_chars(buffer, buffer + sizeof(buffer), value, std::chars_format::general,
+                std::numeric_limits<double>::max_digits10);
+            if (result.ec != std::errc {})
+                throw std::runtime_error("cannot encode EROM numeric value");
+            return std::string(buffer, result.ptr);
+        }
+
+        XMLElement& append(tinyxml2::XMLNode& parent, const char* name)
+        {
+            auto* element = parent.GetDocument()->NewElement(name);
+            parent.InsertEndChild(element);
+            return *element;
+        }
+
+        void scalar(XMLElement& element, const char* name, double value)
+        {
+            element.SetAttribute(name, decimal(value).c_str());
+        }
+
+        void count(XMLElement& element, const char* name, std::size_t value)
+        {
+            element.SetAttribute(name, std::to_string(value).c_str());
+        }
+
+        void values(XMLElement& element, std::span<const double> data)
+        {
+            std::string text;
+            for (const double value : data) {
+                if (!text.empty())
+                    text += ' ';
+                text += decimal(value);
+            }
+            if (!text.empty())
+                element.SetText(text.c_str());
+        }
+
+        void matrix(XMLElement& parent, const char* name, const core::Matrix<double>& data)
+        {
+            auto& element = append(parent, name);
+            count(element, "rows", data.rows());
+            count(element, "cols", data.cols());
+            values(element, {data.data(), data.rows() * data.cols()});
+        }
+
+        void vector(XMLElement& parent, const char* name, std::span<const double> data)
+        {
+            auto& element = append(parent, name);
+            count(element, "size", data.size());
+            values(element, data);
+        }
+
+        void facet(XMLElement& element, const model::Facet& geometry)
+        {
+            const char* axes[] = {"x", "y", "z"};
+            element.SetAttribute("axis", axes[static_cast<std::size_t>(geometry.axis)]);
+            element.SetAttribute("normal", static_cast<int>(geometry.normal));
+            scalar(element, "coordinate", geometry.coordinate);
+            scalar(element, "uMin", geometry.bounds[0]);
+            scalar(element, "uMax", geometry.bounds[1]);
+            scalar(element, "vMin", geometry.bounds[2]);
+            scalar(element, "vMax", geometry.bounds[3]);
+        }
 
         struct Temporary {
             std::filesystem::path path;
@@ -59,6 +97,63 @@ namespace mhs::app::erom {
     void write_erom(const std::filesystem::path& path, const model::Erom& e)
     {
         model::validate_erom(e);
+        tinyxml2::XMLDocument doc;
+        doc.InsertEndChild(doc.NewDeclaration("xml version=\"1.0\" encoding=\"UTF-8\""));
+        auto& root = append(doc, "Erom");
+        root.SetAttribute("version", "1");
+        append(root, "ReferenceTemperature").SetText(decimal(e.reference_temperature).c_str());
+        auto& operators = append(root, "Operators");
+        matrix(operators, "K", e.K);
+        matrix(operators, "C", e.C);
+        matrix(operators, "B", e.B);
+        matrix(operators, "L", e.L);
+        matrix(operators, "Vb", e.Vb);
+        vector(operators, "FixedLoad", e.f);
+        vector(operators, "OutputOffset", e.output_offset);
+        vector(root, "UniformTemperatureMode", e.uniform_temperature_mode);
+        auto& groups = append(root, "BoundaryGroups");
+        for (std::size_t i = 0; i < e.boundary_groups.size(); ++i) {
+            const auto& surface = e.boundary_groups[i];
+            auto& element = append(groups, "BoundaryGroup");
+            count(element, "id", i);
+            element.SetAttribute("name", surface.name.c_str());
+            scalar(element, "htcMin", surface.minimum);
+            scalar(element, "htcMax", surface.maximum);
+        }
+        auto& interfaces = append(root, "Interfaces");
+        for (const auto& face : e.interfaces) {
+            auto& element = append(interfaces, "Interface");
+            count(element, "boundary", face.boundary_group);
+            scalar(element, "resistance", face.resistance);
+            scalar(element, "defaultHtc", face.default_coefficient);
+            scalar(element, "ambientTemperature", face.default_ambient);
+            facet(element, face.facet);
+        }
+        auto& outline = append(root, "Outline");
+        for (const auto& group : e.outline) {
+            auto& element = append(outline, "Group");
+            element.SetAttribute("name", group.name.c_str());
+            for (const auto& geometry : group.facets)
+                facet(append(element, "Facet"), geometry);
+        }
+        auto& sources = append(root, "Sources");
+        for (std::size_t i = 0; i < e.sources.size(); ++i) {
+            auto& element = append(sources, "Source");
+            count(element, "id", i);
+            element.SetAttribute("name", e.sources[i].name.c_str());
+        }
+        auto& outputs = append(root, "Outputs");
+        for (std::size_t i = 0; i < e.outputs.size(); ++i) {
+            const auto& output = e.outputs[i];
+            auto& element = append(outputs, "Output");
+            count(element, "id", i);
+            element.SetAttribute("name", output.name.c_str());
+            if (output.point) {
+                scalar(element, "x", (*output.point)[0]);
+                scalar(element, "y", (*output.point)[1]);
+                scalar(element, "z", (*output.point)[2]);
+            }
+        }
         std::random_device random;
         auto temporary = path;
         do {
@@ -66,51 +161,15 @@ namespace mhs::app::erom {
             temporary += ".tmp-" + std::to_string(random()) + "-" + std::to_string(random());
         } while (std::filesystem::exists(temporary));
         const Temporary cleanup {temporary};
-        Writer writer(temporary);
-        writer.count(model::erom_codec::version);
-        for (const auto count : {e.K.rows(), e.sources.size(), e.outputs.size(), e.interfaces.size(),
-                 e.boundary_groups.size(), e.outline.size()})
-            writer.count(count);
-        writer.scalar(e.reference_temperature);
-        for (const auto* matrix : {&e.K, &e.C, &e.B, &e.L, &e.Vb})
-            writer.values(model::erom_codec::elements(*matrix));
-        writer.values(std::span<const double>(e.uniform_temperature_mode));
-        auto write_facet = [&](const model::Facet& facet) {
-            writer.count(static_cast<std::uint32_t>(facet.axis));
-            writer.count(facet.normal > 0);
-            writer.scalar(facet.coordinate);
-            writer.values(std::span<const double>(facet.bounds));
-        };
-        for (const auto& face : e.interfaces) {
-            write_facet(face.facet);
-            writer.scalar(face.resistance);
-            writer.count(face.boundary_group);
-        }
-        for (const auto& surface : e.boundary_groups) {
-            writer.name(surface.name);
-            for (const double value : {surface.minimum, surface.maximum, surface.coefficient, surface.ambient})
-                writer.scalar(value);
-        }
-        for (const auto& group : e.outline) {
-            writer.name(group.name);
-            writer.count(group.facets.size());
-            for (const auto& facet : group.facets)
-                write_facet(facet);
-        }
-        for (const auto& source : e.sources) {
-            writer.name(source.name);
-            writer.scalar(source.default_power);
-        }
-        for (const auto& output : e.outputs) {
-            writer.name(output.name);
-            writer.count(output.point.has_value());
-            if (output.point)
-                writer.values(std::span<const double>(*output.point));
-        }
-        writer.close();
+        tinyxml2::XMLPrinter printer;
+        doc.Print(&printer);
+        std::ofstream output(temporary, std::ios::binary);
+        output.exceptions(std::ios::badbit | std::ios::failbit);
+        output.write(printer.CStr(), static_cast<std::streamsize>(printer.CStrSize() - 1));
+        output.close();
 #ifdef _WIN32
         if (!MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-            throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "replace .mherom output");
+            throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "replace EROM XML output");
 #else
         std::filesystem::rename(temporary, path);
 #endif
