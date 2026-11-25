@@ -1,6 +1,7 @@
 add_subdirectory(core)
 add_subdirectory(expression)
 add_subdirectory(model)
+add_subdirectory(io)
 add_subdirectory(linear)
 add_subdirectory(logging)
 add_subdirectory(compiler)
@@ -11,7 +12,7 @@ endif()
 
 # Every component exposes the public headers under include/metahotspot; a
 # component's own directory is only for its implementation headers.
-foreach(_component core model expression linear compiler solver logging)
+foreach(_component core model expression linear compiler solver logging io)
     add_library(mhs::${_component} ALIAS mhs_${_component})
     set_target_properties(mhs_${_component} PROPERTIES EXPORT_NAME ${_component})
     target_include_directories(mhs_${_component} PRIVATE ${PROJECT_SOURCE_DIR}/src)

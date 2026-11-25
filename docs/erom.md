@@ -8,11 +8,12 @@ local quadrature point on each exposed patch.
 
 ```cpp
 #include "compiler/project_compiler.hpp"
+#include "io/erom.hpp"
 #include "solver/solver.hpp"
 
 using namespace mhs::model;
 
-auto package = read_erom("package.xml");
+auto package = mhs::io::read_erom("package.xml");
 ProjectDefinition input;
 input.components.push_back({{0, 0, 0}, package});
 input.components.push_back({{0.1, 0, 0}, package});
@@ -183,6 +184,11 @@ of the FOM temperature rise. Accuracy after embedding depends on the attached
 geometry and loads.
 
 ## Native EROM XML v1
+
+The standalone `mhs::io` component reads EROM assets via `io/erom.hpp`.
+The model component contains only the in-memory asset and its validation.
+The extraction application owns native XML writing; XML parser dependencies
+are private implementation details and are not required by SDK consumers.
 
 The root is `<Erom version="1">`, encoded as UTF-8. All geometry and thermal
 quantities use SI units. Numeric arrays are whitespace-separated decimal

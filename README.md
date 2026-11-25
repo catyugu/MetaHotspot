@@ -105,7 +105,7 @@ solution = compiled.solve(opts=SolveOptions(
 
 - 语言：C++20
 - 构建系统：CMake
-- 命名空间：SDK 使用 `mhs::core`、`mhs::expression`、`mhs::model`、`mhs::linear`、`mhs::compiler`、`mhs::solver` 和 `mhs::logger`。应用实现位于 `mhs::app::{cli,pta,output,postprocess,erom}`，不随 SDK 导出。单文件私有实现使用匿名命名空间。
+- 命名空间：SDK 使用 `mhs::core`、`mhs::expression`、`mhs::model`、`mhs::io`、`mhs::linear`、`mhs::compiler`、`mhs::solver` 和 `mhs::logger`。应用实现位于 `mhs::app::{cli,pta,output,postprocess,erom}`，不随 SDK 导出。单文件私有实现使用匿名命名空间。
 - 编译选项：项目目标通过 `mhs_options` 使用 `/W4` 或 `-Wall -Wextra -Wpedantic`；`MHS_WERROR=ON` 时加 `/WX` 或 `-Werror`。第三方头文件按 SYSTEM 引入，其告警不进入本项目策略。
 - 通用设计模式：面向数据设计。尽可能使用 POD 和纯函数。无多层继承。
 - 多线程：尽可能使用无锁数据结构。利用 tbb 进行多线程。
@@ -153,7 +153,7 @@ metahotspot --output-vtu /tmp/out.vtu \
 ## 第三方依赖
 
 - **CPM**：仅负责配置阶段的依赖获取与复用，不进入 SDK 运行时接口。
-- **tinyxml2**：EROM 原生 XML 与 PTA XML 的解析和 DOM 操作。实现对象直接编入 `mhs_model`，使用私有命名空间，不安装其头文件、独立库或 CMake 包，也不作为 SDK 查找依赖。
+- **tinyxml2**：EROM 原生 XML 与 PTA XML 的解析和 DOM 操作。实现对象直接编入 `mhs_io`，使用私有命名空间，不安装其头文件、独立库或 CMake 包，也不作为 SDK 查找依赖。
 - **spdlog**：结构化日志，由 `mhs_logging`（`mhs::logger`）封装。
 - **muparser**：数学表达式解析和即时编译。由 `mhs_expression` 用于评估用户定义的函数、材料律、边界条件。
 - **Eigen**：用于内部小规模线性代数、EROM 算子校验和可选 MKL/Pardiso 实现，不随 SDK 导出。基础容器是 `core::Vector`、`core::Matrix` 和 `core::CSRMatrix`；AMGCL 直接读取 CSR。

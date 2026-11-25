@@ -1,6 +1,7 @@
 #include "compiler/fom_compiler.hpp"
 #include "compiler/project_compiler.hpp"
 #include "erom/extraction.hpp"
+#include "io/erom.hpp"
 #include "solver/solver.hpp"
 
 #include <algorithm>
@@ -203,7 +204,7 @@ namespace {
                 1e-5);
         }
         write_erom(path, result.asset);
-        check_roundtrip(result.asset, *read_erom(path));
+        check_roundtrip(result.asset, *mhs::io::read_erom(path));
     }
 
     void compare(const Project& mixed, const Project& full, mhs::solver::Study study)
@@ -234,7 +235,7 @@ namespace {
     }
     void check_embedding(const std::filesystem::path& path)
     {
-        const auto e = read_erom(path);
+        const auto e = mhs::io::read_erom(path);
         check_asset(*e);
         const auto definition = fixture();
         auto fom = std::make_shared<const Fom>(compiler::compile_fom(definition, mesh));
@@ -284,7 +285,7 @@ namespace {
         check(asset.outputs[0].point == Vec3 {0, 0.5, 0.5}, "observation was not translated");
         check(std::ranges::any_of(asset.f, [](double v) { return v != 0; }), "fixed load was lost");
         write_erom(path, asset);
-        auto rom = read_erom(path);
+        auto rom = mhs::io::read_erom(path);
         check_roundtrip(asset, *rom);
 
         // Independently specify the linear FOM frozen at (T=295, t=0).
@@ -335,7 +336,7 @@ namespace {
         extract_fixture(path, "normal");
         check_embedding(path);
         extract_fixture(path, "passive");
-        const auto passive = read_erom(path);
+        const auto passive = mhs::io::read_erom(path);
         check(passive->sources.empty() && passive->outputs.empty() && passive->B.cols() == 0 && passive->L.rows() == 0,
             "expected empty source and output channels");
         check(
@@ -357,7 +358,7 @@ namespace {
         }
         bool rejected = false;
         try {
-            (void)read_erom(path);
+            (void)mhs::io::read_erom(path);
         }
         catch (const std::invalid_argument&) {
             rejected = true;
@@ -379,7 +380,7 @@ int main(int argc, char** argv)
         }
         if (argc == 4 && std::string_view(argv[1]) == "--reject") {
             try {
-                (void)read_erom(argv[2]);
+                (void)mhs::io::read_erom(argv[2]);
             }
             catch (const std::invalid_argument& error) {
                 check(std::string_view(error.what()).find(argv[3]) != std::string_view::npos, error.what());
@@ -388,7 +389,7 @@ int main(int argc, char** argv)
             throw std::runtime_error("invalid EROM file was accepted");
         }
         if (argc == 3 && std::string_view(argv[1]) == "--no-channels") {
-            const auto e = read_erom(argv[2]);
+            const auto e = mhs::io::read_erom(argv[2]);
             check(e->sources.empty() && e->outputs.empty() && e->B.cols() == 0 && e->L.rows() == 0,
                 "expected empty source and output channels");
             const auto project = mhs::compiler::compile_project({{{{}, e, {}, {}}}, {}});

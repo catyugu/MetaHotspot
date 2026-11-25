@@ -2,8 +2,6 @@
 
 #include "core/matrix.hpp"
 #include "model/surface.hpp"
-#include <filesystem>
-#include <memory>
 #include <optional>
 #include <string>
 
@@ -49,5 +47,4 @@ namespace mhs::model {
     };
 
     void validate_erom(const Erom& erom);
-    std::shared_ptr<const Erom> read_erom(const std::filesystem::path& path);
 } // namespace mhs::model

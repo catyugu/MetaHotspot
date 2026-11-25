@@ -10,7 +10,8 @@
 | --- | --- | --- | --- |
 | `core` / `mhs_core` | `mhs::core`：容器、内存池、CSR/vector kernels | 无 | TBB、项目编译选项 |
 | `expression` / `mhs_expression` | `mhs::expression`：表达式编译与求值 | 无 | core、muparser、TBB |
-| `model` / `mhs_model` | `mhs::model`：输入定义、运行期模型、网格、EROM 读取校验及工程查询 | core、expression | Eigen（仅构建）、tinyxml2（私有实现对象） |
+| `model` / `mhs_model` | `mhs::model`：输入定义、运行期模型、网格、EROM 校验及工程查询 | core、expression | Eigen（仅构建） |
+| `io` / `mhs_io` | `mhs::io`：原生 EROM XML 读取 | model | tinyxml2（私有实现对象） |
 | `linear` / `mhs_linear` | `mhs::linear`：求解接口、AMGCL、可选 PARDISO | core | AMGCL、OpenMP、可选 Eigen/MKL |
 | `compiler` / `mhs_compiler` | `mhs::compiler`：FOM / Project 编译、几何匹配、表达式编译、冻结流场 | model | linear、logging、Eigen（仅构建） |
 | `solver` / `mhs_solver` | `mhs::solver`：组装、非线性迭代、时间积分、解与物理场重建 | model | expression、linear、logging、Eigen、AdaptiveTimeStepper |
@@ -37,4 +38,4 @@
 
 `apps/metahotspot` 由 `MHS_BUILD_APPS` 控制。内部静态目标 `metahotspot_frontend` 通过 `mhs::metahotspot` 消费主库。`apps/metahotspot/tests` 里的 PTA、采样及 XML 流体案例测试在 PTA 应用和测试同时启用时构建。`tests` 下的 `mhs_tests` 直接构造 SI 通用模型。
 
-`apps/metahotspot-erom` 由 `MHS_BUILD_EROM` 控制，导出独立的 `mhs::erom_extraction` 静态目标。入口接收 `FomDefinition`、`MeshSpec`、各组 HTC 范围和容差，库内完成模型编译、响应训练、输出校验和原生写出。提取库依赖 compiler 和 solver；`metahotspot-erom` 可执行目标和普通 PTA 应用共享 `apps/common/pta` 模型读取模块。tinyxml2 的实现对象编入 `mhs_model`，供原生 XML 读写与应用内部 XML 解析使用；其命名空间、头文件和 CMake 目标不进入 SDK 公共接口。`ReusableAmg` 和 Eigen 运算留在提取目标内部，每个实频移至多构建一次响应用预条件子。仿真内核通过 model 组件读取原生 EROM `.xml`。
+`apps/metahotspot-erom` 由 `MHS_BUILD_EROM` 控制，导出独立的 `mhs::erom_extraction` 静态目标。入口接收 `FomDefinition`、`MeshSpec`、各组 HTC 范围和容差，库内完成模型编译、响应训练、输出校验和原生写出。提取库依赖 compiler 和 solver；`metahotspot-erom` 可执行目标和普通 PTA 应用共享 `apps/common/pta` 模型读取模块。tinyxml2 的实现对象编入 `mhs_io`，供原生 XML 读写与应用内部 XML 解析使用；其命名空间、头文件和 CMake 目标不进入 SDK 公共接口。`ReusableAmg` 和 Eigen 运算留在提取目标内部，每个实频移至多构建一次响应用预条件子。原生 EROM `.xml` 通过 `mhs::io::read_erom` 读取并校验，model、compiler 和 solver 均不依赖 io。

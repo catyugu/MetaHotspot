@@ -2,6 +2,7 @@
 
 #include "model/erom.hpp"
 #include "model/fom_definition.hpp"
+#include <filesystem>
 #include <map>
 
 namespace mhs::app::erom {

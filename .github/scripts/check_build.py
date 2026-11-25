@@ -49,11 +49,11 @@ def check_sdk(prefix, build, config, generator):
         '#include "solver/solver.hpp"\n'
         '#include "core/matrix.hpp"\n'
         '#include "linear/solver.hpp"\n'
-        '#include "model/erom.hpp"\n'
+        '#include "io/erom.hpp"\n'
         '#include "erom/extraction.hpp"\n'
         "int main(int argc, char** argv) {\n"
         "  if (argc == 3) {\n"
-        "    auto asset = mhs::model::read_erom(argv[1]);\n"
+        "    auto asset = mhs::io::read_erom(argv[1]);\n"
         "    mhs::app::erom::write_erom(argv[2], *asset);\n"
         "  }\n"
         "  mhs::core::CSRMatrix<double> a(1, 1, {0, 1}, {0}, {2.0});\n"

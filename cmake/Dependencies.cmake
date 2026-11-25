@@ -53,7 +53,7 @@ if(NOT TARGET spdlog::spdlog)
 endif()
 
 # ----------------------------------------------------------------------------
-# tinyxml2 - private XML implementation, compiled into mhs_model.
+# tinyxml2 - private XML implementation, compiled into mhs_io.
 # Do not import, install or export the upstream CMake package. Use a distinct
 # namespace so an SDK consumer may link its own tinyxml2 without collisions.
 # ----------------------------------------------------------------------------

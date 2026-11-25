@@ -60,7 +60,7 @@ add_subdirectory(src)
 add_library(mhs_metahotspot INTERFACE)
 add_library(mhs::metahotspot ALIAS mhs_metahotspot)
 set_target_properties(mhs_metahotspot PROPERTIES EXPORT_NAME metahotspot)
-target_link_libraries(mhs_metahotspot INTERFACE mhs_compiler mhs_solver mhs_logging)
+target_link_libraries(mhs_metahotspot INTERFACE mhs_compiler mhs_solver mhs_logging mhs_io)
 
 if(MHS_BUILD_TESTS AND PROJECT_IS_TOP_LEVEL)
     enable_testing()
