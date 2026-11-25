@@ -1,7 +1,7 @@
 #include "core/vector.hpp"
 #include "io.hpp"
 
-#include "xml_helpers.hpp"
+#include "pta/xml_helpers.hpp"
 #include <tinyxml2.h>
 
 #include <cmath>

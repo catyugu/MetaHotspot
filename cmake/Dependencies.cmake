@@ -53,9 +53,9 @@ if(NOT TARGET spdlog::spdlog)
 endif()
 
 # ----------------------------------------------------------------------------
-# tinyxml2 - PTA XML compatibility layer used only by the CLI app.
+# tinyxml2 - shared PTA XML compatibility layer.
 # ----------------------------------------------------------------------------
-if(MHS_BUILD_APPS AND NOT TARGET tinyxml2::tinyxml2)
+if((MHS_BUILD_APPS OR MHS_BUILD_EROM) AND NOT TARGET tinyxml2::tinyxml2)
     CPMFindPackage(
         NAME tinyxml2
         VERSION ${MHS_TINYXML2_VERSION}
