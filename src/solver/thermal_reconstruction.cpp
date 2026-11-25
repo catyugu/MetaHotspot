@@ -15,14 +15,13 @@ namespace mhs::solver {
         // Green-Gauss gradient on an orthogonal cell. Internal face temperatures
         // use the same two-point thermal-resistance law as the diffusion assembly.
         mhs::model::Vec3 reconstruct_cell_gradient(const mhs::model::Fom& model, std::span<const double> temperature,
-            double time, mhs::model::CellId cell, const BoundarySampler& sample_boundary,
-            std::optional<double> conductivity_temperature)
+            double time, mhs::model::CellId cell, const BoundarySampler& sample_boundary)
         {
             using namespace mhs::core;
             using namespace mhs::model;
-            const Vec3 k {cell_conductivity(model, cell, 0, conductivity_temperature.value_or(temperature[cell]), time),
-                cell_conductivity(model, cell, 1, conductivity_temperature.value_or(temperature[cell]), time),
-                cell_conductivity(model, cell, 2, conductivity_temperature.value_or(temperature[cell]), time)};
+            const Vec3 k {cell_conductivity(model, cell, 0, temperature[cell], time),
+                cell_conductivity(model, cell, 1, temperature[cell], time),
+                cell_conductivity(model, cell, 2, temperature[cell], time)};
             const auto geometry = model.mesh.cell(cell);
             Vec3 gradient {};
             for (std::size_t axis = 0; axis < 3; ++axis) {
@@ -31,8 +30,7 @@ namespace mhs::solver {
                     const auto neighbor = model.mesh.neighbor(cell, axis, sign);
                     if (neighbor == invalid_id)
                         continue;
-                    const double k_neighbor = cell_conductivity(
-                        model, neighbor, axis, conductivity_temperature.value_or(temperature[neighbor]), time);
+                    const double k_neighbor = cell_conductivity(model, neighbor, axis, temperature[neighbor], time);
                     const auto [r_cell, r_neighbor]
                         = interior_resistances(model, cell, neighbor, axis, k[axis], k_neighbor);
                     const double trace
@@ -86,15 +84,13 @@ namespace mhs::solver {
     }
 
     double sample_point(const mhs::model::Fom& model, std::span<const double> temperature, double time,
-        mhs::model::CellId cell, const mhs::model::Vec3& p, const BoundarySampler& sample_boundary,
-        std::optional<double> conductivity_temperature)
+        mhs::model::CellId cell, const mhs::model::Vec3& p, const BoundarySampler& sample_boundary)
     {
         if (cell == mhs::core::invalid_id)
             return std::numeric_limits<double>::quiet_NaN();
         if (const auto trace = boundary_value(model, temperature, time, cell, p, sample_boundary))
             return *trace;
-        const auto gradient
-            = reconstruct_cell_gradient(model, temperature, time, cell, sample_boundary, conductivity_temperature);
+        const auto gradient = reconstruct_cell_gradient(model, temperature, time, cell, sample_boundary);
         const auto center = model.mesh.cell(cell).center();
         return temperature[cell] + gradient[0] * (p[0] - center[0]) + gradient[1] * (p[1] - center[1])
             + gradient[2] * (p[2] - center[2]);

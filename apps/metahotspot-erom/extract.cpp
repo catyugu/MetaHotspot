@@ -1,5 +1,4 @@
 #include "amg_solver.hpp"
-#include "compiler/fom_compiler_internal.hpp"
 #include "solver/thermal_physics.hpp"
 
 #include <Eigen/Cholesky>
@@ -211,7 +210,7 @@ namespace mhs::app::erom {
             if (!std::isfinite(range.minimum) || !std::isfinite(range.maximum) || range.minimum <= 0
                 || range.maximum < range.minimum)
                 throw std::invalid_argument("invalid HTC range for group " + std::to_string(id));
-        auto project = prepare(compiler::compile_fom_for_extraction(definition, mesh), definition, ranges);
+        auto project = prepare(definition, mesh, ranges);
         if (!project.capacity.allFinite() || (project.capacity.array() <= 0).any())
             throw std::invalid_argument("EROM extraction requires finite positive cell capacities");
         const auto regions = connected_regions(project.K);

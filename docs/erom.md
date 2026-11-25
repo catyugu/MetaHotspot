@@ -118,7 +118,11 @@ conductivity. Material properties are sampled at their cell centers and
 boundary fields at facet centers with `T = InitialTemperature` (the FOM
 reference temperature), `t = 0`. Spatial variation is retained in the original
 coordinates. Invalid or nonfinite values and nonpositive material properties
-are rejected. A referenced fluid block is unsupported.
+are rejected. A referenced fluid block is unsupported. Extraction adapts a temporary model
+input and compiles it through the ordinary FOM compiler. Frozen prescribed
+temperature fields and the constant conductivity stencils needed for probe
+projection are prepared by the extractor; the compiler and Green–Gauss
+recovery kernel require no extraction-specific mode.
 
 Unselected convection, prescribed-temperature, prescribed-flux and default
 boundary conditions are assembled using the frozen FOM discretization.

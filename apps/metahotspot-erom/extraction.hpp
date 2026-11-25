@@ -33,7 +33,7 @@ namespace mhs::app::erom {
         void add_boundary(Eigen::Ref<Vector> cells, Eigen::Ref<const Vector> facets) const;
     };
 
-    Prepared prepare(const model::Fom& fom, const model::FomDefinition& definition, const HtcRanges& ranges);
+    Prepared prepare(const model::FomDefinition& definition, const model::MeshSpec& mesh, const HtcRanges& ranges);
 
     // Application-local numerical kernels; no extraction implementation enters the SDK.
     Sparse add_diagonal(const Sparse& matrix, const Vector& diagonal);

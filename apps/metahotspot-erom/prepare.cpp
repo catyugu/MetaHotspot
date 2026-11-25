@@ -1,15 +1,19 @@
 #include "extraction.hpp"
+#include "compiler/fom_compiler.hpp"
+#include "compiler/model_functions.hpp"
 #include "solver/assembler.hpp"
 #include "solver/thermal_physics.hpp"
 #include "solver/thermal_reconstruction.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace mhs::app::erom {
     using namespace mhs::model;
@@ -24,6 +28,65 @@ namespace mhs::app::erom {
             return value;
         }
 
+        Fom compile_input(const FomDefinition& definition, const MeshSpec& mesh)
+        {
+            // Only this temporary definition is adapted for extraction. The FOM
+            // compiler's contracts (including explicit Dirichlet data) stay unchanged.
+            auto input = definition;
+            for (const auto& volume : input.volumes) {
+                if (volume.material >= input.materials.size())
+                    throw std::out_of_range("volume material ID out of range");
+                if (input.materials[volume.material].value.kind == MaterialKind::Fluid)
+                    throw std::invalid_argument("EROM extraction does not support fluid blocks");
+            }
+            for (auto& material : input.materials)
+                if (material.value.kind == MaterialKind::Fluid) {
+                    // Unreferenced fluid records need no hydraulic properties.
+                    material.value.kind = MaterialKind::Solid;
+                    material.value.dynamic_viscosity.reset();
+                }
+            for (auto& source : input.sources)
+                source.density = "0";
+            auto clear_dirichlet = [](ThermalBoundary& law) {
+                if (auto* value = std::get_if<DirichletBoundary>(&law))
+                    value->temperature = "0";
+            };
+            for (auto& group : input.thermal_boundaries)
+                clear_dirichlet(group.condition);
+            clear_dirichlet(input.default_thermal_boundary);
+            return compiler::compile_fom(input, mesh);
+        }
+
+        void freeze_probe_conductivity(Fom& model)
+        {
+            // sample_point is evaluated on unit temperature-rise states. Give
+            // its existing Green-Gauss stencil constant conductivities sampled
+            // at the reference state, without touching the recovery kernel.
+            auto freeze = [&](CellId cell) {
+                auto material = model.material_table[model.cell_material[cell]];
+                if (material.kx.is_constant() && material.ky.is_constant() && material.kz.is_constant())
+                    return;
+                const auto p = model.mesh.cell(cell).center();
+                const expression::FieldContext ctx {p[0], p[1], p[2], model.reference_temperature, 0};
+                for (auto* k : {&material.kx, &material.ky, &material.kz})
+                    *k = expression::CompiledExpression::make_constant(field_value(*k, ctx));
+                if (model.material_table.size() >= core::invalid_id)
+                    throw std::length_error("too many frozen probe materials");
+                model.cell_material[cell] = static_cast<MaterialId>(model.material_table.size());
+                model.material_table.push_back(std::move(material));
+            };
+            for (const auto& probe : model.point_probes) {
+                if (probe.cell == core::invalid_id)
+                    throw std::invalid_argument("cannot retain point probe outside the FOM: " + probe.name);
+                freeze(probe.cell);
+                for (std::size_t axis = 0; axis < 3; ++axis)
+                    for (int sign : {-1, 1})
+                        if (const auto neighbor = model.mesh.neighbor(probe.cell, axis, sign);
+                            neighbor != core::invalid_id)
+                            freeze(neighbor);
+            }
+        }
+
         struct FrozenTrace {
             solver::BoundaryEvaluation evaluation; // at zero temperature rise
             double slope; // derivative with respect to the cell temperature rise
@@ -33,8 +96,6 @@ namespace mhs::app::erom {
             const core::Vector<FrozenTrace>& frozen, Weights& weights)
         {
             const auto& probe = model.point_probes[id];
-            if (probe.cell == core::invalid_id)
-                throw std::invalid_argument("cannot retain point probe outside the FOM: " + probe.name);
             const auto& mesh = model.mesh;
             const auto facets = mesh.boundary_ids(probe.cell);
             const auto center = mesh.cell(probe.cell).center();
@@ -64,8 +125,7 @@ namespace mhs::app::erom {
                 return value;
             };
             const auto sample = [&] {
-                return solver::sample_point(
-                    model, state, 0, probe.cell, probe.point, boundary, model.reference_temperature);
+                return solver::sample_point(model, state, 0, probe.cell, probe.point, boundary);
             };
             const double offset = sample();
             for (const auto cell : support) {
@@ -128,8 +188,9 @@ namespace mhs::app::erom {
 
     } // namespace
 
-    Prepared prepare(const Fom& model, const FomDefinition& definition, const HtcRanges& ranges)
+    Prepared prepare(const FomDefinition& definition, const MeshSpec& input_mesh, const HtcRanges& ranges)
     {
+        auto model = compile_input(definition, input_mesh);
         const auto& mesh = model.mesh;
         if (mesh.cell_count() == 0 || !model.fluid.fluid_to_global.empty())
             throw std::invalid_argument("EROM extraction requires a nonempty solid FOM");
@@ -168,6 +229,7 @@ namespace mhs::app::erom {
                     "HTC group " + std::to_string(id) + " must lie entirely on the faces of the FOM bounding box");
         }
 
+        freeze_probe_conductivity(model);
         solver::ThermalAssembler assembler(model);
         core::Vector<double> state(mesh.cell_count(), model.reference_temperature);
         const auto& operators = assembler.assemble_internal(state, 0);
@@ -181,14 +243,27 @@ namespace mhs::app::erom {
         result.fixed_diagonal = Vector::Zero(n);
         result.fixed_load = Vector::Zero(n);
         core::Vector<FrozenTrace> frozen(mesh.exterior_facets.size());
+        std::optional<expression::SymbolTable> dirichlet_symbols;
         for (BoundaryGroupId surface = 0; surface < model.boundary_groups.size(); ++surface) {
             const auto& facets = facets_by_surface[surface];
             const auto range = ranges.find(surface);
+            auto condition = model.boundary_groups[surface].condition;
+            const auto& original = surface < definition.thermal_boundaries.size()
+                ? definition.thermal_boundaries[surface].condition
+                : definition.default_thermal_boundary;
+            // A temperature-dependent prescribed value is meaningful only after
+            // extraction freezes it. Compile the original field here, not in Fom.
+            if (const auto* prescribed = std::get_if<DirichletBoundary>(&original)) {
+                if (!dirichlet_symbols) {
+                    dirichlet_symbols.emplace();
+                    compiler::register_all_functions(*dirichlet_symbols, definition.functions);
+                }
+                condition = Dirichlet {expression::parse(prescribed->temperature, *dirichlet_symbols)};
+            }
             if (facets.empty())
                 continue;
             const bool trained = range != ranges.end();
             const auto& name = model.boundary_groups[surface].name;
-            const auto& condition = model.boundary_groups[surface].condition;
             const auto group = static_cast<BoundaryGroupId>(result.training.size());
             const auto begin = static_cast<Eigen::Index>(result.interfaces.size());
             core::Vector<Facet> geometry;
