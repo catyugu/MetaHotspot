@@ -7,6 +7,8 @@
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <locale>
+#include <sstream>
 #include <stdexcept>
 #include <string_view>
 #include <tinyxml2.h>
@@ -63,11 +65,18 @@ namespace mhs::model {
                 text.remove_prefix(1);
             require(!text.empty(), "missing numeric value");
             T value {};
-            const auto end = text.data() + text.size();
-            const auto parsed = std::from_chars(text.data(), end, value);
-            require(parsed.ec == std::errc {} && parsed.ptr == end, "invalid numeric value");
-            if constexpr (std::is_floating_point_v<T>)
+            if constexpr (std::is_floating_point_v<T>) {
+                // Floating from_chars is unavailable on older macOS deployment targets.
+                std::istringstream input {std::string(text)};
+                input.imbue(std::locale::classic());
+                require(static_cast<bool>(input >> value) && input.eof(), "invalid numeric value");
                 require(std::isfinite(value), "nonfinite numeric value");
+            }
+            else {
+                const auto end = text.data() + text.size();
+                const auto parsed = std::from_chars(text.data(), end, value);
+                require(parsed.ec == std::errc {} && parsed.ptr == end, "invalid numeric value");
+            }
             return value;
         }
 
@@ -80,13 +89,17 @@ namespace mhs::model {
 
         void values(std::string_view text, std::span<double> destination)
         {
+            std::istringstream input {std::string(text)};
+            input.imbue(std::locale::classic());
             for (auto& value : destination) {
-                text = trim(text);
-                const auto stop = text.find_first_of(" \t\r\n");
-                value = number<double>(text.substr(0, stop));
-                text = stop == std::string_view::npos ? std::string_view {} : text.substr(stop);
+                require(static_cast<bool>(input >> value) && std::isfinite(value), "invalid numeric entry");
+                const auto next = input.peek();
+                require(next == std::char_traits<char>::eof() || next == ' ' || next == '\t' || next == '\r'
+                        || next == '\n',
+                    "numeric entries must be whitespace separated");
             }
-            require(trim(text).empty(), "unexpected trailing numeric entries");
+            input >> std::ws;
+            require(input.eof(), "unexpected trailing numeric entries");
         }
 
         core::Matrix<double> matrix(const XMLElement& element)
