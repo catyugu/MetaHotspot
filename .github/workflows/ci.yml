@@ -42,18 +42,6 @@ jobs:
           ruff check python .github/scripts
           ruff format --check python .github/scripts
 
-  autofix:
-    needs: lint
-    if: >-
-      failure() && needs.lint.result == 'failure' &&
-      (github.event_name == 'push' ||
-       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))
-    uses: ./.github/workflows/autofix.yml
-    permissions:
-      contents: read
-      packages: read
-    secrets:
-      AUTOFIX_TOKEN: ${{ secrets.AUTOFIX_TOKEN }}
 
   linux:
     needs: lint
