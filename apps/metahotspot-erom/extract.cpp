@@ -68,8 +68,8 @@ namespace mhs::app::erom {
         }
 
         double validate_outputs(const Prepared& project, const Matrix& boundary, const Matrix& stiffness,
-            const Matrix& B, const Matrix& L, const Vector& fixed_load, const Vector& lower, const Vector& upper, double tolerance,
-            const core::Vector<int>& regions)
+            const Matrix& B, const Matrix& L, const Vector& fixed_load, const Vector& lower, const Vector& upper,
+            double tolerance, const core::Vector<int>& regions)
         {
             if (project.outputs.empty())
                 return 0;
@@ -159,7 +159,8 @@ namespace mhs::app::erom {
                     }
                     const auto& group = project.training[i];
                     for (auto id = group.begin; id < group.end; ++id) {
-                        const double delta = defaults ? project.interfaces[id].default_ambient - project.reference_temperature : 1;
+                        const double delta
+                            = defaults ? project.interfaces[id].default_ambient - project.reference_temperature : 1;
                         const double power = closure[id] * delta;
                         rhs[project.boundary_cells[id]] += power;
                         load.noalias() += power * boundary.row(id).transpose();
@@ -215,7 +216,8 @@ namespace mhs::app::erom {
             throw std::invalid_argument("EROM extraction requires finite positive cell capacities");
         const auto regions = connected_regions(project.K);
         if (!covers_regions(project, regions, Vector::Ones(static_cast<Eigen::Index>(project.boundary_cells.size()))))
-            throw std::invalid_argument("each thermally disconnected FOM region needs a fixed or parameterized thermal anchor");
+            throw std::invalid_argument(
+                "each thermally disconnected FOM region needs a fixed or parameterized thermal anchor");
 
         Statistics statistics;
         const auto ng = static_cast<Eigen::Index>(project.training.size());
@@ -235,7 +237,8 @@ namespace mhs::app::erom {
         const Vector rhs = basis.transpose() * project.capacity;
         const Vector uniform = solve_positive(C, rhs);
         const Matrix boundary = basis(project.boundary_cells, Eigen::placeholders::all);
-        statistics.output_error = validate_outputs(project, boundary, K, B, L, fixed_load, lower, upper, tolerance, regions);
+        statistics.output_error
+            = validate_outputs(project, boundary, K, B, L, fixed_load, lower, upper, tolerance, regions);
         core::Vector<model::EromBoundaryGroup> surfaces;
         surfaces.reserve(project.training.size());
         for (auto& group : project.training)

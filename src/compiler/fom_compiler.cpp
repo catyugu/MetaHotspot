@@ -1,6 +1,6 @@
 #include "compiler/fom_compiler.hpp"
-#include "compiler/fom_compiler_internal.hpp"
 #include "compiler/fluid_preprocessor.hpp"
+#include "compiler/fom_compiler_internal.hpp"
 #include "compiler/geometry_compiler.hpp"
 #include "compiler/model_functions.hpp"
 #include "core/vector.hpp"
@@ -61,8 +61,8 @@ namespace mhs::compiler {
 
     } // namespace
 
-    static mhs::model::Fom compile_fom_impl(const mhs::model::FomDefinition& definition,
-        const mhs::model::MeshSpec& mesh, bool extraction)
+    static mhs::model::Fom compile_fom_impl(
+        const mhs::model::FomDefinition& definition, const mhs::model::MeshSpec& mesh, bool extraction)
     {
         if (!std::isfinite(definition.reference_temperature))
             throw std::invalid_argument("reference temperature must be finite");
@@ -115,7 +115,7 @@ namespace mhs::compiler {
 
         for (const auto& source : definition.sources)
             model.heat_source_table.push_back(extraction ? mhs::expression::CompiledExpression::make_constant(0)
-                                                        : mhs::expression::parse(source.density, symbols));
+                                                         : mhs::expression::parse(source.density, symbols));
         for (const auto& volume : definition.volumes) {
             if (volume.material >= definition.materials.size())
                 throw std::out_of_range("volume material ID out of range");
@@ -139,7 +139,8 @@ namespace mhs::compiler {
             const auto& boundary = definition.thermal_boundaries[i];
             const auto id = static_cast<mhs::model::BoundaryGroupId>(i);
             auto name = boundary.name.empty() ? "boundary " + std::to_string(i) : boundary.name;
-            model.boundary_groups.push_back({std::move(name), compile_thermal_boundary(boundary.condition, symbols, extraction)});
+            model.boundary_groups.push_back(
+                {std::move(name), compile_thermal_boundary(boundary.condition, symbols, extraction)});
             for (const auto& region : boundary.regions)
                 surface_regions.push_back({region, id});
         }

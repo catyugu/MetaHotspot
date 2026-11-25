@@ -1,12 +1,12 @@
 #include "erom/extraction.hpp"
 
-#include <tinyxml2.h>
 #include <charconv>
 #include <fstream>
 #include <limits>
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <tinyxml2.h>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -169,7 +169,8 @@ namespace mhs::app::erom {
         output.close();
 #ifdef _WIN32
         if (!MoveFileExW(temporary.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
-            throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "replace EROM XML output");
+            throw std::system_error(
+                static_cast<int>(GetLastError()), std::system_category(), "replace EROM XML output");
 #else
         std::filesystem::rename(temporary, path);
 #endif

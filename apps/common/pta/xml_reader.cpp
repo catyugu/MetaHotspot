@@ -11,8 +11,8 @@
 
 #include "definition.hpp"
 #include "face_region_parser.hpp"
-#include "model_input.hpp"
 #include "model/fom_definition.hpp"
+#include "model_input.hpp"
 #include "xml_helpers.hpp"
 
 namespace mhs::app::pta {
@@ -336,10 +336,11 @@ namespace mhs::app::pta {
             if (const auto* sources = root->FirstChildElement("HeatSources"))
                 for (const auto* element = sources->FirstChildElement("HeatSource"); element;
                     element = element->NextSiblingElement("HeatSource")) {
-                    HeatSourceSpec source {get_text(child_by_local_name(element, "Id")),
-                        get_text(child_by_local_name(element, "Name"))};
-                    if (source.id.empty() || std::ranges::any_of(def.heat_sources,
-                            [&](const auto& other) { return other.id == source.id; }))
+                    HeatSourceSpec source {
+                        get_text(child_by_local_name(element, "Id")), get_text(child_by_local_name(element, "Name"))};
+                    if (source.id.empty() || std::ranges::any_of(def.heat_sources, [&](const auto& other) {
+                            return other.id == source.id;
+                        }))
                         throw std::invalid_argument("missing or duplicate HeatSource Id");
                     def.heat_sources.push_back(std::move(source));
                 }
@@ -530,7 +531,8 @@ namespace mhs::app::pta {
         else {
             const auto* result = child_by_local_name(root->FirstChildElement("Results"), "anyType");
             def.mesh = read_mesh(child_by_local_name(result, "Mesh"));
-            if (generated && (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()))
+            if (generated
+                && (def.mesh.x_vertices.empty() || def.mesh.y_vertices.empty() || def.mesh.z_vertices.empty()))
                 def.mesh = read_mesh(generated);
         }
 

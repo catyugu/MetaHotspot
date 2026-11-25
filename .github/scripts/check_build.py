@@ -112,10 +112,16 @@ def check_erom_cli(executable, build):
     if interface is None or float(interface.attrib["coordinate"]) != 2.0:
         raise RuntimeError("EROM geometry was not translated")
     before = output.read_bytes()
-    project.write_text(xml.replace("<HtcMin>1</HtcMin>", "<HtcMin>0</HtcMin>"), encoding="utf-8")
-    failure = subprocess.run([str(executable), "--input", str(project), "--output", str(output)], check=False)
+    project.write_text(
+        xml.replace("<HtcMin>1</HtcMin>", "<HtcMin>0</HtcMin>"), encoding="utf-8"
+    )
+    failure = subprocess.run(
+        [str(executable), "--input", str(project), "--output", str(output)], check=False
+    )
     if failure.returncode == 0 or output.read_bytes() != before:
-        raise RuntimeError("invalid extraction succeeded or overwrote the existing asset")
+        raise RuntimeError(
+            "invalid extraction succeeded or overwrote the existing asset"
+        )
     project.unlink()
     output.unlink()
 

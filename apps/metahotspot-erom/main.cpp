@@ -1,10 +1,10 @@
 #include "input.hpp"
 #include "logging/logger.hpp"
 
-#include <spdlog/sinks/stdout_color_sinks.h>
 #include <chrono>
 #include <filesystem>
 #include <iostream>
+#include <spdlog/sinks/stdout_color_sinks.h>
 #include <stdexcept>
 #include <string_view>
 
@@ -35,8 +35,8 @@ int main(int argc, char* argv[])
 
         const auto started = std::chrono::steady_clock::now();
         const auto definition = mhs::app::erom::read_input(input);
-        const auto extraction = mhs::app::erom::extract(
-            definition.model, definition.mesh, definition.ranges, definition.tolerance);
+        const auto extraction
+            = mhs::app::erom::extract(definition.model, definition.mesh, definition.ranges, definition.tolerance);
         mhs::app::erom::write_erom(output, extraction.asset);
         const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started;
         std::cout << "EROM extracted: order=" << extraction.asset.K.rows()

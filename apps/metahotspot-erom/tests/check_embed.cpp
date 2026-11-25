@@ -25,8 +25,8 @@ namespace {
         definition.sources = {{"heater A", "5"}, {"heater B", "8"}};
         for (SourceId i = 0; i < 3; ++i) {
             const double x = i;
-            definition.volumes.push_back({0, i == 1 ? core::invalid_id : i / 2,
-                {{GeometryOperation::Add, {x, 0, 0}, {x + 1, 1, 1}}}});
+            definition.volumes.push_back(
+                {0, i == 1 ? core::invalid_id : i / 2, {{GeometryOperation::Add, {x, 0, 0}, {x + 1, 1, 1}}}});
         }
         definition.thermal_boundaries = {
             {{{Axis::X, 0, {0, 1, 0, 1}}}, ConvectionBoundary {"3", "299"}, "upstream"},
@@ -118,12 +118,13 @@ namespace {
         matrix(before.Vb, after.Vb);
         check(before.f == after.f && before.output_offset == after.output_offset
                 && before.uniform_temperature_mode == after.uniform_temperature_mode
-                && before.reference_temperature == after.reference_temperature, "XML vector or reference changed");
+                && before.reference_temperature == after.reference_temperature,
+            "XML vector or reference changed");
         check(before.interfaces.size() == after.interfaces.size()
                 && before.boundary_groups.size() == after.boundary_groups.size()
-                && before.outline.size() == after.outline.size()
-                && before.sources.size() == after.sources.size()
-                && before.outputs.size() == after.outputs.size(), "XML record counts changed");
+                && before.outline.size() == after.outline.size() && before.sources.size() == after.sources.size()
+                && before.outputs.size() == after.outputs.size(),
+            "XML record counts changed");
         const auto same_facet = [](const Facet& a, const Facet& b) {
             return a.axis == b.axis && a.normal == b.normal && a.coordinate == b.coordinate && a.bounds == b.bounds;
         };
@@ -258,20 +259,20 @@ namespace {
         using namespace mhs::app::erom;
         FomDefinition definition;
         definition.reference_temperature = 295;
-        definition.materials = {{"solid", {MaterialKind::Solid, "2+x+0.01*T+t", "3+0.005*T+t",
-            "3+0.005*T+t", "1+0.001*T+t", "4+y+t", {}}}};
+        definition.materials = {
+            {"solid", {MaterialKind::Solid, "2+x+0.01*T+t", "3+0.005*T+t", "3+0.005*T+t", "1+0.001*T+t", "4+y+t", {}}}};
         // A zero-density explicit channel spans both blocks.
         definition.sources = {{"shared heater", "0"}};
         definition.volumes = {{0, 0, {{GeometryOperation::Add, {2, 1, 0}, {3, 2, 1}}}},
             {0, 0, {{GeometryOperation::Add, {3, 1, 0}, {4, 2, 1}}}}};
-        definition.thermal_boundaries = {
-            {{{Axis::X, 4, {1, 2, 0, 1}}}, ConvectionBoundary {"2+0.01*T+y+t", "T+5+z+t"}, "BCI"},
-            {{{Axis::X, 2, {1, 2, 0, 1}}}, DirichletBoundary {"T+10+t"}, "fixed temperature"},
-            {{{Axis::Y, 1, {2, 4, 0, 1}}}, NeumannBoundary {"1+0.01*T+z+t"}, "fixed flux"},
-            {{{Axis::Z, 0, {2, 4, 1, 2}}}, ConvectionBoundary {"1+0.01*T+x+t", "T-3+t"}, "fixed HTC"}};
+        definition.thermal_boundaries
+            = {{{{Axis::X, 4, {1, 2, 0, 1}}}, ConvectionBoundary {"2+0.01*T+y+t", "T+5+z+t"}, "BCI"},
+                {{{Axis::X, 2, {1, 2, 0, 1}}}, DirichletBoundary {"T+10+t"}, "fixed temperature"},
+                {{{Axis::Y, 1, {2, 4, 0, 1}}}, NeumannBoundary {"1+0.01*T+z+t"}, "fixed flux"},
+                {{{Axis::Z, 0, {2, 4, 1, 2}}}, ConvectionBoundary {"1+0.01*T+x+t", "T-3+t"}, "fixed HTC"}};
         definition.default_thermal_boundary = ConvectionBoundary {"1+y", "T+7+t"};
-        definition.point_probes = {{"fixed trace", 2, 1.5, 0.5}, {"interior", 2.7, 1.5, 0.5},
-            {"BCI cell center", 3.5, 1.5, 0.5}};
+        definition.point_probes
+            = {{"fixed trace", 2, 1.5, 0.5}, {"interior", 2.7, 1.5, 0.5}, {"BCI cell center", 3.5, 1.5, 0.5}};
         const MeshSpec grid {{2, 3, 4}, {1, 2}, {0, 1}};
         const auto result = extract(definition, grid, {{0, {1, 20}}}, 1e-6);
         const auto& asset = result.asset;
@@ -314,8 +315,8 @@ namespace {
                 for (std::size_t i = 0; i < a.snapshot_times.size(); ++i) {
                     for (std::size_t j = 0; j < 3; ++j)
                         near(a.output_traces[j].values[i], b.output_traces[j].values[i], 1e-4);
-                    near((a.snapshot_states[i * 2] + a.snapshot_states[i * 2 + 1]) / 2,
-                        b.output_traces[3].values[i], 1e-4);
+                    near((a.snapshot_states[i * 2] + a.snapshot_states[i * 2 + 1]) / 2, b.output_traces[3].values[i],
+                        1e-4);
                 }
             }
         }
@@ -325,7 +326,11 @@ namespace {
     {
         struct Cleanup {
             const std::filesystem::path& path;
-            ~Cleanup() { std::error_code error; std::filesystem::remove(path, error); }
+            ~Cleanup()
+            {
+                std::error_code error;
+                std::filesystem::remove(path, error);
+            }
         } cleanup {path};
         extract_fixture(path, "normal");
         check_embedding(path);
@@ -333,8 +338,8 @@ namespace {
         const auto passive = read_erom(path);
         check(passive->sources.empty() && passive->outputs.empty() && passive->B.cols() == 0 && passive->L.rows() == 0,
             "expected empty source and output channels");
-        check(solver::solve(compiler::compile_project({{{{}, passive, {}, {}}}, {}})).converged,
-            "passive solve failed");
+        check(
+            solver::solve(compiler::compile_project({{{{}, passive, {}, {}}}, {}})).converged, "passive solve failed");
         check_frozen(path);
         for (auto variant : {"trace", "empty"}) {
             bool rejected = false;

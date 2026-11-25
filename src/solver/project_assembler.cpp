@@ -189,8 +189,8 @@ namespace mhs::solver {
             copy_dense(e.K, operators_.K, offset);
             std::ranges::copy(e.f, operators_.f.begin() + offset);
             for (SourceId s = 0; s < e.sources.size(); ++s) {
-                const double power = s < component.powers.size() && component.powers[s] ? component.powers[s](time)
-                                                                                        : 0.0;
+                const double power
+                    = s < component.powers.size() && component.powers[s] ? component.powers[s](time) : 0.0;
                 if (!std::isfinite(power))
                     throw std::invalid_argument("EROM power must be finite");
                 for (std::size_t j = 0; j < e.K.rows(); ++j)
@@ -207,7 +207,8 @@ namespace mhs::solver {
                     = boundary_terms(face.facet, project_.face_patches(i, interface_index), [&](const Facet& patch) {
                           if (law)
                               return evaluate_boundary(*law, patch, temperature, time, face.resistance);
-                          const double g = convection_conductance(patch.area(), face.default_coefficient, face.resistance);
+                          const double g
+                              = convection_conductance(patch.area(), face.default_coefficient, face.resistance);
                           return BoundaryEvaluation {.conductance = g, .load = g * face.default_ambient};
                       });
                 if (g != 0)

@@ -29,8 +29,8 @@ namespace mhs::app::erom {
             double slope; // derivative with respect to the cell temperature rise
         };
 
-        double project_probe(const Fom& model, const HtcRanges& ranges, OutputId id,
-            core::Vector<double>& state, const core::Vector<FrozenTrace>& frozen, Weights& weights)
+        double project_probe(const Fom& model, const HtcRanges& ranges, OutputId id, core::Vector<double>& state,
+            const core::Vector<FrozenTrace>& frozen, Weights& weights)
         {
             const auto& probe = model.point_probes[id];
             if (probe.cell == core::invalid_id)
@@ -64,8 +64,8 @@ namespace mhs::app::erom {
                 return value;
             };
             const auto sample = [&] {
-                return solver::sample_point(model, state, 0, probe.cell, probe.point, boundary,
-                    model.reference_temperature);
+                return solver::sample_point(
+                    model, state, 0, probe.cell, probe.point, boundary, model.reference_temperature);
             };
             const double offset = sample();
             for (const auto cell : support) {
@@ -159,9 +159,8 @@ namespace mhs::app::erom {
                 throw std::invalid_argument("unknown or empty HTC group " + std::to_string(id));
             if (!std::holds_alternative<Convection>(model.boundary_groups[id].condition))
                 throw std::invalid_argument("HTC training requires an explicit convection boundary group");
-            const bool invalid_regions = std::ranges::any_of(
-                    definition.thermal_boundaries[id].regions,
-                    [&](const auto& region) { return !covered_by_box_faces(mesh, region, bounds); });
+            const bool invalid_regions = std::ranges::any_of(definition.thermal_boundaries[id].regions,
+                [&](const auto& region) { return !covered_by_box_faces(mesh, region, bounds); });
             if (invalid_regions || std::ranges::any_of(facets_by_surface[id], [&](FacetId f) {
                     return !on_box_face(mesh.exterior_facets[f].geometry, bounds);
                 }))
@@ -218,27 +217,30 @@ namespace mhs::app::erom {
                 auto constant = [](double value) { return CompiledExpression::make_constant(value); };
                 // Freeze each field at the original facet center. Work directly
                 // in temperature-rise coordinates to avoid subtracting absolute loads.
-                const auto law = std::visit([&](const auto& value) -> BoundaryCondition {
-                    using T = std::decay_t<decltype(value)>;
-                    if constexpr (std::is_same_v<T, Dirichlet>)
-                        return Dirichlet {constant(field_value(value.temperature, ctx) - result.reference_temperature)};
-                    else if constexpr (std::is_same_v<T, Neumann>)
-                        return Neumann {constant(field_value(value.heat_flux, ctx))};
-                    else {
-                        const double h = field_value(value.coefficient, ctx);
-                        if (h < 0)
-                            throw std::invalid_argument("negative frozen HTC");
-                        return Convection {constant(h),
-                            constant(field_value(value.ambient_temperature, ctx) - result.reference_temperature)};
-                    }
-                }, condition);
+                const auto law = std::visit(
+                    [&](const auto& value) -> BoundaryCondition {
+                        using T = std::decay_t<decltype(value)>;
+                        if constexpr (std::is_same_v<T, Dirichlet>)
+                            return Dirichlet {
+                                constant(field_value(value.temperature, ctx) - result.reference_temperature)};
+                        else if constexpr (std::is_same_v<T, Neumann>)
+                            return Neumann {constant(field_value(value.heat_flux, ctx))};
+                        else {
+                            const double h = field_value(value.coefficient, ctx);
+                            if (h < 0)
+                                throw std::invalid_argument("negative frozen HTC");
+                            return Convection {constant(h),
+                                constant(field_value(value.ambient_temperature, ctx) - result.reference_temperature)};
+                        }
+                    },
+                    condition);
                 const auto evaluation = solver::evaluate_boundary(law, facet, 0, 0, resistance);
                 if (!std::isfinite(evaluation.conductance) || evaluation.conductance < 0
                     || !std::isfinite(evaluation.load) || !std::isfinite(evaluation.temperature))
                     throw std::invalid_argument("invalid frozen fixed boundary");
                 // The condensed trace is affine with slope 1 - g R / A.
-                const double slope = evaluation.dirichlet ? 0.0
-                    : 1 - evaluation.conductance / (facet.area() / resistance);
+                const double slope
+                    = evaluation.dirichlet ? 0.0 : 1 - evaluation.conductance / (facet.area() / resistance);
                 frozen[id] = {evaluation, slope};
                 result.fixed_diagonal[face.owner] += evaluation.conductance;
                 result.fixed_load[face.owner] += evaluation.load;

@@ -151,7 +151,8 @@ namespace mhs::app::pta {
                     const auto source = std::find_if(pta.heat_sources.begin(), pta.heat_sources.end(),
                         [&](const auto& entry) { return entry.id == b.heat_source_id; });
                     if (source == pta.heat_sources.end())
-                        throw std::invalid_argument("unknown HeatSourceId in block " + b.name + ": " + b.heat_source_id);
+                        throw std::invalid_argument(
+                            "unknown HeatSourceId in block " + b.name + ": " + b.heat_source_id);
                     v.source = static_cast<mhs::model::SourceId>(source - pta.heat_sources.begin());
                 }
                 else if (!literal_zero(b.volumetric_heat_source)) {

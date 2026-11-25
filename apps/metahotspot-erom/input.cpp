@@ -12,8 +12,8 @@
 
 namespace mhs::app::erom {
     namespace {
-        using tinyxml2::XMLElement;
         using pta::detail::get_text;
+        using tinyxml2::XMLElement;
 
         const XMLElement* unique_child(const XMLElement& parent, const char* name, bool required = true)
         {

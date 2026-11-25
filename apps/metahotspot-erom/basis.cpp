@@ -139,7 +139,8 @@ namespace mhs::app::erom {
         Vector default_closure(nb), default_boundary(nb), default_rhs = project.fixed_load;
         project.set_default_conductances(default_closure);
         for (Eigen::Index id = 0; id < nb; ++id)
-            default_boundary[id] = default_closure[id] * (project.interfaces[id].default_ambient - project.reference_temperature);
+            default_boundary[id]
+                = default_closure[id] * (project.interfaces[id].default_ambient - project.reference_temperature);
         project.add_boundary(default_rhs, default_boundary);
         core::Vector<ResponseSpace> spaces;
         for (std::size_t port = 0; port < independent + passive.size(); ++port)

@@ -1,7 +1,6 @@
 #include "model/erom.hpp"
 
 #include <Eigen/Cholesky>
-#include <tinyxml2.h>
 #include <algorithm>
 #include <charconv>
 #include <cmath>
@@ -10,6 +9,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string_view>
+#include <tinyxml2.h>
 #include <type_traits>
 
 namespace mhs::model {
@@ -76,10 +76,7 @@ namespace mhs::model {
             return number<std::size_t>(attribute(element, name));
         }
 
-        double scalar(const XMLElement& element, const char* name)
-        {
-            return number<double>(attribute(element, name));
-        }
+        double scalar(const XMLElement& element, const char* name) { return number<double>(attribute(element, name)); }
 
         void values(std::string_view text, std::span<double> destination)
         {
@@ -118,7 +115,9 @@ namespace mhs::model {
             require(axis == "x" || axis == "y" || axis == "z", "invalid facet axis");
             const int normal = number<int>(attribute(element, "normal"));
             require(normal == -1 || normal == 1, "invalid facet normal");
-            return {axis == "x" ? Axis::X : axis == "y" ? Axis::Y : Axis::Z,
+            return {axis == "x"   ? Axis::X
+                    : axis == "y" ? Axis::Y
+                                  : Axis::Z,
                 static_cast<std::int8_t>(normal), scalar(element, "coordinate"),
                 {scalar(element, "uMin"), scalar(element, "uMax"), scalar(element, "vMin"), scalar(element, "vMax")}};
         }
@@ -178,13 +177,14 @@ namespace mhs::model {
                 "half-cell resistance must be positive and finite");
             require(face.boundary_group < e.boundary_groups.size(), "invalid interface surface");
             require(std::isfinite(face.default_coefficient) && face.default_coefficient >= 0
-                    && std::isfinite(face.default_ambient), "invalid default convection parameters");
+                    && std::isfinite(face.default_ambient),
+                "invalid default convection parameters");
             used[face.boundary_group] = true;
         }
         require(std::ranges::all_of(used, [](bool x) { return x; }), "empty surface");
         for (const auto& h : e.boundary_groups)
-            require(!h.name.empty() && std::isfinite(h.minimum) && std::isfinite(h.maximum)
-                    && h.minimum > 0 && h.maximum >= h.minimum,
+            require(!h.name.empty() && std::isfinite(h.minimum) && std::isfinite(h.maximum) && h.minimum > 0
+                    && h.maximum >= h.minimum,
                 "invalid HTC surface");
         for (const auto& group : e.outline) {
             require(!group.name.empty() && !group.facets.empty(), "invalid outline group");
@@ -206,7 +206,8 @@ namespace mhs::model {
         tinyxml2::XMLDocument doc;
         require(doc.Parse(xml.data(), xml.size()) == tinyxml2::XML_SUCCESS, "invalid XML document");
         const auto* root = doc.RootElement();
-        require(root && std::string_view(root->Name()) == "Erom" && !root->NextSiblingElement(), "invalid root element");
+        require(
+            root && std::string_view(root->Name()) == "Erom" && !root->NextSiblingElement(), "invalid root element");
         require(attribute(*root, "version") == "1", "unsupported version");
         auto e = std::make_shared<Erom>();
         e->reference_temperature = number<double>(contents(child(*root, "ReferenceTemperature")));
@@ -222,8 +223,8 @@ namespace mhs::model {
 
         records(child(*root, "BoundaryGroups"), "BoundaryGroup", [&](const auto& element) {
             require(count(element, "id") == e->boundary_groups.size(), "invalid boundary group id");
-            e->boundary_groups.push_back({std::string(attribute(element, "name")), scalar(element, "htcMin"),
-                scalar(element, "htcMax")});
+            e->boundary_groups.push_back(
+                {std::string(attribute(element, "name")), scalar(element, "htcMin"), scalar(element, "htcMax")});
         });
         records(child(*root, "Interfaces"), "Interface", [&](const auto& element) {
             const auto group = count(element, "boundary");

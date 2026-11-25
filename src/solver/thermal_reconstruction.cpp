@@ -31,8 +31,8 @@ namespace mhs::solver {
                     const auto neighbor = model.mesh.neighbor(cell, axis, sign);
                     if (neighbor == invalid_id)
                         continue;
-                    const double k_neighbor = cell_conductivity(model, neighbor, axis,
-                        conductivity_temperature.value_or(temperature[neighbor]), time);
+                    const double k_neighbor = cell_conductivity(
+                        model, neighbor, axis, conductivity_temperature.value_or(temperature[neighbor]), time);
                     const auto [r_cell, r_neighbor]
                         = interior_resistances(model, cell, neighbor, axis, k[axis], k_neighbor);
                     const double trace
@@ -93,7 +93,8 @@ namespace mhs::solver {
             return std::numeric_limits<double>::quiet_NaN();
         if (const auto trace = boundary_value(model, temperature, time, cell, p, sample_boundary))
             return *trace;
-        const auto gradient = reconstruct_cell_gradient(model, temperature, time, cell, sample_boundary, conductivity_temperature);
+        const auto gradient
+            = reconstruct_cell_gradient(model, temperature, time, cell, sample_boundary, conductivity_temperature);
         const auto center = model.mesh.cell(cell).center();
         return temperature[cell] + gradient[0] * (p[0] - center[0]) + gradient[1] * (p[1] - center[1])
             + gradient[2] * (p[2] - center[2]);
